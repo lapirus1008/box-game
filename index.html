@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>시간의 상자</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B1220;
+    --surface:#14213D;
+    --surface-2:#1B2C4D;
+    --gold:#E3B23C;
+    --gold-dim:#8A6E28;
+    --teal:#3A9188;
+    --ink:#F1EAD9;
+    --ink-dim:#A9AEC4;
+    --danger:#C1543C;
+    --radius:16px;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    min-height:100vh;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter', sans-serif;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+  }
+  .card{
+    width:100%;
+    max-width:420px;
+    background:var(--surface);
+    border-radius:var(--radius);
+    padding:40px 32px;
+    border:1px solid #22335C;
+  }
+  h1{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:28px;
+    margin:0 0 6px;
+    text-align:center;
+  }
+  .subtitle{
+    color:var(--ink-dim);
+    font-size:14px;
+    text-align:center;
+    margin:0 0 32px;
+    line-height:1.6;
+  }
+  label{
+    display:block;
+    font-size:13px;
+    color:var(--ink-dim);
+    margin:0 0 6px;
+  }
+  input{
+    width:100%;
+    padding:12px 14px;
+    background:var(--surface-2);
+    border:1px solid #2C3F6B;
+    border-radius:10px;
+    color:var(--ink);
+    font-size:15px;
+    font-family:inherit;
+    margin-bottom:16px;
+  }
+  input:focus{
+    outline:none;
+    border-color:var(--gold-dim);
+  }
+  button{
+    width:100%;
+    padding:13px;
+    border:none;
+    border-radius:10px;
+    font-family:inherit;
+    font-size:15px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .btn-primary{
+    background:var(--gold);
+    color:#1A1305;
+  }
+  .btn-primary:hover{ background:#eebd52; }
+  .btn-primary:disabled{
+    background:#5C5030;
+    color:#8A8266;
+    cursor:not-allowed;
+  }
+  .switch-line{
+    text-align:center;
+    margin-top:18px;
+    font-size:14px;
+    color:var(--ink-dim);
+  }
+  .switch-line button{
+    all:unset;
+    color:var(--teal);
+    cursor:pointer;
+    font-weight:600;
+  }
+  .error-msg{
+    background:rgba(193,84,60,0.15);
+    border:1px solid var(--danger);
+    color:#F3B4A6;
+    padding:10px 14px;
+    border-radius:10px;
+    font-size:13px;
+    margin-bottom:16px;
+    display:none;
+  }
+  .hidden{ display:none !important; }
+
+  /* 게임 화면 */
+  #gameScreen .top-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:28px;
+  }
+  #gameScreen .greeting{
+    font-size:14px;
+    color:var(--ink-dim);
+  }
+  #gameScreen .greeting strong{ color:var(--ink); }
+  #logoutBtn{
+    all:unset;
+    color:var(--ink-dim);
+    font-size:13px;
+    cursor:pointer;
+    text-decoration:underline;
+  }
+  .chest-wrap{
+    display:flex;
+    justify-content:center;
+    margin:8px 0 24px;
+  }
+  .chest{
+    width:140px;
+    height:110px;
+    cursor:pointer;
+    position:relative;
+  }
+  .chest-body{
+    position:absolute;
+    bottom:0;
+    width:140px;
+    height:70px;
+    background:linear-gradient(180deg, #6B4A2A, #4A3018);
+    border-radius:0 0 10px 10px;
+    border:3px solid #2E1D0C;
+  }
+  .chest-lid{
+    position:absolute;
+    top:0;
+    width:140px;
+    height:50px;
+    background:linear-gradient(180deg, #7C5732, #5A3D1F);
+    border-radius:10px 10px 4px 4px;
+    border:3px solid #2E1D0C;
+    transform-origin:bottom;
+    transition:transform 0.4s cubic-bezier(.34,1.56,.64,1);
+  }
+  .chest.open .chest-lid{
+    transform:rotateX(115deg);
+  }
+  .chest-lock{
+    position:absolute;
+    top:44px;
+    left:50%;
+    transform:translateX(-50%);
+    width:20px;
+    height:20px;
+    background:var(--gold);
+    border-radius:4px;
+    border:2px solid #2E1D0C;
+    z-index:2;
+  }
+  .chest-glow{
+    position:absolute;
+    top:-30px;
+    left:50%;
+    transform:translateX(-50%) scale(0);
+    width:80px;
+    height:80px;
+    background:radial-gradient(circle, rgba(227,178,60,0.7), transparent 70%);
+    opacity:0;
+    transition:opacity 0.3s, transform 0.3s;
+  }
+  .chest.open .chest-glow{
+    opacity:1;
+    transform:translateX(-50%) scale(1.4);
+  }
+  .status-text{
+    text-align:center;
+    font-size:14px;
+    color:var(--ink-dim);
+    min-height:20px;
+    margin-bottom:24px;
+  }
+  .status-text.ready{ color:var(--teal); }
+  .timer{
+    font-family:'Fraunces', serif;
+    font-size:22px;
+    color:var(--gold);
+  }
+  .result-box{
+    background:var(--surface-2);
+    border:1px solid #2C3F6B;
+    border-radius:12px;
+    padding:16px;
+    text-align:center;
+    margin-bottom:20px;
+    display:none;
+  }
+  .result-box .treasure-name{
+    font-family:'Fraunces', serif;
+    font-size:20px;
+    color:var(--gold);
+    margin-bottom:2px;
+  }
+  .stats-row{
+    display:flex;
+    justify-content:space-between;
+    padding-top:20px;
+    border-top:1px solid #22335C;
+    font-size:14px;
+  }
+  .stats-row .label{ color:var(--ink-dim); }
+  .stats-row .value{
+    font-family:'Fraunces', serif;
+    color:var(--gold);
+    font-size:18px;
+  }
+</style>
+</head>
+<body>
+
+  <!-- 로그인 / 회원가입 화면 -->
+  <div class="card" id="authScreen">
+    <h1>시간의 상자</h1>
+    <p class="subtitle">한 시간에 한 번, 상자를 열어 보물을 모으세요</p>
+
+    <div class="error-msg" id="authError"></div>
+
+    <!-- 로그인 폼 -->
+    <form id="loginForm">
+      <label for="loginEmail">이메일</label>
+      <input type="email" id="loginEmail" required>
+      <label for="loginPassword">비밀번호</label>
+      <input type="password" id="loginPassword" required>
+      <button type="submit" class="btn-primary">로그인</button>
+    </form>
+
+    <!-- 회원가입 폼 -->
+    <form id="signupForm" class="hidden">
+      <label for="signupNickname">닉네임</label>
+      <input type="text" id="signupNickname" required>
+      <label for="signupEmail">이메일</label>
+      <input type="email" id="signupEmail" required>
+      <label for="signupPassword">비밀번호</label>
+      <input type="password" id="signupPassword" required>
+      <button type="submit" class="btn-primary">회원가입</button>
+    </form>
+
+    <div class="switch-line">
+      <span id="switchToSignupLine">계정이 없으신가요? <button id="switchToSignup">회원가입</button></span>
+      <span id="switchToLoginLine" class="hidden">이미 계정이 있으신가요? <button id="switchToLogin">로그인</button></span>
+    </div>
+  </div>
+
+  <!-- 게임 화면 -->
+  <div class="card hidden" id="gameScreen">
+    <div class="top-row">
+      <div class="greeting">안녕하세요, <strong id="userNickname"></strong>님</div>
+      <button id="logoutBtn">로그아웃</button>
+    </div>
+
+    <div class="chest-wrap">
+      <div class="chest" id="chest">
+        <div class="chest-glow"></div>
+        <div class="chest-lid"></div>
+        <div class="chest-lock"></div>
+        <div class="chest-body"></div>
+      </div>
+    </div>
+
+    <div class="status-text" id="statusText">불러오는 중...</div>
+
+    <div class="result-box" id="resultBox">
+      <div class="treasure-name" id="treasureName"></div>
+      <div id="treasureDetail" style="font-size:13px; color:var(--ink-dim);"></div>
+    </div>
+
+    <div class="stats-row">
+      <span class="label">누적 보물</span>
+      <span class="value" id="totalTreasure">0</span>
+    </div>
+  </div>
+
+<script>
+  // ⚠️ 배포 후에는 실제 백엔드 서버 주소로 바꿔주세요.
+  // 예: const API_BASE = 'https://box-game-api.onrender.com';
+  const API_BASE = 'http://localhost:3000';
+
+  // 토큰은 새로고침하면 사라집니다 (의도적인 설계).
+  // 실제 서비스에 배포한 뒤에는 localStorage.setItem 등으로 바꿔 로그인을 유지시킬 수 있어요.
+  let authToken = null;
+  let currentUser = null;
+  let statusInterval = null;
+
+  const authScreen = document.getElementById('authScreen');
+  const gameScreen = document.getElementById('gameScreen');
+  const authError = document.getElementById('authError');
+
+  function showAuthError(message){
+    authError.textContent = message;
+    authError.style.display = 'block';
+  }
+  function clearAuthError(){
+    authError.style.display = 'none';
+  }
+
+  // 로그인 / 회원가입 폼 전환
+  document.getElementById('switchToSignup').addEventListener('click', () => {
+    document.getElementById('loginForm').classList.add('hidden');
+    document.getElementById('signupForm').classList.remove('hidden');
+    document.getElementById('switchToSignupLine').classList.add('hidden');
+    document.getElementById('switchToLoginLine').classList.remove('hidden');
+    clearAuthError();
+  });
+  document.getElementById('switchToLogin').addEventListener('click', () => {
+    document.getElementById('signupForm').classList.add('hidden');
+    document.getElementById('loginForm').classList.remove('hidden');
+    document.getElementById('switchToLoginLine').classList.add('hidden');
+    document.getElementById('switchToSignupLine').classList.remove('hidden');
+    clearAuthError();
+  });
+
+  // 회원가입 처리
+  document.getElementById('signupForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearAuthError();
+    const nickname = document.getElementById('signupNickname').value;
+    const email = document.getElementById('signupEmail').value;
+    const password = document.getElementById('signupPassword').value;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, nickname }),
+      });
+      const data = await res.json();
+      if (!res.ok) return showAuthError(data.message || '회원가입에 실패했습니다.');
+
+      authToken = data.token;
+      currentUser = data.user;
+      enterGame();
+    } catch (err) {
+      showAuthError('서버에 연결할 수 없습니다.');
+    }
+  });
+
+  // 로그인 처리
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearAuthError();
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) return showAuthError(data.message || '로그인에 실패했습니다.');
+
+      authToken = data.token;
+      currentUser = data.user;
+      enterGame();
+    } catch (err) {
+      showAuthError('서버에 연결할 수 없습니다.');
+    }
+  });
+
+  // 로그아웃
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    authToken = null;
+    currentUser = null;
+    clearInterval(statusInterval);
+    gameScreen.classList.add('hidden');
+    authScreen.classList.remove('hidden');
+  });
+
+  function enterGame(){
+    document.getElementById('userNickname').textContent = currentUser.nickname || currentUser.email;
+    authScreen.classList.add('hidden');
+    gameScreen.classList.remove('hidden');
+    refreshStatus();
+    statusInterval = setInterval(refreshStatus, 1000);
+  }
+
+  // 서버에 인증 토큰을 담아 요청하는 공통 함수
+  async function authFetch(path, options = {}){
+    return fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        'Authorization': `Bearer ${authToken}`,
+      },
+    });
+  }
+
+  let cachedNextAvailableAt = null;
+
+  // 현재 상자 상태(열 수 있는지, 남은 시간) 확인
+  async function refreshStatus(){
+    try {
+      const res = await authFetch('/api/box/status');
+      const data = await res.json();
+      if (!res.ok) return;
+
+      document.getElementById('totalTreasure').textContent = data.totalTreasure;
+      cachedNextAvailableAt = data.nextAvailableAt ? new Date(data.nextAvailableAt) : null;
+      updateStatusDisplay(data.canOpen);
+    } catch (err) {
+      // 네트워크 문제는 조용히 무시하고 다음 인터벌에 재시도
+    }
+  }
+
+  function updateStatusDisplay(canOpen){
+    const statusText = document.getElementById('statusText');
+    const chest = document.getElementById('chest');
+
+    if (canOpen){
+      statusText.textContent = '상자를 열 수 있습니다';
+      statusText.classList.add('ready');
+      chest.style.opacity = '1';
+      chest.style.pointerEvents = 'auto';
+    } else {
+      statusText.classList.remove('ready');
+      chest.style.opacity = '0.6';
+      chest.style.pointerEvents = 'none';
+
+      if (cachedNextAvailableAt){
+        const remainingMs = cachedNextAvailableAt - new Date();
+        if (remainingMs <= 0){
+          refreshStatus();
+          return;
+        }
+        const m = Math.floor(remainingMs / 60000);
+        const s = Math.floor((remainingMs % 60000) / 1000);
+        statusText.innerHTML = `다음 상자까지 <span class="timer">${m}분 ${s}초</span>`;
+      }
+    }
+  }
+
+  // 상자 클릭 → 실제 오픈 요청
+  document.getElementById('chest').addEventListener('click', async function(){
+    if (this.style.pointerEvents === 'none') return;
+
+    this.style.pointerEvents = 'none';
+    try {
+      const res = await authFetch('/api/box/open', { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok){
+        // 429 등 - 상태 새로고침으로 최신 타이머 반영
+        refreshStatus();
+        return;
+      }
+
+      this.classList.add('open');
+      document.getElementById('treasureName').textContent = data.treasure.name;
+      document.getElementById('treasureDetail').textContent = `+${data.treasure.amount} 획득`;
+      document.getElementById('resultBox').style.display = 'block';
+      document.getElementById('totalTreasure').textContent = data.totalTreasure;
+      cachedNextAvailableAt = new Date(data.nextAvailableAt);
+
+      setTimeout(() => {
+        this.classList.remove('open');
+        updateStatusDisplay(false);
+      }, 1500);
+    } catch (err) {
+      this.style.pointerEvents = 'auto';
+    }
+  });
+</script>
+
+</body>
+</html>
