@@ -8,6 +8,13 @@ require('dotenv').config();
 
 // Pool은 DB 연결을 여러 개 미리 만들어두고 재사용하는 방식입니다.
 // 매번 새로 연결하는 것보다 훨씬 효율적입니다.
+// 진단용 로그: DATABASE_URL이 아예 비어있는지부터 확인
+if (!process.env.DATABASE_URL) {
+  console.error('DATABASE_URL 환경변수가 설정되어 있지 않습니다. Render의 Environment 탭을 확인하세요.');
+} else {
+  console.log('DATABASE_URL이 등록되어 있습니다 (앞 15자):', process.env.DATABASE_URL.slice(0, 15));
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
