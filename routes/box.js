@@ -7,7 +7,8 @@ const verifyToken = require('../middleware/auth');
 
 const router = express.Router();
 
-const COOLDOWN_MS = 60 * 60 * 1000; // 1시간 (밀리초 단위)
+//const COOLDOWN_MS = 60 * 60 * 1000; // 1시간 (밀리초 단위)
+const COOLDOWN_MS = 10 * 1000; // 10초 테스트
 
 // 지급할 보물 후보 목록입니다. 원하는 대로 자유롭게 바꾸세요.
 const TREASURES = [

@@ -1,0 +1,25 @@
+전체 프로젝트 구조
+box-game/                    ← GitHub 저장소 루트
+├── server.js                 백엔드 진입점 (Express 앱 시작)
+├── db.js                     PostgreSQL 연결 설정
+├── .env                      로컬 전용 환경변수 (Git에 안 올라감)
+├── .gitignore
+├── routes/
+│   ├── auth.js                회원가입 / 로그인 / 내 정보 조회 API
+│   └── box.js                 상자 열기 / 상태 조회 API
+├── middleware/
+│   └── auth.js                로그인 토큰(JWT) 검증
+└── public/
+    └── index.html              프론트엔드 전체 (HTML+CSS+JS 한 파일)
+
+구성요소								|  실행위치		|	역할
+server.js, routes/, middleware/, db.js	|	Render	|	항상 켜져있는 백엔드 서버
+public/index.html						|	Vercel	|	사용자가 보는 화면 (정적 파일)
+실제 데이터(회원, 보물 기록)				|	Neon	|	클라우드 PostgreSQL 데이터베이스
+코드 원본								|	GitHub	|	Render/Vercel이 여기서 코드를 가져감
+
+DB 쿼리 입력 Neon 콘솔의 SQL Editor에서 
+https://console.neon.tech 접속 후 로그인
+프로젝트 클릭
+왼쪽 메뉴에서 "SQL Editor" 클릭
+쿼리 입력창에 SQL을 쓰고 Run
