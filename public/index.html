@@ -364,6 +364,15 @@
     color:#8A8266;
     cursor:not-allowed;
   }
+  .sell-btn{
+    margin-top:6px;
+    padding:6px;
+    font-size:11px;
+    background:var(--surface);
+    border:1px solid var(--gold-dim);
+    color:var(--gold);
+    border-radius:8px;
+  }
   .craft-result{
     background:var(--surface-2);
     border:1px solid #2C3F6B;
@@ -382,7 +391,7 @@
   <!-- 로그인 / 회원가입 화면 -->
   <div class="card" id="authScreen">
     <h1>시간의 상자</h1>
-    <p class="subtitle">한 시간에 한 번, 상자를 열어 보물을 모으세요</p>
+    <p class="subtitle">10분에 한 번, 상자를 열어 아이템을 모으세요</p>
 
     <div class="error-msg" id="authError"></div>
 
@@ -439,7 +448,7 @@
     </div>
 
     <div class="stats-row">
-      <span class="label">누적 보물</span>
+      <span class="label">누적 골드</span>
       <span class="value" id="totalTreasure">0</span>
     </div>
 
@@ -557,6 +566,7 @@
         card.title = item.obtained ? item.flavor : '아직 발견하지 못한 아이템입니다';
 
         const canCraft = item.obtained && item.count >= CRAFT_COST && item.rarity !== 'legendary';
+        const canSell = item.obtained && item.count > 0;
         const canAfford = data.totalTreasure >= item.price;
 
         card.innerHTML = `
@@ -564,6 +574,7 @@
           <div class="item-name">${item.obtained ? item.name : '???'}</div>
           ${item.obtained ? `<div class="item-count">x${item.count}</div>` : ''}
           ${canCraft ? `<button class="craft-btn" data-key="${item.key}">합성(-${CRAFT_COST})</button>` : ''}
+          ${canSell ? `<button class="sell-btn" data-key="${item.key}">판매(+${item.sellPrice}G)</button>` : ''}
           <button class="buy-btn" data-key="${item.key}" ${canAfford ? '' : 'disabled'}>${item.price}G 구매</button>
         `;
         grid.appendChild(card);
@@ -573,12 +584,49 @@
       grid.querySelectorAll('.craft-btn').forEach(btn => {
         btn.addEventListener('click', () => craftItem(btn.dataset.key, btn));
       });
+      // 판매 버튼 클릭 이벤트 연결
+      grid.querySelectorAll('.sell-btn').forEach(btn => {
+        btn.addEventListener('click', () => sellItem(btn.dataset.key, btn));
+      });
       // 구매 버튼 클릭 이벤트 연결
       grid.querySelectorAll('.buy-btn').forEach(btn => {
         btn.addEventListener('click', () => buyItem(btn.dataset.key, btn));
       });
     } catch (err) {
       grid.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
+    }
+  }
+
+  async function sellItem(itemKey, btnEl){
+    btnEl.disabled = true;
+    const originalText = btnEl.textContent;
+    btnEl.textContent = '판매 중...';
+
+    try {
+      const res = await authFetch('/api/box/sell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemKey }),
+      });
+      const data = await res.json();
+
+      const craftResult = document.getElementById('craftResult');
+      if (!res.ok) {
+        craftResult.style.display = 'block';
+        craftResult.style.color = 'var(--danger)';
+        craftResult.textContent = data.message;
+        btnEl.disabled = false;
+        btnEl.textContent = originalText;
+      } else {
+        craftResult.style.display = 'block';
+        craftResult.style.color = 'var(--gold)';
+        craftResult.innerHTML = `${data.sold.emoji} ${data.sold.name} 판매 <span class="arrow">→</span> +${data.goldEarned}G`;
+      }
+
+      await loadCollection(false);
+    } catch (err) {
+      btnEl.disabled = false;
+      btnEl.textContent = originalText;
     }
   }
 
@@ -792,7 +840,7 @@
     }
   }
 
-  const INSTANT_OPEN_PRICE_PER_MINUTE = 3; // 화면에 예상 가격을 보여주기 위한 값 (최종 가격은 서버가 확정)
+  const INSTANT_OPEN_PRICE_PER_MINUTE = 10; // 화면에 예상 가격을 보여주기 위한 값 (최종 가격은 서버가 확정)
 
   // 네트워크 요청 없이, 저장해둔 기준 시각만으로 화면을 그리는 함수 (0.2초마다 호출됨)
   function renderCountdown(){
@@ -848,7 +896,7 @@
     rarityBadge.textContent = RARITY_LABEL[data.treasure.rarity] || '';
     rarityBadge.className = `rarity-badge ${data.treasure.rarity}`;
     document.getElementById('treasureName').textContent = `${data.treasure.emoji} ${data.treasure.name}`;
-    document.getElementById('treasureDetail').textContent = `+${data.treasure.amount} 획득`;
+    document.getElementById('treasureDetail').textContent = `도감에서 ${data.treasure.amount}G에 판매할 수 있어요`;
     document.getElementById('resultBox').style.display = 'block';
     document.getElementById('totalTreasure').textContent = data.totalTreasure;
 

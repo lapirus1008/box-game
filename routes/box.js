@@ -7,7 +7,7 @@ const verifyToken = require('../middleware/auth');
 
 const router = express.Router();
 
-const COOLDOWN_MS = 60 * 60 * 1000; // 1시간 (밀리초 단위)
+const COOLDOWN_MS = 10 * 60 * 1000; // 10분 (밀리초 단위)
 
 // 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
 // key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
@@ -32,9 +32,8 @@ const TREASURES = [
 // 등급별 구매 가격입니다. 상자 뽑기보다는 비싸게 잡아서, "직접 사는 것"이
 // 확률에 기대는 것보다 확실하지만 비용이 크다는 느낌을 주도록 했습니다.
 const SHOP_PRICES = { common: 60, rare: 250, epic: 900, legendary: 3000 };
-// 1시간(3600초) 쿨다운을 다 스킵해도 상자 몇 번 분량(평균 21골드 x 약 8~9번) 정도가 되도록
-// "초당"이 아니라 "분당" 기준으로 낮게 잡았습니다. (예전 초당 5골드는 1시간에 18,000골드로 너무 비쌌음)
-const INSTANT_OPEN_PRICE_PER_MINUTE = 3;
+// 10분 쿨다운을 다 스킵해도 100골드(평균 21골드 상자 약 5번 분량) 정도가 되도록 잡았습니다.
+const INSTANT_OPEN_PRICE_PER_MINUTE = 10;
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
 const CRAFT_COST = 3; // 같은 아이템 몇 개를 모아야 합성할 수 있는지
 
@@ -88,20 +87,21 @@ router.post('/open', verifyToken, async (req, res) => {
     const now = new Date();
 
     if (result.rows.length === 0) {
-      // 2-A. 이 사용자가 한 번도 상자를 연 적이 없는 경우 → 바로 지급 + 새 기록 생성
+      // 2-A. 이 사용자가 한 번도 상자를 연 적이 없는 경우 → 아이템만 지급 + 새 기록 생성
+      // (보통은 회원가입 때 이미 box_claims가 만들어지므로, 이 분기는 예전 계정을 위한 예외 처리입니다.)
       const treasure = pickRandomTreasure();
 
       await db.query(
         `INSERT INTO box_claims (user_id, last_opened_at, total_treasure)
          VALUES ($1, $2, $3)`,
-        [userId, now, treasure.amount]
+        [userId, now, 0]
       );
       await recordItemObtained(userId, treasure.key);
 
       return res.json({
         message: '상자를 열었습니다!',
         treasure,
-        totalTreasure: treasure.amount,
+        totalTreasure: 0,
         nextAvailableAt: new Date(now.getTime() + COOLDOWN_MS),
         serverTime: now,
       });
@@ -122,25 +122,21 @@ router.post('/open', verifyToken, async (req, res) => {
       });
     }
 
-    // 3. 1시간이 지났으므로 보물 지급 + 기록 갱신
+    // 3. 1시간이 지났으므로 아이템 지급 (골드는 더 이상 상자에서 직접 나오지 않습니다.
+    //    대신 도감에서 중복 아이템을 팔아 골드로 바꾸는 방식으로 바뀌었습니다.)
     const treasure = pickRandomTreasure();
-    // pg는 NUMERIC/BIGINT 값을 문자열로 반환하므로, 반드시 숫자로 변환한 뒤 더해야 합니다.
-    // (그냥 + 연산을 하면 "10" + 100 이 "10100"처럼 문자열로 이어붙여집니다.)
-    const currentTotal = parseInt(result.rows[0].total_treasure, 10);
-    const newTotal = currentTotal + treasure.amount;
+    const currentGold = parseInt(result.rows[0].total_treasure, 10);
 
     await db.query(
-      `UPDATE box_claims
-       SET last_opened_at = $1, total_treasure = $2
-       WHERE user_id = $3`,
-      [now, newTotal, userId]
+      `UPDATE box_claims SET last_opened_at = $1 WHERE user_id = $2`,
+      [now, userId]
     );
     await recordItemObtained(userId, treasure.key);
 
     res.json({
       message: '상자를 열었습니다!',
       treasure,
-      totalTreasure: newTotal,
+      totalTreasure: currentGold,
       nextAvailableAt: new Date(now.getTime() + COOLDOWN_MS),
       serverTime: now,
     });
@@ -219,6 +215,7 @@ router.get('/collection', verifyToken, async (req, res) => {
       count: obtainedMap[item.key]?.count || 0,
       obtained: Boolean(obtainedMap[item.key]),
       price: SHOP_PRICES[item.rarity],
+      sellPrice: item.amount, // 판매 시 받는 골드
     }));
 
     // 화면 상단에 보유 골드를 같이 보여주기 위해 조회
@@ -487,11 +484,11 @@ router.post('/instant-open', verifyToken, async (req, res) => {
     }
 
     const treasure = pickRandomTreasure();
-    const newTotal = currentGold - price + treasure.amount;
+    const remainingGold = currentGold - price; // 골드는 소모만 하고, 상자에서 다시 지급되진 않음
 
     await client.query(
       `UPDATE box_claims SET last_opened_at = $1, total_treasure = $2 WHERE user_id = $3`,
-      [now, newTotal, userId]
+      [now, remainingGold, userId]
     );
     await client.query(
       `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
@@ -507,7 +504,7 @@ router.post('/instant-open', verifyToken, async (req, res) => {
       message: '즉시 오픈권을 사용해 상자를 열었습니다!',
       treasure,
       pricePaid: price,
-      totalTreasure: newTotal,
+      totalTreasure: remainingGold,
       nextAvailableAt: new Date(now.getTime() + COOLDOWN_MS),
       serverTime: now,
     });
@@ -515,6 +512,59 @@ router.post('/instant-open', verifyToken, async (req, res) => {
     await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ message: '서버 오류로 즉시 오픈에 실패했습니다.' });
+  } finally {
+    client.release();
+  }
+});
+
+// -------------------------------
+// 아이템 판매: POST /api/box/sell
+// -------------------------------
+// 보유한 아이템 1개를 팔아서 골드로 바꿉니다. (item.amount 값이 판매가로 쓰입니다)
+router.post('/sell', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { itemKey } = req.body;
+
+  const item = TREASURES.find(t => t.key === itemKey);
+  if (!item) {
+    return res.status(400).json({ message: '존재하지 않는 아이템입니다.' });
+  }
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    const ownedResult = await client.query(
+      'SELECT count FROM user_items WHERE user_id = $1 AND item_key = $2 FOR UPDATE',
+      [userId, itemKey]
+    );
+    const ownedCount = ownedResult.rows[0]?.count || 0;
+
+    if (ownedCount < 1) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: '판매할 아이템이 없습니다.' });
+    }
+
+    await client.query(
+      'UPDATE user_items SET count = count - 1 WHERE user_id = $1 AND item_key = $2',
+      [userId, itemKey]
+    );
+    await client.query(
+      'UPDATE box_claims SET total_treasure = total_treasure + $1 WHERE user_id = $2',
+      [item.amount, userId]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: '판매 완료!',
+      sold: { key: item.key, name: item.name, emoji: item.emoji },
+      goldEarned: item.amount,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: '서버 오류로 판매에 실패했습니다.' });
   } finally {
     client.release();
   }
