@@ -215,6 +215,21 @@
     font-size:22px;
     color:var(--gold);
   }
+  .instant-open-btn{
+    background:none;
+    border:1px solid var(--gold-dim);
+    color:var(--gold);
+    padding:6px 14px;
+    font-size:12px;
+    border-radius:20px;
+    margin:0 auto 16px;
+    display:block;
+    width:auto;
+  }
+  .instant-open-btn:disabled{
+    opacity:0.4;
+    cursor:not-allowed;
+  }
   .result-box{
     background:var(--surface-2);
     border:1px solid #2C3F6B;
@@ -415,6 +430,8 @@
 
     <div class="status-text" id="statusText">불러오는 중...</div>
 
+    <button class="instant-open-btn hidden" id="instantOpenBtn">즉시 오픈권 사용</button>
+
     <div class="result-box" id="resultBox">
       <div class="rarity-badge" id="rarityBadge"></div>
       <div class="treasure-name" id="treasureName"></div>
@@ -436,6 +453,8 @@
       <button id="backToGameBtn">← 돌아가기</button>
     </div>
     <p style="font-size:13px; color:var(--gold); margin-top:-10px; margin-bottom:4px;">보유 골드: <strong id="shopGold">0</strong></p>
+    <p style="font-size:13px; color:var(--ink-dim); margin:0 0 12px;">수집 진행도: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong></p>
+    <button class="btn-primary hidden" id="claimBonusBtn" style="margin-bottom:16px;">🎉 도감 완성 보상 받기</button>
     <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:16px;">같은 아이템 3개로 합성하거나, 골드로 바로 구매할 수 있어요</p>
     <div class="craft-result" id="craftResult"></div>
     <div class="collection-grid" id="collectionGrid"></div>
@@ -489,6 +508,27 @@
 
   const CRAFT_COST = 3;
 
+  document.getElementById('claimBonusBtn').addEventListener('click', async function(){
+    this.disabled = true;
+    try {
+      const res = await authFetch('/api/box/collection/claim-bonus', { method: 'POST' });
+      const data = await res.json();
+
+      const craftResult = document.getElementById('craftResult');
+      craftResult.style.display = 'block';
+      if (!res.ok) {
+        craftResult.style.color = 'var(--danger)';
+        craftResult.textContent = data.message;
+      } else {
+        craftResult.style.color = 'var(--gold)';
+        craftResult.textContent = `🎉 도감 완성! +${data.bonusGold}G 획득!`;
+      }
+      await loadCollection(false);
+    } finally {
+      this.disabled = false;
+    }
+  });
+
   async function loadCollection(showLoadingText = true){
     const grid = document.getElementById('collectionGrid');
     if (showLoadingText) {
@@ -501,6 +541,14 @@
       if (!res.ok) return;
 
       document.getElementById('shopGold').textContent = data.totalTreasure;
+      document.getElementById('collectionProgress').textContent = `${data.progress.obtained}/${data.progress.total}`;
+
+      const claimBtn = document.getElementById('claimBonusBtn');
+      if (data.isComplete && !data.bonusClaimed) {
+        claimBtn.classList.remove('hidden');
+      } else {
+        claimBtn.classList.add('hidden');
+      }
 
       grid.innerHTML = '';
       data.collection.forEach(item => {
@@ -744,16 +792,20 @@
     }
   }
 
+  const INSTANT_OPEN_PRICE_PER_SECOND = 5; // 화면에 예상 가격을 보여주기 위한 값 (최종 가격은 서버가 확정)
+
   // 네트워크 요청 없이, 저장해둔 기준 시각만으로 화면을 그리는 함수 (0.2초마다 호출됨)
   function renderCountdown(){
     const statusText = document.getElementById('statusText');
     const chest = document.getElementById('chest');
+    const instantBtn = document.getElementById('instantOpenBtn');
 
     if (cachedCanOpen){
       statusText.textContent = '상자를 열 수 있습니다';
       statusText.classList.add('ready');
       chest.style.opacity = '1';
       chest.style.pointerEvents = isOpening ? 'none' : 'auto';
+      instantBtn.classList.add('hidden');
       return;
     }
 
@@ -776,6 +828,31 @@
     const m = Math.floor(remainingMs / 60000);
     const s = Math.floor((remainingMs % 60000) / 1000);
     statusText.innerHTML = `다음 상자까지 <span class="timer">${m}분 ${s}초</span>`;
+
+    const estimatedPrice = Math.ceil(remainingMs / 1000) * INSTANT_OPEN_PRICE_PER_SECOND;
+    instantBtn.textContent = `⚡ 즉시 오픈권 사용 (${estimatedPrice}G)`;
+    instantBtn.classList.remove('hidden');
+    instantBtn.disabled = isOpening;
+  }
+
+  // 상자 열기가 성공했을 때(일반/즉시 오픈 공통) 화면을 갱신하는 함수
+  function handleOpenSuccess(data){
+    syncServerTime(data.serverTime);
+    cachedNextAvailableAt = new Date(data.nextAvailableAt);
+    cachedCanOpen = false;
+    renderCountdown();
+
+    const chest = document.getElementById('chest');
+    chest.classList.add('open');
+    const rarityBadge = document.getElementById('rarityBadge');
+    rarityBadge.textContent = RARITY_LABEL[data.treasure.rarity] || '';
+    rarityBadge.className = `rarity-badge ${data.treasure.rarity}`;
+    document.getElementById('treasureName').textContent = `${data.treasure.emoji} ${data.treasure.name}`;
+    document.getElementById('treasureDetail').textContent = `+${data.treasure.amount} 획득`;
+    document.getElementById('resultBox').style.display = 'block';
+    document.getElementById('totalTreasure').textContent = data.totalTreasure;
+
+    setTimeout(() => { chest.classList.remove('open'); }, 1500);
   }
 
   // 상자 클릭 → 실제 오픈 요청
@@ -790,33 +867,37 @@
       const data = await res.json();
 
       if (!res.ok){
-        // 429 등 - 상태 새로고침으로 최신 타이머 반영
-        isOpening = false;
         refreshStatus();
         return;
       }
-
-      syncServerTime(data.serverTime);
-      cachedNextAvailableAt = new Date(data.nextAvailableAt);
-      cachedCanOpen = false;
-      renderCountdown(); // 지연 없이 바로 카운트다운 시작
-
-      this.classList.add('open');
-      const rarityBadge = document.getElementById('rarityBadge');
-      rarityBadge.textContent = RARITY_LABEL[data.treasure.rarity] || '';
-      rarityBadge.className = `rarity-badge ${data.treasure.rarity}`;
-      document.getElementById('treasureName').textContent = `${data.treasure.emoji} ${data.treasure.name}`;
-      document.getElementById('treasureDetail').textContent = `+${data.treasure.amount} 획득`;
-      document.getElementById('resultBox').style.display = 'block';
-      document.getElementById('totalTreasure').textContent = data.totalTreasure;
-
-      // 이건 순전히 상자가 닫히는 비주얼 애니메이션용 지연이고, 카운트다운과는 무관합니다.
-      setTimeout(() => {
-        this.classList.remove('open');
-      }, 1500);
+      handleOpenSuccess(data);
     } catch (err) {
-      // 네트워크 실패 시 다시 시도할 수 있게 상태 복구
       refreshStatus();
+    } finally {
+      isOpening = false;
+    }
+  });
+
+  // 즉시 오픈권 클릭 → 골드를 내고 쿨다운 없이 바로 열기
+  document.getElementById('instantOpenBtn').addEventListener('click', async function(){
+    if (isOpening) return;
+    isOpening = true;
+    this.disabled = true;
+    const originalText = this.textContent;
+    this.textContent = '여는 중...';
+
+    try {
+      const res = await authFetch('/api/box/instant-open', { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok){
+        alert(data.message); // 간단한 안내 - 골드 부족 등
+        this.textContent = originalText;
+        return;
+      }
+      handleOpenSuccess(data);
+    } catch (err) {
+      this.textContent = originalText;
     } finally {
       isOpening = false;
     }

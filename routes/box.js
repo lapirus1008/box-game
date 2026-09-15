@@ -7,7 +7,7 @@ const verifyToken = require('../middleware/auth');
 
 const router = express.Router();
 
-const COOLDOWN_MS = 10 * 1000; // 10초
+const COOLDOWN_MS = 10 * 1000; // 10초 테스트
 
 // 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
 // key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
@@ -32,6 +32,7 @@ const TREASURES = [
 // 등급별 구매 가격입니다. 상자 뽑기보다는 비싸게 잡아서, "직접 사는 것"이
 // 확률에 기대는 것보다 확실하지만 비용이 크다는 느낌을 주도록 했습니다.
 const SHOP_PRICES = { common: 60, rare: 250, epic: 900, legendary: 3000 };
+const INSTANT_OPEN_PRICE_PER_SECOND = 5; // 남은 쿨다운 1초당 골드 가격
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
 const CRAFT_COST = 3; // 같은 아이템 몇 개를 모아야 합성할 수 있는지
 
@@ -220,12 +221,22 @@ router.get('/collection', verifyToken, async (req, res) => {
 
     // 화면 상단에 보유 골드를 같이 보여주기 위해 조회
     const treasureResult = await db.query(
-      'SELECT total_treasure FROM box_claims WHERE user_id = $1',
+      'SELECT total_treasure, completion_bonus_claimed FROM box_claims WHERE user_id = $1',
       [userId]
     );
     const totalTreasure = parseInt(treasureResult.rows[0]?.total_treasure || 0, 10);
+    const bonusClaimed = treasureResult.rows[0]?.completion_bonus_claimed || false;
 
-    res.json({ collection, totalTreasure });
+    const obtainedCount = collection.filter(item => item.obtained).length;
+    const isComplete = obtainedCount === TREASURES.length;
+
+    res.json({
+      collection,
+      totalTreasure,
+      progress: { obtained: obtainedCount, total: TREASURES.length },
+      isComplete,
+      bonusClaimed,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: '서버 오류가 발생했습니다.' });
@@ -362,6 +373,146 @@ router.post('/shop/buy', verifyToken, async (req, res) => {
     await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ message: '서버 오류로 구매에 실패했습니다.' });
+  } finally {
+    client.release();
+  }
+});
+
+const COMPLETION_BONUS_GOLD = 2000; // 도감을 다 채웠을 때 지급할 골드
+
+// -------------------------------
+// 도감 완성 보상 수령: POST /api/box/collection/claim-bonus
+// -------------------------------
+router.post('/collection/claim-bonus', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    // 1. 이미 받았는지, 그리고 현재 골드를 확인 (잠금)
+    const claimResult = await client.query(
+      'SELECT total_treasure, completion_bonus_claimed FROM box_claims WHERE user_id = $1 FOR UPDATE',
+      [userId]
+    );
+    if (claimResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: '아직 상자를 한 번도 열지 않았습니다.' });
+    }
+    if (claimResult.rows[0].completion_bonus_claimed) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: '이미 완성 보상을 받으셨습니다.' });
+    }
+
+    // 2. 정말로 다 모았는지 서버에서 다시 확인 (클라이언트를 신뢰하지 않음)
+    const itemsResult = await client.query(
+      'SELECT item_key FROM user_items WHERE user_id = $1 AND count > 0',
+      [userId]
+    );
+    const obtainedKeys = new Set(itemsResult.rows.map(r => r.item_key));
+    const isComplete = TREASURES.every(t => obtainedKeys.has(t.key));
+
+    if (!isComplete) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: '아직 모든 아이템을 모으지 못했습니다.' });
+    }
+
+    // 3. 보상 지급 + 수령 표시
+    const currentGold = parseInt(claimResult.rows[0].total_treasure, 10);
+    await client.query(
+      `UPDATE box_claims
+       SET total_treasure = $1, completion_bonus_claimed = TRUE
+       WHERE user_id = $2`,
+      [currentGold + COMPLETION_BONUS_GOLD, userId]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: '도감 완성 보상을 받았습니다!',
+      bonusGold: COMPLETION_BONUS_GOLD,
+      totalTreasure: currentGold + COMPLETION_BONUS_GOLD,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  } finally {
+    client.release();
+  }
+});
+
+// -------------------------------
+// 즉시 오픈권: POST /api/box/instant-open
+// -------------------------------
+// 쿨다운이 남아있어도 골드를 내고 바로 상자를 엽니다. 가격은 남은 시간에 비례합니다.
+router.post('/instant-open', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      'SELECT last_opened_at, total_treasure FROM box_claims WHERE user_id = $1 FOR UPDATE',
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: '아직 상자를 연 적이 없어 즉시 오픈권이 필요 없습니다. 그냥 상자를 여세요.' });
+    }
+
+    const now = new Date();
+    const lastOpened = new Date(result.rows[0].last_opened_at);
+    const elapsedMs = now - lastOpened;
+    const remainingMs = COOLDOWN_MS - elapsedMs;
+
+    if (remainingMs <= 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: '이미 열 수 있는 상태입니다. 즉시 오픈권 없이 그냥 여세요.' });
+    }
+
+    const price = Math.ceil(remainingMs / 1000) * INSTANT_OPEN_PRICE_PER_SECOND;
+    const currentGold = parseInt(result.rows[0].total_treasure, 10);
+
+    if (currentGold < price) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        message: `골드가 부족합니다. (필요: ${price}, 보유: ${currentGold})`,
+        price,
+      });
+    }
+
+    const treasure = pickRandomTreasure();
+    const newTotal = currentGold - price + treasure.amount;
+
+    await client.query(
+      `UPDATE box_claims SET last_opened_at = $1, total_treasure = $2 WHERE user_id = $3`,
+      [now, newTotal, userId]
+    );
+    await client.query(
+      `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
+       VALUES ($1, $2, 1, NOW())
+       ON CONFLICT (user_id, item_key)
+       DO UPDATE SET count = user_items.count + 1`,
+      [userId, treasure.key]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: '즉시 오픈권을 사용해 상자를 열었습니다!',
+      treasure,
+      pricePaid: price,
+      totalTreasure: newTotal,
+      nextAvailableAt: new Date(now.getTime() + COOLDOWN_MS),
+      serverTime: now,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: '서버 오류로 즉시 오픈에 실패했습니다.' });
   } finally {
     client.release();
   }
