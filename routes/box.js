@@ -81,7 +81,8 @@ router.post('/open', verifyToken, async (req, res) => {
 
     // 3. 1시간이 지났으므로 보물 지급 + 기록 갱신
     const treasure = pickRandomTreasure();
-    const newTotal = result.rows[0].total_treasure + treasure.amount;
+    const currentTotal = parseInt(result.rows[0].total_treasure, 10);
+    const newTotal = currentTotal + treasure.amount;
 
     await db.query(
       `UPDATE box_claims
@@ -126,7 +127,7 @@ router.get('/status', verifyToken, async (req, res) => {
 
     res.json({
       canOpen,
-      totalTreasure: result.rows[0].total_treasure,
+      totalTreasure: parseInt(result.rows[0].total_treasure, 10),
       nextAvailableAt: canOpen
         ? null
         : new Date(lastOpened.getTime() + COOLDOWN_MS),
