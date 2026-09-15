@@ -336,6 +336,19 @@
     color:var(--ink-dim);
     cursor:not-allowed;
   }
+  .buy-btn{
+    margin-top:6px;
+    padding:6px;
+    font-size:11px;
+    background:var(--gold);
+    color:#1A1305;
+    border-radius:8px;
+  }
+  .buy-btn:disabled{
+    background:#5C5030;
+    color:#8A8266;
+    cursor:not-allowed;
+  }
   .craft-result{
     background:var(--surface-2);
     border:1px solid #2C3F6B;
@@ -422,7 +435,8 @@
       <h1 style="margin:0; font-size:20px;">도감</h1>
       <button id="backToGameBtn">← 돌아가기</button>
     </div>
-    <p style="font-size:12px; color:var(--ink-dim); margin-top:-10px; margin-bottom:16px;">같은 아이템을 3개 모으면 한 등급 위 아이템으로 합성할 수 있어요</p>
+    <p style="font-size:13px; color:var(--gold); margin-top:-10px; margin-bottom:4px;">보유 골드: <strong id="shopGold">0</strong></p>
+    <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:16px;">같은 아이템 3개로 합성하거나, 골드로 바로 구매할 수 있어요</p>
     <div class="craft-result" id="craftResult"></div>
     <div class="collection-grid" id="collectionGrid"></div>
   </div>
@@ -470,6 +484,7 @@
   document.getElementById('backToGameBtn').addEventListener('click', () => {
     collectionScreen.classList.add('hidden');
     gameScreen.classList.remove('hidden');
+    refreshStatus(); // 상점에서 골드를 썼을 수 있으니 게임 화면 골드 표시도 갱신
   });
 
   const CRAFT_COST = 3;
@@ -485,6 +500,8 @@
       const data = await res.json();
       if (!res.ok) return;
 
+      document.getElementById('shopGold').textContent = data.totalTreasure;
+
       grid.innerHTML = '';
       data.collection.forEach(item => {
         const card = document.createElement('div');
@@ -492,12 +509,14 @@
         card.title = item.obtained ? item.flavor : '아직 발견하지 못한 아이템입니다';
 
         const canCraft = item.obtained && item.count >= CRAFT_COST && item.rarity !== 'legendary';
+        const canAfford = data.totalTreasure >= item.price;
 
         card.innerHTML = `
           <span class="item-emoji">${item.obtained ? item.emoji : '❔'}</span>
           <div class="item-name">${item.obtained ? item.name : '???'}</div>
-          ${item.obtained && item.count > 0 ? `<div class="item-count">x${item.count}</div>` : ''}
+          ${item.obtained ? `<div class="item-count">x${item.count}</div>` : ''}
           ${canCraft ? `<button class="craft-btn" data-key="${item.key}">합성(-${CRAFT_COST})</button>` : ''}
+          <button class="buy-btn" data-key="${item.key}" ${canAfford ? '' : 'disabled'}>${item.price}G 구매</button>
         `;
         grid.appendChild(card);
       });
@@ -506,8 +525,45 @@
       grid.querySelectorAll('.craft-btn').forEach(btn => {
         btn.addEventListener('click', () => craftItem(btn.dataset.key, btn));
       });
+      // 구매 버튼 클릭 이벤트 연결
+      grid.querySelectorAll('.buy-btn').forEach(btn => {
+        btn.addEventListener('click', () => buyItem(btn.dataset.key, btn));
+      });
     } catch (err) {
       grid.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
+    }
+  }
+
+  async function buyItem(itemKey, btnEl){
+    btnEl.disabled = true;
+    const originalText = btnEl.textContent;
+    btnEl.textContent = '구매 중...';
+
+    try {
+      const res = await authFetch('/api/box/shop/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemKey }),
+      });
+      const data = await res.json();
+
+      const craftResult = document.getElementById('craftResult');
+      if (!res.ok) {
+        craftResult.style.display = 'block';
+        craftResult.style.color = 'var(--danger)';
+        craftResult.textContent = data.message;
+        btnEl.disabled = false;
+        btnEl.textContent = originalText;
+      } else {
+        craftResult.style.display = 'block';
+        craftResult.style.color = 'var(--ink)';
+        craftResult.innerHTML = `${data.pricePaid}G 지불 <span class="arrow">→</span> ${data.item.emoji} ${data.item.name} 구매 완료!`;
+      }
+
+      await loadCollection(false); // 골드/보유량 최신화 (깜빡임 없이)
+    } catch (err) {
+      btnEl.disabled = false;
+      btnEl.textContent = originalText;
     }
   }
 

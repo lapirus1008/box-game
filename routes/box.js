@@ -7,7 +7,7 @@ const verifyToken = require('../middleware/auth');
 
 const router = express.Router();
 
-const COOLDOWN_MS = 10 * 1000; // 10초 테스트
+const COOLDOWN_MS = 10 * 1000; // 10초
 
 // 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
 // key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
@@ -29,7 +29,9 @@ const TREASURES = [
   { key: 'hourglass_sand',  name: '시간의 모래',   rarity: 'legendary', emoji: '⏳', amount: 600, weight: 0.2, flavor: '만지는 순간 시간이 멈춘 듯한 착각이 든다.' },
 ];
 
-// 등급이 오르는 순서. 합성할 때 "다음 등급이 뭔지" 여기서 찾습니다.
+// 등급별 구매 가격입니다. 상자 뽑기보다는 비싸게 잡아서, "직접 사는 것"이
+// 확률에 기대는 것보다 확실하지만 비용이 크다는 느낌을 주도록 했습니다.
+const SHOP_PRICES = { common: 60, rare: 250, epic: 900, legendary: 3000 };
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
 const CRAFT_COST = 3; // 같은 아이템 몇 개를 모아야 합성할 수 있는지
 
@@ -213,9 +215,17 @@ router.get('/collection', verifyToken, async (req, res) => {
       flavor: item.flavor,
       count: obtainedMap[item.key]?.count || 0,
       obtained: Boolean(obtainedMap[item.key]),
+      price: SHOP_PRICES[item.rarity],
     }));
 
-    res.json({ collection });
+    // 화면 상단에 보유 골드를 같이 보여주기 위해 조회
+    const treasureResult = await db.query(
+      'SELECT total_treasure FROM box_claims WHERE user_id = $1',
+      [userId]
+    );
+    const totalTreasure = parseInt(treasureResult.rows[0]?.total_treasure || 0, 10);
+
+    res.json({ collection, totalTreasure });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: '서버 오류가 발생했습니다.' });
@@ -288,6 +298,70 @@ router.post('/craft', verifyToken, async (req, res) => {
     await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ message: '서버 오류로 합성에 실패했습니다.' });
+  } finally {
+    client.release();
+  }
+});
+
+// -------------------------------
+// 상점 구매: POST /api/box/shop/buy
+// -------------------------------
+// 누적 골드(total_treasure)를 소모해서 원하는 아이템을 확정으로 얻습니다.
+router.post('/shop/buy', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { itemKey } = req.body;
+
+  const item = TREASURES.find(t => t.key === itemKey);
+  if (!item) {
+    return res.status(400).json({ message: '존재하지 않는 아이템입니다.' });
+  }
+  const price = SHOP_PRICES[item.rarity];
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    // 1. 현재 골드 확인 (동시 요청에도 안전하도록 잠금)
+    const goldResult = await client.query(
+      'SELECT total_treasure FROM box_claims WHERE user_id = $1 FOR UPDATE',
+      [userId]
+    );
+
+    const currentGold = parseInt(goldResult.rows[0]?.total_treasure || 0, 10);
+    if (currentGold < price) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        message: `골드가 부족합니다. (필요: ${price}, 보유: ${currentGold})`,
+      });
+    }
+
+    // 2. 골드 차감
+    await client.query(
+      'UPDATE box_claims SET total_treasure = total_treasure - $1 WHERE user_id = $2',
+      [price, userId]
+    );
+
+    // 3. 아이템 지급
+    await client.query(
+      `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
+       VALUES ($1, $2, 1, NOW())
+       ON CONFLICT (user_id, item_key)
+       DO UPDATE SET count = user_items.count + 1`,
+      [userId, item.key]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: '구매 성공!',
+      item,
+      pricePaid: price,
+      remainingGold: currentGold - price,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: '서버 오류로 구매에 실패했습니다.' });
   } finally {
     client.release();
   }
