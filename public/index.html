@@ -474,9 +474,11 @@
 
   const CRAFT_COST = 3;
 
-  async function loadCollection(){
+  async function loadCollection(showLoadingText = true){
     const grid = document.getElementById('collectionGrid');
-    grid.innerHTML = '<p style="color:var(--ink-dim); font-size:13px;">불러오는 중...</p>';
+    if (showLoadingText) {
+      grid.innerHTML = '<p style="color:var(--ink-dim); font-size:13px;">불러오는 중...</p>';
+    }
 
     try {
       const res = await authFetch('/api/box/collection');
@@ -532,7 +534,7 @@
         craftResult.innerHTML = `${data.consumed.name} x${data.consumed.amount} <span class="arrow">→</span> ${data.result.emoji} ${data.result.name} 획득!`;
       }
 
-      await loadCollection(); // 최신 개수로 도감 다시 그리기
+      await loadCollection(false); // 로딩 문구 없이 조용히 갱신 (깜빡임 방지)
     } catch (err) {
       btnEl.disabled = false;
       btnEl.textContent = `합성(-${CRAFT_COST})`;
