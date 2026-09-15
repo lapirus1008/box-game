@@ -8,6 +8,26 @@ const db = require('../db');
 
 const router = express.Router();
 
+// 이메일 형식이 올바른지 확인하는 정규식
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// 회원가입/로그인 입력값을 검증하는 함수
+function validateSignupInput({ email, password, nickname }) {
+  if (!email || !password || !nickname) {
+    return '이메일, 비밀번호, 닉네임을 모두 입력해주세요.';
+  }
+  if (!EMAIL_REGEX.test(email)) {
+    return '올바른 이메일 형식이 아닙니다.';
+  }
+  if (password.length < 8) {
+    return '비밀번호는 8자 이상이어야 합니다.';
+  }
+  if (nickname.trim().length < 2 || nickname.trim().length > 20) {
+    return '닉네임은 2자 이상 20자 이하로 입력해주세요.';
+  }
+  return null; // 문제 없음
+}
+
 // -------------------------------
 // 회원가입: POST /api/auth/signup
 // -------------------------------
@@ -16,9 +36,10 @@ const router = express.Router();
 router.post('/signup', async (req, res) => {
   const { email, password, nickname } = req.body;
 
-  // 1. 입력값 검증 (없으면 바로 에러 응답)
-  if (!email || !password || !nickname) {
-    return res.status(400).json({ message: '이메일, 비밀번호, 닉네임을 모두 입력해주세요.' });
+  // 1. 입력값 검증 (형식, 길이까지 확인)
+  const validationError = validateSignupInput({ email, password, nickname });
+  if (validationError) {
+    return res.status(400).json({ message: validationError });
   }
 
   try {
@@ -43,7 +64,16 @@ router.post('/signup', async (req, res) => {
 
     const newUser = result.rows[0];
 
-    // 5. 회원가입과 동시에 로그인 토큰도 바로 발급 (선택사항이지만 편리함)
+    // 5. 시작할 때 바로 체험해볼 수 있도록 초기 골드를 지급하고,
+    //    last_opened_at을 아주 예전으로 넣어서 가입 직후 바로 상자를 열 수 있게 합니다.
+    const INITIAL_GOLD = 2000;
+    await db.query(
+      `INSERT INTO box_claims (user_id, last_opened_at, total_treasure)
+       VALUES ($1, $2, $3)`,
+      [newUser.id, new Date(0), INITIAL_GOLD]
+    );
+
+    // 6. 회원가입과 동시에 로그인 토큰도 바로 발급 (선택사항이지만 편리함)
     const token = jwt.sign(
       { userId: newUser.id, email: newUser.email },
       process.env.JWT_SECRET,
@@ -70,6 +100,9 @@ router.post('/login', async (req, res) => {
 
   if (!email || !password) {
     return res.status(400).json({ message: '이메일과 비밀번호를 입력해주세요.' });
+  }
+  if (!EMAIL_REGEX.test(email)) {
+    return res.status(400).json({ message: '올바른 이메일 형식이 아닙니다.' });
   }
 
   try {
@@ -103,6 +136,31 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: '서버 오류로 로그인에 실패했습니다.' });
+  }
+});
+
+const verifyToken = require('../middleware/auth');
+
+// -------------------------------
+// 내 정보 조회: GET /api/auth/me
+// -------------------------------
+// 새로고침 후에도 로그인 상태를 유지하기 위해, 저장해둔 토큰이 아직
+// 유효한지 확인하고 사용자 정보를 다시 받아오는 용도로 씁니다.
+router.get('/me', verifyToken, async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT id, email, nickname FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+    }
+
+    res.json({ user: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류가 발생했습니다.' });
   }
 });
 
