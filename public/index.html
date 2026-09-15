@@ -18,6 +18,10 @@
     --ink-dim:#A9AEC4;
     --danger:#C1543C;
     --radius:16px;
+    --rarity-common:#9AA3B2;
+    --rarity-rare:#4C8CF0;
+    --rarity-epic:#B15CF0;
+    --rarity-legendary:#E3B23C;
   }
   *{ box-sizing:border-box; }
   body{
@@ -239,6 +243,86 @@
     color:var(--gold);
     font-size:18px;
   }
+
+  /* 등급 뱃지 (결과창에 표시) */
+  .rarity-badge{
+    display:inline-block;
+    font-size:11px;
+    font-weight:600;
+    padding:3px 10px;
+    border-radius:20px;
+    margin-bottom:8px;
+  }
+  .rarity-badge.common{ background:rgba(154,163,178,0.2); color:var(--rarity-common); }
+  .rarity-badge.rare{ background:rgba(76,140,240,0.2); color:var(--rarity-rare); }
+  .rarity-badge.epic{ background:rgba(177,92,240,0.2); color:var(--rarity-epic); }
+  .rarity-badge.legendary{ background:rgba(227,178,60,0.2); color:var(--rarity-legendary); }
+
+  /* 도감 열기 링크 */
+  .collection-link{
+    display:block;
+    text-align:center;
+    margin-top:18px;
+    font-size:13px;
+    color:var(--ink-dim);
+    text-decoration:underline;
+    cursor:pointer;
+    background:none;
+    border:none;
+    width:100%;
+    font-family:inherit;
+  }
+
+  /* 도감 화면 */
+  #collectionScreen .top-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:20px;
+  }
+  #backToGameBtn{
+    all:unset;
+    color:var(--ink-dim);
+    font-size:13px;
+    cursor:pointer;
+    text-decoration:underline;
+  }
+  .collection-grid{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:10px;
+  }
+  .item-card{
+    background:var(--surface-2);
+    border-radius:12px;
+    padding:14px 8px;
+    text-align:center;
+    border:2px solid transparent;
+  }
+  .item-card.locked{
+    opacity:0.4;
+  }
+  .item-card .item-emoji{
+    font-size:28px;
+    display:block;
+    margin-bottom:6px;
+  }
+  .item-card .item-name{
+    font-size:11px;
+    color:var(--ink);
+    line-height:1.3;
+    min-height:28px;
+  }
+  .item-card .item-count{
+    font-size:11px;
+    color:var(--gold);
+    margin-top:4px;
+    font-weight:600;
+  }
+  .item-card.common{ border-color:rgba(154,163,178,0.4); }
+  .item-card.rare{ border-color:rgba(76,140,240,0.4); }
+  .item-card.epic{ border-color:rgba(177,92,240,0.4); }
+  .item-card.legendary{ border-color:rgba(227,178,60,0.5); }
 </style>
 </head>
 <body>
@@ -295,6 +379,7 @@
     <div class="status-text" id="statusText">불러오는 중...</div>
 
     <div class="result-box" id="resultBox">
+      <div class="rarity-badge" id="rarityBadge"></div>
       <div class="treasure-name" id="treasureName"></div>
       <div id="treasureDetail" style="font-size:13px; color:var(--ink-dim);"></div>
     </div>
@@ -303,12 +388,22 @@
       <span class="label">누적 보물</span>
       <span class="value" id="totalTreasure">0</span>
     </div>
+
+    <button class="collection-link" id="openCollectionBtn">📖 도감 보기</button>
+  </div>
+
+  <!-- 도감 화면 -->
+  <div class="card hidden" id="collectionScreen">
+    <div class="top-row">
+      <h1 style="margin:0; font-size:20px;">도감</h1>
+      <button id="backToGameBtn">← 돌아가기</button>
+    </div>
+    <div class="collection-grid" id="collectionGrid"></div>
   </div>
 
 <script>
   // ⚠️ 배포 후에는 실제 백엔드 서버 주소로 바꿔주세요.
   // 예: const API_BASE = 'https://box-game-api.onrender.com';
-  // const API_BASE = 'http://localhost:3000';
   const API_BASE = 'https://box-game-6y1g.onrender.com';
 
   // 배포된 사이트에서는 새로고침해도 로그인이 유지되도록 토큰을 localStorage에 저장합니다.
@@ -318,6 +413,7 @@
 
   const authScreen = document.getElementById('authScreen');
   const gameScreen = document.getElementById('gameScreen');
+  const collectionScreen = document.getElementById('collectionScreen');
   const authError = document.getElementById('authError');
 
   // 페이지를 열자마자 저장된 토큰이 아직 유효한지 확인해서 자동 로그인 시도
@@ -335,6 +431,45 @@
       authToken = null;
     }
   })();
+
+  const RARITY_LABEL = { common: '일반', rare: '희귀', epic: '영웅', legendary: '전설' };
+
+  document.getElementById('openCollectionBtn').addEventListener('click', async () => {
+    gameScreen.classList.add('hidden');
+    collectionScreen.classList.remove('hidden');
+    await loadCollection();
+  });
+
+  document.getElementById('backToGameBtn').addEventListener('click', () => {
+    collectionScreen.classList.add('hidden');
+    gameScreen.classList.remove('hidden');
+  });
+
+  async function loadCollection(){
+    const grid = document.getElementById('collectionGrid');
+    grid.innerHTML = '<p style="color:var(--ink-dim); font-size:13px;">불러오는 중...</p>';
+
+    try {
+      const res = await authFetch('/api/box/collection');
+      const data = await res.json();
+      if (!res.ok) return;
+
+      grid.innerHTML = '';
+      data.collection.forEach(item => {
+        const card = document.createElement('div');
+        card.className = `item-card ${item.rarity} ${item.obtained ? '' : 'locked'}`;
+        card.title = item.obtained ? item.flavor : '아직 발견하지 못한 아이템입니다';
+        card.innerHTML = `
+          <span class="item-emoji">${item.obtained ? item.emoji : '❔'}</span>
+          <div class="item-name">${item.obtained ? item.name : '???'}</div>
+          ${item.obtained ? `<div class="item-count">x${item.count}</div>` : ''}
+        `;
+        grid.appendChild(card);
+      });
+    } catch (err) {
+      grid.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
+    }
+  }
 
   function showAuthError(message){
     authError.textContent = message;
@@ -541,7 +676,10 @@
       renderCountdown(); // 지연 없이 바로 카운트다운 시작
 
       this.classList.add('open');
-      document.getElementById('treasureName').textContent = data.treasure.name;
+      const rarityBadge = document.getElementById('rarityBadge');
+      rarityBadge.textContent = RARITY_LABEL[data.treasure.rarity] || '';
+      rarityBadge.className = `rarity-badge ${data.treasure.rarity}`;
+      document.getElementById('treasureName').textContent = `${data.treasure.emoji} ${data.treasure.name}`;
       document.getElementById('treasureDetail').textContent = `+${data.treasure.amount} 획득`;
       document.getElementById('resultBox').style.display = 'block';
       document.getElementById('totalTreasure').textContent = data.totalTreasure;

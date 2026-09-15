@@ -9,12 +9,24 @@ const router = express.Router();
 
 const COOLDOWN_MS = 10 * 1000; // 10초 테스트 // 1시간 (밀리초 단위)
 
-// 지급할 보물 후보 목록입니다. 원하는 대로 자유롭게 바꾸세요.
+// 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
+// key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
 const TREASURES = [
-  { name: '동화 10개', amount: 10, weight: 50 },   // weight가 클수록 자주 나옴
-  { name: '동화 30개', amount: 30, weight: 30 },
-  { name: '동화 100개', amount: 100, weight: 15 },
-  { name: '전설 아이템', amount: 500, weight: 5 },
+  // 일반 (common) - 자주 나옴
+  { key: 'rusty_coin',    name: '녹슨 동전',      rarity: 'common',    emoji: '🪙', amount: 10, weight: 30, flavor: '오래된 상인의 지갑에서 나온 듯한 동전.' },
+  { key: 'wood_carving',  name: '나무 조각상',    rarity: 'common',    emoji: '🪵', amount: 8,  weight: 25, flavor: '투박하지만 정성이 느껴지는 조각.' },
+  { key: 'torn_map',      name: '낡은 지도 조각', rarity: 'common',    emoji: '🗺️', amount: 12, weight: 20, flavor: '나머지 조각은 어디에 있을까?' },
+  { key: 'small_gem',     name: '작은 보석',      rarity: 'common',    emoji: '💎', amount: 15, weight: 15, flavor: '작지만 은은하게 빛난다.' },
+  // 희귀 (rare)
+  { key: 'silver_pouch',  name: '은화 주머니',    rarity: 'rare',      emoji: '👛', amount: 40, weight: 6,  flavor: '묵직한 소리가 나는 주머니.' },
+  { key: 'lucky_charm',   name: '행운의 부적',    rarity: 'rare',      emoji: '🍀', amount: 45, weight: 5,  flavor: '지니고 있으면 왠지 좋은 일이 생길 것 같다.' },
+  { key: 'fairy_wing',    name: '요정의 날개',    rarity: 'rare',      emoji: '🧚', amount: 50, weight: 4,  flavor: '만지면 반짝이는 가루가 떨어진다.' },
+  // 영웅 (epic)
+  { key: 'dragon_scale',  name: '용의 비늘',      rarity: 'epic',      emoji: '🐉', amount: 150, weight: 1.5, flavor: '믿기 힘들 정도로 단단하다.' },
+  { key: 'star_fragment', name: '별의 파편',      rarity: 'epic',      emoji: '✨', amount: 180, weight: 1,   flavor: '밤하늘에서 떨어진 조각이라고 전해진다.' },
+  // 전설 (legendary) - 매우 희귀
+  { key: 'phoenix_feather', name: '불사조의 깃털', rarity: 'legendary', emoji: '🔥', amount: 500, weight: 0.3, flavor: '전설 속에서만 존재한다던 그 깃털.' },
+  { key: 'hourglass_sand',  name: '시간의 모래',   rarity: 'legendary', emoji: '⏳', amount: 600, weight: 0.2, flavor: '만지는 순간 시간이 멈춘 듯한 착각이 든다.' },
 ];
 
 // weight(가중치)를 기반으로 랜덤하게 보물 하나를 뽑는 함수
@@ -29,11 +41,20 @@ function pickRandomTreasure() {
   return TREASURES[0]; // 혹시 모를 예외 상황 대비
 }
 
+// 아이템을 얻을 때마다 도감(user_items)에 기록/카운트 증가
+async function recordItemObtained(userId, itemKey){
+  await db.query(
+    `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
+     VALUES ($1, $2, 1, NOW())
+     ON CONFLICT (user_id, item_key)
+     DO UPDATE SET count = user_items.count + 1`,
+    [userId, itemKey]
+  );
+}
+
 // -------------------------------
 // 상자 열기: POST /api/box/open
 // -------------------------------
-// verifyToken 미들웨어를 먼저 거치기 때문에, 로그인한 사용자만 이 라우트에 도달할 수 있습니다.
-// 미들웨어를 통과하면 req.user에 { userId, email }이 들어있습니다.
 router.post('/open', verifyToken, async (req, res) => {
   const userId = req.user.userId;
 
@@ -55,6 +76,7 @@ router.post('/open', verifyToken, async (req, res) => {
          VALUES ($1, $2, $3)`,
         [userId, now, treasure.amount]
       );
+      await recordItemObtained(userId, treasure.key);
 
       return res.json({
         message: '상자를 열었습니다!',
@@ -82,6 +104,8 @@ router.post('/open', verifyToken, async (req, res) => {
 
     // 3. 1시간이 지났으므로 보물 지급 + 기록 갱신
     const treasure = pickRandomTreasure();
+    // pg는 NUMERIC/BIGINT 값을 문자열로 반환하므로, 반드시 숫자로 변환한 뒤 더해야 합니다.
+    // (그냥 + 연산을 하면 "10" + 100 이 "10100"처럼 문자열로 이어붙여집니다.)
     const currentTotal = parseInt(result.rows[0].total_treasure, 10);
     const newTotal = currentTotal + treasure.amount;
 
@@ -91,6 +115,7 @@ router.post('/open', verifyToken, async (req, res) => {
        WHERE user_id = $3`,
       [now, newTotal, userId]
     );
+    await recordItemObtained(userId, treasure.key);
 
     res.json({
       message: '상자를 열었습니다!',
@@ -135,6 +160,47 @@ router.get('/status', verifyToken, async (req, res) => {
         : new Date(lastOpened.getTime() + COOLDOWN_MS),
       serverTime: now,
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// -------------------------------
+// 도감 조회: GET /api/box/collection
+// -------------------------------
+// 전체 아이템 목록과, 이 사용자가 각 아이템을 몇 개 모았는지 함께 반환합니다.
+// 아직 못 모은 아이템은 count가 0으로 내려가서, 프론트엔드에서 실루엣 처리할 수 있습니다.
+router.get('/collection', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const result = await db.query(
+      'SELECT item_key, count, first_obtained_at FROM user_items WHERE user_id = $1',
+      [userId]
+    );
+
+    // key로 빠르게 찾을 수 있도록 맵으로 변환
+    const obtainedMap = {};
+    result.rows.forEach(row => {
+      obtainedMap[row.item_key] = {
+        count: row.count,
+        firstObtainedAt: row.first_obtained_at,
+      };
+    });
+
+    // 전체 아이템 목록에 획득 여부를 합쳐서 반환 (아직 못 모은 아이템도 목록엔 포함, count만 0)
+    const collection = TREASURES.map(item => ({
+      key: item.key,
+      name: item.name,
+      rarity: item.rarity,
+      emoji: item.emoji,
+      flavor: item.flavor,
+      count: obtainedMap[item.key]?.count || 0,
+      obtained: Boolean(obtainedMap[item.key]),
+    }));
+
+    res.json({ collection });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: '서버 오류가 발생했습니다.' });
