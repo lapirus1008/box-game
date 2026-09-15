@@ -792,7 +792,7 @@
     }
   }
 
-  const INSTANT_OPEN_PRICE_PER_SECOND = 5; // 화면에 예상 가격을 보여주기 위한 값 (최종 가격은 서버가 확정)
+  const INSTANT_OPEN_PRICE_PER_MINUTE = 3; // 화면에 예상 가격을 보여주기 위한 값 (최종 가격은 서버가 확정)
 
   // 네트워크 요청 없이, 저장해둔 기준 시각만으로 화면을 그리는 함수 (0.2초마다 호출됨)
   function renderCountdown(){
@@ -829,7 +829,7 @@
     const s = Math.floor((remainingMs % 60000) / 1000);
     statusText.innerHTML = `다음 상자까지 <span class="timer">${m}분 ${s}초</span>`;
 
-    const estimatedPrice = Math.ceil(remainingMs / 1000) * INSTANT_OPEN_PRICE_PER_SECOND;
+    const estimatedPrice = Math.max(1, Math.ceil((remainingMs / 60000) * INSTANT_OPEN_PRICE_PER_MINUTE));
     instantBtn.textContent = `⚡ 즉시 오픈권 사용 (${estimatedPrice}G)`;
     instantBtn.classList.remove('hidden');
     instantBtn.disabled = isOpening;

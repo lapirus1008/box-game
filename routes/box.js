@@ -7,7 +7,7 @@ const verifyToken = require('../middleware/auth');
 
 const router = express.Router();
 
-const COOLDOWN_MS = 10 * 1000; // 10초 테스트
+const COOLDOWN_MS = 60 * 60 * 1000; // 1시간 (밀리초 단위)
 
 // 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
 // key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
@@ -32,7 +32,9 @@ const TREASURES = [
 // 등급별 구매 가격입니다. 상자 뽑기보다는 비싸게 잡아서, "직접 사는 것"이
 // 확률에 기대는 것보다 확실하지만 비용이 크다는 느낌을 주도록 했습니다.
 const SHOP_PRICES = { common: 60, rare: 250, epic: 900, legendary: 3000 };
-const INSTANT_OPEN_PRICE_PER_SECOND = 5; // 남은 쿨다운 1초당 골드 가격
+// 1시간(3600초) 쿨다운을 다 스킵해도 상자 몇 번 분량(평균 21골드 x 약 8~9번) 정도가 되도록
+// "초당"이 아니라 "분당" 기준으로 낮게 잡았습니다. (예전 초당 5골드는 1시간에 18,000골드로 너무 비쌌음)
+const INSTANT_OPEN_PRICE_PER_MINUTE = 3;
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
 const CRAFT_COST = 3; // 같은 아이템 몇 개를 모아야 합성할 수 있는지
 
@@ -473,7 +475,7 @@ router.post('/instant-open', verifyToken, async (req, res) => {
       return res.status(400).json({ message: '이미 열 수 있는 상태입니다. 즉시 오픈권 없이 그냥 여세요.' });
     }
 
-    const price = Math.ceil(remainingMs / 1000) * INSTANT_OPEN_PRICE_PER_SECOND;
+    const price = Math.max(1, Math.ceil((remainingMs / 60000) * INSTANT_OPEN_PRICE_PER_MINUTE));
     const currentGold = parseInt(result.rows[0].total_treasure, 10);
 
     if (currentGold < price) {
