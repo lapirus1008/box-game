@@ -7,14 +7,14 @@ const verifyToken = require('../middleware/auth');
 
 const router = express.Router();
 
-const COOLDOWN_MS = 10 * 1000; // 10초 테스트 // 1시간 (밀리초 단위)
+const COOLDOWN_MS = 60 * 60 * 1000; // 1시간 (밀리초 단위)
 
 // 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
 // key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
 const TREASURES = [
   // 일반 (common) - 자주 나옴
-  { key: 'rusty_coin',    name: '녹슨 동전',      rarity: 'common',    emoji: '🪙', amount: 10, weight: 30, flavor: '오래된 상인의 지갑에서 나온 듯한 동전.' },
-  { key: 'wood_carving',  name: '나무 조각상',    rarity: 'common',    emoji: '🪵', amount: 8,  weight: 25, flavor: '투박하지만 정성이 느껴지는 조각.' },
+  { key: 'rusty_coin',    name: '녹슨 동전',      rarity: 'common',    emoji: '🟤', amount: 10, weight: 30, flavor: '오래된 상인의 지갑에서 나온 듯한 동전.' },
+  { key: 'stone_carving',  name: '돌 조각상',    rarity: 'common',    emoji: '🗿', amount: 8,  weight: 25, flavor: '투박하지만 정성이 느껴지는 조각.' },
   { key: 'torn_map',      name: '낡은 지도 조각', rarity: 'common',    emoji: '🗺️', amount: 12, weight: 20, flavor: '나머지 조각은 어디에 있을까?' },
   { key: 'small_gem',     name: '작은 보석',      rarity: 'common',    emoji: '💎', amount: 15, weight: 15, flavor: '작지만 은은하게 빛난다.' },
   // 희귀 (rare)
@@ -29,7 +29,22 @@ const TREASURES = [
   { key: 'hourglass_sand',  name: '시간의 모래',   rarity: 'legendary', emoji: '⏳', amount: 600, weight: 0.2, flavor: '만지는 순간 시간이 멈춘 듯한 착각이 든다.' },
 ];
 
-// weight(가중치)를 기반으로 랜덤하게 보물 하나를 뽑는 함수
+// 등급이 오르는 순서. 합성할 때 "다음 등급이 뭔지" 여기서 찾습니다.
+const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
+const CRAFT_COST = 3; // 같은 아이템 몇 개를 모아야 합성할 수 있는지
+
+// 특정 등급 안에서만 weight 기반으로 랜덤하게 하나를 뽑는 함수
+function pickRandomFromRarity(rarity) {
+  const pool = TREASURES.filter(t => t.rarity === rarity);
+  const totalWeight = pool.reduce((sum, t) => sum + t.weight, 0);
+  let rand = Math.random() * totalWeight;
+
+  for (const treasure of pool) {
+    if (rand < treasure.weight) return treasure;
+    rand -= treasure.weight;
+  }
+  return pool[0];
+}
 function pickRandomTreasure() {
   const totalWeight = TREASURES.reduce((sum, t) => sum + t.weight, 0);
   let rand = Math.random() * totalWeight;
@@ -204,6 +219,77 @@ router.get('/collection', verifyToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// -------------------------------
+// 아이템 합성: POST /api/box/craft
+// -------------------------------
+// 같은 아이템을 CRAFT_COST(3)개 모으면 소모하고, 한 등급 위의 랜덤 아이템 1개로 바꿔줍니다.
+router.post('/craft', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { itemKey } = req.body;
+
+  const sourceItem = TREASURES.find(t => t.key === itemKey);
+  if (!sourceItem) {
+    return res.status(400).json({ message: '존재하지 않는 아이템입니다.' });
+  }
+
+  const rarityIndex = RARITY_ORDER.indexOf(sourceItem.rarity);
+  if (rarityIndex === RARITY_ORDER.length - 1) {
+    return res.status(400).json({ message: '이미 최고 등급이라 더 합성할 수 없습니다.' });
+  }
+  const nextRarity = RARITY_ORDER[rarityIndex + 1];
+
+  // 여러 쿼리(차감 + 지급)를 하나의 트랜잭션으로 묶어서, 중간에 문제가 생기면
+  // 아이템만 사라지고 보상은 못 받는 상황을 방지합니다.
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    // 1. 보유 개수 확인 (다른 요청과 동시에 실행돼도 안전하도록 FOR UPDATE로 잠금)
+    const ownedResult = await client.query(
+      'SELECT count FROM user_items WHERE user_id = $1 AND item_key = $2 FOR UPDATE',
+      [userId, itemKey]
+    );
+
+    const ownedCount = ownedResult.rows[0]?.count || 0;
+    if (ownedCount < CRAFT_COST) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        message: `합성하려면 ${sourceItem.name}이(가) ${CRAFT_COST}개 필요합니다. (현재 ${ownedCount}개)`,
+      });
+    }
+
+    // 2. 재료 소모
+    await client.query(
+      'UPDATE user_items SET count = count - $1 WHERE user_id = $2 AND item_key = $3',
+      [CRAFT_COST, userId, itemKey]
+    );
+
+    // 3. 다음 등급 아이템 랜덤 지급
+    const resultItem = pickRandomFromRarity(nextRarity);
+    await client.query(
+      `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
+       VALUES ($1, $2, 1, NOW())
+       ON CONFLICT (user_id, item_key)
+       DO UPDATE SET count = user_items.count + 1`,
+      [userId, resultItem.key]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: '합성 성공!',
+      consumed: { key: sourceItem.key, name: sourceItem.name, amount: CRAFT_COST },
+      result: resultItem,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: '서버 오류로 합성에 실패했습니다.' });
+  } finally {
+    client.release();
   }
 });
 

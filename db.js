@@ -10,9 +10,9 @@ require('dotenv').config();
 // 매번 새로 연결하는 것보다 훨씬 효율적입니다.
 // 진단용 로그: DATABASE_URL이 아예 비어있는지부터 확인
 if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL 환경변수가 설정되어 있지 않습니다. Render의 Environment 탭을 확인하세요.');
+  console.error('[DB] DATABASE_URL 환경변수가 설정되어 있지 않습니다. Render의 Environment 탭을 확인하세요.');
 } else {
-  console.log('DATABASE_URL이 등록되어 있습니다 (앞 15자):', process.env.DATABASE_URL.slice(0, 15));
+  console.log('[DB] DATABASE_URL이 등록되어 있습니다 (앞 15자):', process.env.DATABASE_URL.slice(0, 15));
 }
 
 const pool = new Pool({
@@ -28,14 +28,17 @@ const pool = new Pool({
 // 연결이 잘 되는지 서버 시작 시 한 번 확인합니다.
 pool.connect((err, client, release) => {
   if (err) {
-    console.error('데이터베이스 연결 실패:', err.stack);
+    console.error('[DB] 데이터베이스 연결 실패:', err.stack);
     return;
   }
-  console.log('데이터베이스 연결 성공');
+  console.log('[DB] 데이터베이스 연결 성공');
   release(); // 확인용으로 잠깐 빌린 연결을 다시 반납
 });
 
 // 다른 파일에서 db.query('SELECT ...') 형태로 쓸 수 있도록 내보냅니다.
 module.exports = {
   query: (text, params) => pool.query(text, params),
+  // 여러 쿼리를 하나의 트랜잭션(전부 성공 or 전부 취소)으로 묶어야 할 때 사용합니다.
+  // 예: 아이템 합성처럼 "차감 + 지급"을 동시에 안전하게 처리해야 하는 경우.
+  getClient: () => pool.connect(),
 };

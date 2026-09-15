@@ -323,6 +323,30 @@
   .item-card.rare{ border-color:rgba(76,140,240,0.4); }
   .item-card.epic{ border-color:rgba(177,92,240,0.4); }
   .item-card.legendary{ border-color:rgba(227,178,60,0.5); }
+  .craft-btn{
+    margin-top:8px;
+    padding:6px;
+    font-size:11px;
+    background:var(--teal);
+    color:#0B1220;
+    border-radius:8px;
+  }
+  .craft-btn:disabled{
+    background:#2C3F6B;
+    color:var(--ink-dim);
+    cursor:not-allowed;
+  }
+  .craft-result{
+    background:var(--surface-2);
+    border:1px solid #2C3F6B;
+    border-radius:12px;
+    padding:14px;
+    text-align:center;
+    margin-bottom:16px;
+    display:none;
+    font-size:13px;
+  }
+  .craft-result .arrow{ color:var(--ink-dim); margin:0 6px; }
 </style>
 </head>
 <body>
@@ -398,6 +422,8 @@
       <h1 style="margin:0; font-size:20px;">도감</h1>
       <button id="backToGameBtn">← 돌아가기</button>
     </div>
+    <p style="font-size:12px; color:var(--ink-dim); margin-top:-10px; margin-bottom:16px;">같은 아이템을 3개 모으면 한 등급 위 아이템으로 합성할 수 있어요</p>
+    <div class="craft-result" id="craftResult"></div>
     <div class="collection-grid" id="collectionGrid"></div>
   </div>
 
@@ -437,6 +463,7 @@
   document.getElementById('openCollectionBtn').addEventListener('click', async () => {
     gameScreen.classList.add('hidden');
     collectionScreen.classList.remove('hidden');
+    document.getElementById('craftResult').style.display = 'none';
     await loadCollection();
   });
 
@@ -444,6 +471,8 @@
     collectionScreen.classList.add('hidden');
     gameScreen.classList.remove('hidden');
   });
+
+  const CRAFT_COST = 3;
 
   async function loadCollection(){
     const grid = document.getElementById('collectionGrid');
@@ -459,15 +488,54 @@
         const card = document.createElement('div');
         card.className = `item-card ${item.rarity} ${item.obtained ? '' : 'locked'}`;
         card.title = item.obtained ? item.flavor : '아직 발견하지 못한 아이템입니다';
+
+        const canCraft = item.obtained && item.count >= CRAFT_COST && item.rarity !== 'legendary';
+
         card.innerHTML = `
           <span class="item-emoji">${item.obtained ? item.emoji : '❔'}</span>
           <div class="item-name">${item.obtained ? item.name : '???'}</div>
-          ${item.obtained ? `<div class="item-count">x${item.count}</div>` : ''}
+          ${item.obtained && item.count > 0 ? `<div class="item-count">x${item.count}</div>` : ''}
+          ${canCraft ? `<button class="craft-btn" data-key="${item.key}">합성(-${CRAFT_COST})</button>` : ''}
         `;
         grid.appendChild(card);
       });
+
+      // 합성 버튼 클릭 이벤트 연결
+      grid.querySelectorAll('.craft-btn').forEach(btn => {
+        btn.addEventListener('click', () => craftItem(btn.dataset.key, btn));
+      });
     } catch (err) {
       grid.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
+    }
+  }
+
+  async function craftItem(itemKey, btnEl){
+    btnEl.disabled = true;
+    btnEl.textContent = '합성 중...';
+
+    try {
+      const res = await authFetch('/api/box/craft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemKey }),
+      });
+      const data = await res.json();
+
+      const craftResult = document.getElementById('craftResult');
+      if (!res.ok) {
+        craftResult.style.display = 'block';
+        craftResult.style.color = 'var(--danger)';
+        craftResult.textContent = data.message;
+      } else {
+        craftResult.style.display = 'block';
+        craftResult.style.color = 'var(--ink)';
+        craftResult.innerHTML = `${data.consumed.name} x${data.consumed.amount} <span class="arrow">→</span> ${data.result.emoji} ${data.result.name} 획득!`;
+      }
+
+      await loadCollection(); // 최신 개수로 도감 다시 그리기
+    } catch (err) {
+      btnEl.disabled = false;
+      btnEl.textContent = `합성(-${CRAFT_COST})`;
     }
   }
 
