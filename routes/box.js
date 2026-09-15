@@ -7,8 +7,7 @@ const verifyToken = require('../middleware/auth');
 
 const router = express.Router();
 
-//const COOLDOWN_MS = 60 * 60 * 1000; // 1시간 (밀리초 단위)
-const COOLDOWN_MS = 10 * 1000; // 10초 테스트
+const COOLDOWN_MS = 10 * 1000; // 10초 테스트 // 1시간 (밀리초 단위)
 
 // 지급할 보물 후보 목록입니다. 원하는 대로 자유롭게 바꾸세요.
 const TREASURES = [
@@ -62,6 +61,7 @@ router.post('/open', verifyToken, async (req, res) => {
         treasure,
         totalTreasure: treasure.amount,
         nextAvailableAt: new Date(now.getTime() + COOLDOWN_MS),
+        serverTime: now,
       });
     }
 
@@ -97,6 +97,7 @@ router.post('/open', verifyToken, async (req, res) => {
       treasure,
       totalTreasure: newTotal,
       nextAvailableAt: new Date(now.getTime() + COOLDOWN_MS),
+      serverTime: now,
     });
   } catch (err) {
     console.error(err);
@@ -132,6 +133,7 @@ router.get('/status', verifyToken, async (req, res) => {
       nextAvailableAt: canOpen
         ? null
         : new Date(lastOpened.getTime() + COOLDOWN_MS),
+      serverTime: now,
     });
   } catch (err) {
     console.error(err);

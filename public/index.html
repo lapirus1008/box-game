@@ -265,8 +265,8 @@
       <input type="text" id="signupNickname" required>
       <label for="signupEmail">이메일</label>
       <input type="email" id="signupEmail" required>
-      <label for="signupPassword">비밀번호</label>
-      <input type="password" id="signupPassword" required>
+      <label for="signupPassword">비밀번호 (8자 이상)</label>
+      <input type="password" id="signupPassword" minlength="8" required>
       <button type="submit" class="btn-primary">회원가입</button>
     </form>
 
@@ -311,15 +311,30 @@
   // const API_BASE = 'http://localhost:3000';
   const API_BASE = 'https://box-game-6y1g.onrender.com';
 
-  // 토큰은 새로고침하면 사라집니다 (의도적인 설계).
-  // 실제 서비스에 배포한 뒤에는 localStorage.setItem 등으로 바꿔 로그인을 유지시킬 수 있어요.
-  let authToken = null;
+  // 배포된 사이트에서는 새로고침해도 로그인이 유지되도록 토큰을 localStorage에 저장합니다.
+  let authToken = localStorage.getItem('boxGameToken');
   let currentUser = null;
   let statusInterval = null;
 
   const authScreen = document.getElementById('authScreen');
   const gameScreen = document.getElementById('gameScreen');
   const authError = document.getElementById('authError');
+
+  // 페이지를 열자마자 저장된 토큰이 아직 유효한지 확인해서 자동 로그인 시도
+  (async function tryAutoLogin(){
+    if (!authToken) return;
+    try {
+      const res = await authFetch('/api/auth/me');
+      if (!res.ok) throw new Error('토큰 만료');
+      const data = await res.json();
+      currentUser = data.user;
+      enterGame();
+    } catch (err) {
+      // 토큰이 만료됐거나 유효하지 않으면 지우고 로그인 화면 유지
+      localStorage.removeItem('boxGameToken');
+      authToken = null;
+    }
+  })();
 
   function showAuthError(message){
     authError.textContent = message;
@@ -363,6 +378,7 @@
       if (!res.ok) return showAuthError(data.message || '회원가입에 실패했습니다.');
 
       authToken = data.token;
+      localStorage.setItem('boxGameToken', data.token);
       currentUser = data.user;
       enterGame();
     } catch (err) {
@@ -387,6 +403,7 @@
       if (!res.ok) return showAuthError(data.message || '로그인에 실패했습니다.');
 
       authToken = data.token;
+      localStorage.setItem('boxGameToken', data.token);
       currentUser = data.user;
       enterGame();
     } catch (err) {
@@ -398,7 +415,9 @@
   document.getElementById('logoutBtn').addEventListener('click', () => {
     authToken = null;
     currentUser = null;
+    localStorage.removeItem('boxGameToken');
     clearInterval(statusInterval);
+    clearInterval(resyncInterval);
     gameScreen.classList.add('hidden');
     authScreen.classList.remove('hidden');
   });
@@ -407,8 +426,18 @@
     document.getElementById('userNickname').textContent = currentUser.nickname || currentUser.email;
     authScreen.classList.add('hidden');
     gameScreen.classList.remove('hidden');
-    refreshStatus();
-    statusInterval = setInterval(refreshStatus, 1000);
+
+    refreshStatus(); // 최초 1회 서버에서 정확한 상태를 가져옴
+
+    // 화면 갱신은 서버에 매번 묻지 않고, 로컬 시계로 0.2초마다 자체 계산합니다.
+    // (네트워크 왕복 시간이 카운트다운 오차로 쌓이는 걸 막기 위함)
+    clearInterval(statusInterval);
+    statusInterval = setInterval(renderCountdown, 200);
+
+    // 다만 오래 켜두면 로컬 시계가 아주 조금씩 어긋날 수 있으니,
+    // 30초마다 한 번씩 서버와 다시 맞춥니다.
+    clearInterval(resyncInterval);
+    resyncInterval = setInterval(refreshStatus, 30000);
   }
 
   // 서버에 인증 토큰을 담아 요청하는 공통 함수
@@ -423,77 +452,109 @@
   }
 
   let cachedNextAvailableAt = null;
+  let cachedCanOpen = false;
+  let resyncInterval = null;
+  // 서버 시각과 내 기기 시각의 차이(밀리초). 이 값을 더하면 "서버 기준 지금"을 알 수 있습니다.
+  let serverTimeOffset = 0;
+  let isOpening = false;
 
-  // 현재 상자 상태(열 수 있는지, 남은 시간) 확인
+  function syncServerTime(serverTimeStr){
+    serverTimeOffset = new Date(serverTimeStr).getTime() - Date.now();
+  }
+
+  function adjustedNow(){
+    return new Date(Date.now() + serverTimeOffset);
+  }
+
+  // 서버에서 정확한 상태를 받아와 기준값을 갱신 (자주 호출하지 않음)
   async function refreshStatus(){
     try {
       const res = await authFetch('/api/box/status');
       const data = await res.json();
       if (!res.ok) return;
 
+      syncServerTime(data.serverTime);
       document.getElementById('totalTreasure').textContent = data.totalTreasure;
       cachedNextAvailableAt = data.nextAvailableAt ? new Date(data.nextAvailableAt) : null;
-      updateStatusDisplay(data.canOpen);
+      cachedCanOpen = data.canOpen;
+      renderCountdown();
     } catch (err) {
-      // 네트워크 문제는 조용히 무시하고 다음 인터벌에 재시도
+      // 네트워크 문제는 조용히 무시하고 다음 동기화 때 재시도
     }
   }
 
-  function updateStatusDisplay(canOpen){
+  // 네트워크 요청 없이, 저장해둔 기준 시각만으로 화면을 그리는 함수 (0.2초마다 호출됨)
+  function renderCountdown(){
     const statusText = document.getElementById('statusText');
     const chest = document.getElementById('chest');
 
-    if (canOpen){
+    if (cachedCanOpen){
       statusText.textContent = '상자를 열 수 있습니다';
       statusText.classList.add('ready');
       chest.style.opacity = '1';
-      chest.style.pointerEvents = 'auto';
-    } else {
-      statusText.classList.remove('ready');
-      chest.style.opacity = '0.6';
-      chest.style.pointerEvents = 'none';
-
-      if (cachedNextAvailableAt){
-        const remainingMs = cachedNextAvailableAt - new Date();
-        if (remainingMs <= 0){
-          refreshStatus();
-          return;
-        }
-        const m = Math.floor(remainingMs / 60000);
-        const s = Math.floor((remainingMs % 60000) / 1000);
-        statusText.innerHTML = `다음 상자까지 <span class="timer">${m}분 ${s}초</span>`;
-      }
+      chest.style.pointerEvents = isOpening ? 'none' : 'auto';
+      return;
     }
+
+    statusText.classList.remove('ready');
+    chest.style.opacity = '0.6';
+    chest.style.pointerEvents = 'none';
+
+    if (!cachedNextAvailableAt) return;
+
+    const remainingMs = cachedNextAvailableAt - adjustedNow();
+    if (remainingMs <= 0){
+      // 로컬 계산상 시간이 다 됐으면 즉시 열 수 있는 상태로 전환하고,
+      // 확인 차 서버와 한 번 더 맞춰봅니다.
+      cachedCanOpen = true;
+      renderCountdown();
+      refreshStatus();
+      return;
+    }
+
+    const m = Math.floor(remainingMs / 60000);
+    const s = Math.floor((remainingMs % 60000) / 1000);
+    statusText.innerHTML = `다음 상자까지 <span class="timer">${m}분 ${s}초</span>`;
   }
 
   // 상자 클릭 → 실제 오픈 요청
   document.getElementById('chest').addEventListener('click', async function(){
-    if (this.style.pointerEvents === 'none') return;
+    if (!cachedCanOpen || isOpening) return;
 
+    isOpening = true;
     this.style.pointerEvents = 'none';
+
     try {
       const res = await authFetch('/api/box/open', { method: 'POST' });
       const data = await res.json();
 
       if (!res.ok){
         // 429 등 - 상태 새로고침으로 최신 타이머 반영
+        isOpening = false;
         refreshStatus();
         return;
       }
+
+      syncServerTime(data.serverTime);
+      cachedNextAvailableAt = new Date(data.nextAvailableAt);
+      cachedCanOpen = false;
+      renderCountdown(); // 지연 없이 바로 카운트다운 시작
 
       this.classList.add('open');
       document.getElementById('treasureName').textContent = data.treasure.name;
       document.getElementById('treasureDetail').textContent = `+${data.treasure.amount} 획득`;
       document.getElementById('resultBox').style.display = 'block';
       document.getElementById('totalTreasure').textContent = data.totalTreasure;
-      cachedNextAvailableAt = new Date(data.nextAvailableAt);
 
+      // 이건 순전히 상자가 닫히는 비주얼 애니메이션용 지연이고, 카운트다운과는 무관합니다.
       setTimeout(() => {
         this.classList.remove('open');
-        updateStatusDisplay(false);
       }, 1500);
     } catch (err) {
-      this.style.pointerEvents = 'auto';
+      // 네트워크 실패 시 다시 시도할 수 있게 상태 복구
+      refreshStatus();
+    } finally {
+      isOpening = false;
     }
   });
 </script>
