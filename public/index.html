@@ -452,6 +452,12 @@
       <span class="value" id="totalTreasure">0</span>
     </div>
 
+    <div class="stats-row" style="border-top:none; padding-top:8px;">
+      <span class="label">플레이타임 (환생 <span id="rebirthCount">0</span>회)</span>
+      <span class="value" id="playtimeDisplay" style="font-size:14px;">00:00:00</span>
+    </div>
+
+    <p class="hidden" id="pendingIncomeNearBtn" style="font-size:12px; color:var(--teal); text-align:center; margin:8px 0 0;"></p>
     <button class="collection-link" id="openCollectionBtn">📖 도감 보기</button>
   </div>
 
@@ -465,6 +471,18 @@
     <p class="hidden" id="hourlyIncomeText" style="font-size:12px; color:var(--teal); margin:0 0 4px;"></p>
     <p style="font-size:13px; color:var(--ink-dim); margin:0 0 12px;">수집 진행도: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong></p>
     <button class="btn-primary hidden" id="claimBonusBtn" style="margin-bottom:16px;">🎉 도감 완성 보상 받기</button>
+
+    <!-- 환생 섹션 -->
+    <div style="background:var(--surface-2); border-radius:12px; padding:14px; margin-bottom:16px;">
+      <p style="font-size:13px; margin:0 0 6px; display:flex; justify-content:space-between;">
+        <span>🌀 환생 진행도</span>
+        <span id="rebirthProgressText" style="color:var(--gold);">0 / 100,000G</span>
+      </p>
+      <button class="btn-primary hidden" id="rebirthBtn" style="margin-bottom:8px;">✨ 환생하기 (100,000G)</button>
+      <button class="collection-link" id="toggleRebirthHistoryBtn" style="margin:0; font-size:12px;">환생 기록 보기</button>
+      <div class="hidden" id="rebirthHistoryList" style="margin-top:8px; font-size:12px; color:var(--ink-dim);"></div>
+    </div>
+
     <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:16px;">같은 아이템 3개로 합성하거나, 골드로 바로 구매할 수 있어요</p>
     <div class="craft-result" id="craftResult"></div>
     <div class="collection-grid" id="collectionGrid"></div>
@@ -518,6 +536,61 @@
 
   const CRAFT_COST = 3;
 
+  document.getElementById('rebirthBtn').addEventListener('click', async function(){
+    this.disabled = true;
+    try {
+      const res = await authFetch('/api/box/rebirth', { method: 'POST' });
+      const data = await res.json();
+
+      const craftResult = document.getElementById('craftResult');
+      craftResult.style.display = 'block';
+      if (!res.ok) {
+        craftResult.style.color = 'var(--danger)';
+        craftResult.textContent = data.message;
+      } else {
+        craftResult.style.color = 'var(--gold)';
+        craftResult.textContent = `✨ ${data.rebirthNumber}번째 환생! 이번 판 기록: ${formatDuration(Math.floor(data.durationMs / 1000))} — 처음부터 다시 시작합니다`;
+        cachedRunStartedAt = new Date(data.runStartedAt);
+        cachedRebirthCount = data.rebirthNumber;
+        cachedLegendaryCount = 0; // 아이템이 전부 초기화됐으니 패시브 수입 미리보기도 리셋
+        cachedPerSecondIncome = 0;
+        document.getElementById('rebirthCount').textContent = cachedRebirthCount;
+        document.getElementById('totalTreasure').textContent = data.totalTreasure;
+      }
+      await loadCollection(false, false);
+      await refreshStatus(); // 쿨다운/골드가 초기화됐으니 게임 화면 상태도 재동기화
+    } finally {
+      this.disabled = false;
+    }
+  });
+
+  document.getElementById('toggleRebirthHistoryBtn').addEventListener('click', async () => {
+    const listEl = document.getElementById('rebirthHistoryList');
+    if (!listEl.classList.contains('hidden')) {
+      listEl.classList.add('hidden');
+      return;
+    }
+
+    listEl.classList.remove('hidden');
+    listEl.textContent = '불러오는 중...';
+
+    try {
+      const res = await authFetch('/api/box/rebirth/history');
+      const data = await res.json();
+      if (!res.ok || data.history.length === 0) {
+        listEl.textContent = '아직 환생 기록이 없습니다.';
+        return;
+      }
+
+      listEl.innerHTML = data.history.map(h => {
+        const date = new Date(h.completedAt).toLocaleString();
+        return `<div style="padding:4px 0; border-bottom:1px solid #22335C;">#${h.rebirthNumber} — ${formatDuration(Math.floor(h.durationMs / 1000))} (${date})</div>`;
+      }).join('');
+    } catch (err) {
+      listEl.textContent = '불러오지 못했습니다.';
+    }
+  });
+
   document.getElementById('claimBonusBtn').addEventListener('click', async function(){
     this.disabled = true;
     try {
@@ -553,10 +626,15 @@
       document.getElementById('shopGold').textContent = data.totalTreasure;
       document.getElementById('collectionProgress').textContent = `${data.progress.obtained}/${data.progress.total}`;
 
+      const REBIRTH_GOLD_REQUIRED = 100000;
+      document.getElementById('rebirthProgressText').textContent =
+        `${data.totalTreasure.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
+      document.getElementById('rebirthBtn').classList.toggle('hidden', data.totalTreasure < REBIRTH_GOLD_REQUIRED);
+
       const incomeText = document.getElementById('hourlyIncomeText');
-      if (data.passiveIncome && data.passiveIncome.hourlyIncome > 0) {
+      if (data.passiveIncome && data.passiveIncome.perSecondIncome > 0) {
         incomeText.classList.remove('hidden');
-        incomeText.textContent = `⏳ 전설 아이템 수입: 시간당 +${data.passiveIncome.hourlyIncome}G`;
+        incomeText.textContent = `⏳ 전설 아이템 수입: 초당 +${data.passiveIncome.perSecondIncome}G`;
         if (data.passiveIncome.earned > 0 && showIncomeToast) {
           const craftResult = document.getElementById('craftResult');
           craftResult.style.display = 'block';
@@ -842,6 +920,11 @@
   }
 
   let cachedNextAvailableAt = null;
+  let cachedLegendaryCount = 0;
+  let cachedPerSecondIncome = 0;
+  let cachedLastIncomeCollectedAt = null;
+  let cachedRunStartedAt = null;
+  let cachedRebirthCount = 0;
   let cachedCanOpen = false;
   let resyncInterval = null;
   // 서버 시각과 내 기기 시각의 차이(밀리초). 이 값을 더하면 "서버 기준 지금"을 알 수 있습니다.
@@ -867,6 +950,18 @@
       document.getElementById('totalTreasure').textContent = data.totalTreasure;
       cachedNextAvailableAt = data.nextAvailableAt ? new Date(data.nextAvailableAt) : null;
       cachedCanOpen = data.canOpen;
+
+      if (data.passiveIncomePreview) {
+        cachedLegendaryCount = data.passiveIncomePreview.legendaryCount;
+        cachedPerSecondIncome = data.passiveIncomePreview.perSecondIncome;
+        cachedLastIncomeCollectedAt = new Date(data.passiveIncomePreview.lastCollectedAt);
+      }
+      if (data.runStartedAt) cachedRunStartedAt = new Date(data.runStartedAt);
+      if (typeof data.rebirthCount === 'number') {
+        cachedRebirthCount = data.rebirthCount;
+        document.getElementById('rebirthCount').textContent = cachedRebirthCount;
+      }
+
       renderCountdown();
     } catch (err) {
       // 네트워크 문제는 조용히 무시하고 다음 동기화 때 재시도
@@ -876,7 +971,35 @@
   const INSTANT_OPEN_PRICE_PER_MINUTE = 10; // 화면에 예상 가격을 보여주기 위한 값 (최종 가격은 서버가 확정)
 
   // 네트워크 요청 없이, 저장해둔 기준 시각만으로 화면을 그리는 함수 (0.2초마다 호출됨)
+  // 초 단위 숫자를 HH:MM:SS 문자열로 바꾸는 함수
+  function formatDuration(totalSeconds){
+    const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+    const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+    const s = String(Math.floor(totalSeconds % 60)).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  }
+
+  // 플레이타임 시계와, "도감 보기" 근처의 패시브 골드 미리보기를 매 tick마다 갱신
+  function updatePlaytimeAndIncomePreview(){
+    if (cachedRunStartedAt) {
+      const playSeconds = Math.floor((adjustedNow() - cachedRunStartedAt) / 1000);
+      document.getElementById('playtimeDisplay').textContent = formatDuration(Math.max(0, playSeconds));
+    }
+
+    const pendingEl = document.getElementById('pendingIncomeNearBtn');
+    if (cachedLegendaryCount > 0 && cachedLastIncomeCollectedAt) {
+      const pendingSeconds = Math.floor((adjustedNow() - cachedLastIncomeCollectedAt) / 1000);
+      const pendingGold = Math.max(0, pendingSeconds) * cachedPerSecondIncome;
+      pendingEl.textContent = `⏳ 지금 도감에 들어가면 +${pendingGold}G 정산돼요`;
+      pendingEl.classList.remove('hidden');
+    } else {
+      pendingEl.classList.add('hidden');
+    }
+  }
+
   function renderCountdown(){
+    updatePlaytimeAndIncomePreview(); // 매 tick마다 플레이타임/패시브 골드 미리보기도 함께 갱신
+
     const statusText = document.getElementById('statusText');
     const chest = document.getElementById('chest');
     const instantBtn = document.getElementById('instantOpenBtn');
@@ -934,6 +1057,9 @@
     document.getElementById('totalTreasure').textContent = data.totalTreasure;
 
     setTimeout(() => { chest.classList.remove('open'); }, 1500);
+
+    // 방금 전설 아이템을 얻었을 수도 있으니, 패시브 골드 미리보기가 바로 반영되도록 조용히 재동기화
+    refreshStatus();
   }
 
   // 상자 클릭 → 실제 오픈 요청

@@ -7,7 +7,7 @@ const verifyToken = require('../middleware/auth');
 
 const router = express.Router();
 
-const COOLDOWN_MS = 10 * 60 * 1000; // 10분 (밀리초 단위)
+const COOLDOWN_MS = 15 * 1000; // 15초 (밀리초 단위)
 
 // 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
 // key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
@@ -33,8 +33,8 @@ const TREASURES = [
 // 확률에 기대는 것보다 확실하지만 비용이 크다는 느낌을 주도록 했습니다.
 const SHOP_PRICES = { common: 60, rare: 250, epic: 900, legendary: 3000 };
 
-// 전설 등급 아이템 1개당, 시간당 자동으로 벌어들이는 골드
-const LEGENDARY_INCOME_PER_HOUR = 50;
+// 전설 등급 아이템 1개당, 초당 자동으로 벌어들이는 골드
+const LEGENDARY_INCOME_PER_SECOND = 1;
 
 // 마지막 정산 이후 쌓인 패시브 수입을 계산해서 골드에 더하고, 정산 시각을 갱신합니다.
 // client는 이미 BEGIN된 트랜잭션의 client를 넘겨받습니다 (동시 요청에도 안전하도록).
@@ -48,7 +48,7 @@ async function collectPassiveIncome(client, userId) {
   const { total_treasure, last_income_collected_at } = claimResult.rows[0];
   const now = new Date();
   const lastCollected = new Date(last_income_collected_at);
-  const elapsedHours = (now - lastCollected) / (1000 * 60 * 60);
+  const elapsedSeconds = (now - lastCollected) / 1000;
 
   // 보유한 전설 등급 아이템 개수(중복 포함) 조회
   const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
@@ -58,7 +58,7 @@ async function collectPassiveIncome(client, userId) {
   );
   const legendaryCount = parseInt(itemsResult.rows[0].total, 10);
 
-  const earned = Math.floor(elapsedHours * legendaryCount * LEGENDARY_INCOME_PER_HOUR);
+  const earned = Math.floor(elapsedSeconds * legendaryCount * LEGENDARY_INCOME_PER_SECOND);
   const newTotal = parseInt(total_treasure, 10) + earned;
 
   await client.query(
@@ -66,10 +66,10 @@ async function collectPassiveIncome(client, userId) {
     [newTotal, now, userId]
   );
 
-  return { earned, newTotal, legendaryCount, hourlyIncome: legendaryCount * LEGENDARY_INCOME_PER_HOUR };
+  return { earned, newTotal, legendaryCount, perSecondIncome: legendaryCount * LEGENDARY_INCOME_PER_SECOND };
 }
-// 10분 쿨다운을 다 스킵해도 100골드(평균 21골드 상자 약 5번 분량) 정도가 되도록 잡았습니다.
-const INSTANT_OPEN_PRICE_PER_MINUTE = 10;
+// 15초 쿨다운을 다 스킵하면 75골드가 되도록 초당 5골드로 잡았습니다.
+const INSTANT_OPEN_PRICE_PER_SECOND = 5;
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
 const CRAFT_COST = 3; // 같은 아이템 몇 개를 모아야 합성할 수 있는지
 
@@ -188,45 +188,54 @@ router.post('/open', verifyToken, async (req, res) => {
 // 프론트엔드에서 "지금 열 수 있는지, 몇 분 남았는지"를 표시할 때 씁니다.
 router.get('/status', verifyToken, async (req, res) => {
   const userId = req.user.userId;
-  const client = await db.getClient();
 
   try {
-    await client.query('BEGIN');
-
-    const income = await collectPassiveIncome(client, userId); // 전설 아이템 시간당 수입 정산
-
-    const result = await client.query(
-      'SELECT last_opened_at, total_treasure FROM box_claims WHERE user_id = $1',
+    // status는 정산(트랜잭션)하지 않고 조회만 합니다.
+    // 실제 정산은 도감(/collection)에 들어갈 때 이루어지고,
+    // 여기서는 프론트엔드가 "지금까지 얼마나 쌓였는지"를 스스로 계산할 수 있도록
+    // 필요한 원재료(전설 아이템 개수, 마지막 정산 시각)만 내려줍니다.
+    const result = await db.query(
+      `SELECT last_opened_at, total_treasure, last_income_collected_at,
+              rebirth_count, run_started_at
+       FROM box_claims WHERE user_id = $1`,
       [userId]
     );
 
     if (result.rows.length === 0) {
-      await client.query('COMMIT');
       return res.json({ canOpen: true, totalTreasure: 0 });
     }
 
-    const lastOpened = new Date(result.rows[0].last_opened_at);
+    const row = result.rows[0];
+    const lastOpened = new Date(row.last_opened_at);
     const now = new Date();
     const elapsedMs = now - lastOpened;
     const canOpen = elapsedMs >= COOLDOWN_MS;
 
-    await client.query('COMMIT');
+    const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
+    const itemsResult = await db.query(
+      'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND item_key = ANY($2)',
+      [userId, legendaryKeys]
+    );
+    const legendaryCount = parseInt(itemsResult.rows[0].total, 10);
 
     res.json({
       canOpen,
-      totalTreasure: parseInt(result.rows[0].total_treasure, 10),
+      totalTreasure: parseInt(row.total_treasure, 10),
       nextAvailableAt: canOpen
         ? null
         : new Date(lastOpened.getTime() + COOLDOWN_MS),
       serverTime: now,
-      passiveIncome: income ? { earned: income.earned, hourlyIncome: income.hourlyIncome } : null,
+      passiveIncomePreview: {
+        legendaryCount,
+        perSecondIncome: legendaryCount * LEGENDARY_INCOME_PER_SECOND,
+        lastCollectedAt: row.last_income_collected_at,
+      },
+      rebirthCount: row.rebirth_count,
+      runStartedAt: row.run_started_at,
     });
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ message: '서버 오류가 발생했습니다.' });
-  } finally {
-    client.release();
   }
 });
 
@@ -289,7 +298,7 @@ router.get('/collection', verifyToken, async (req, res) => {
       progress: { obtained: obtainedCount, total: TREASURES.length },
       isComplete,
       bonusClaimed,
-      passiveIncome: income ? { earned: income.earned, hourlyIncome: income.hourlyIncome } : null,
+      passiveIncome: income ? { earned: income.earned, perSecondIncome: income.perSecondIncome } : null,
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -530,7 +539,7 @@ router.post('/instant-open', verifyToken, async (req, res) => {
       return res.status(400).json({ message: '이미 열 수 있는 상태입니다. 즉시 오픈권 없이 그냥 여세요.' });
     }
 
-    const price = Math.max(1, Math.ceil((remainingMs / 60000) * INSTANT_OPEN_PRICE_PER_MINUTE));
+    const price = Math.max(1, Math.ceil(remainingMs / 1000) * INSTANT_OPEN_PRICE_PER_SECOND);
     const currentGold = parseInt(result.rows[0].total_treasure, 10);
 
     if (currentGold < price) {
@@ -625,6 +634,107 @@ router.post('/sell', verifyToken, async (req, res) => {
     res.status(500).json({ message: '서버 오류로 판매에 실패했습니다.' });
   } finally {
     client.release();
+  }
+});
+
+const REBIRTH_GOLD_REQUIRED = 100000;
+
+// -------------------------------
+// 환생: POST /api/box/rebirth
+// -------------------------------
+// 10만 골드를 모으면 "환생석"을 써서 이번 판을 기록으로 남기고 다시 시작합니다.
+router.post('/rebirth', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      'SELECT total_treasure, rebirth_count, run_started_at FROM box_claims WHERE user_id = $1 FOR UPDATE',
+      [userId]
+    );
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: '아직 게임을 시작하지 않았습니다.' });
+    }
+
+    const currentGold = parseInt(result.rows[0].total_treasure, 10);
+    if (currentGold < REBIRTH_GOLD_REQUIRED) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        message: `10만 골드가 필요합니다. (현재 ${currentGold}G)`,
+      });
+    }
+
+    const now = new Date();
+    const runStartedAt = new Date(result.rows[0].run_started_at);
+    const durationMs = now - runStartedAt;
+    const newRebirthNumber = result.rows[0].rebirth_count + 1;
+
+    // 이번 판 기록 남기기
+    await client.query(
+      `INSERT INTO rebirth_history (user_id, rebirth_number, duration_ms, completed_at)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, newRebirthNumber, durationMs, now]
+    );
+
+    // 환생: 완전히 처음부터 다시 시작 (아이템 전부 삭제, 골드는 초기값으로, 쿨다운도 즉시 열 수 있게 초기화)
+    const RESET_GOLD = 2000; // 회원가입 때와 동일한 시작 골드
+    await client.query('DELETE FROM user_items WHERE user_id = $1', [userId]);
+    await client.query(
+      `UPDATE box_claims
+       SET total_treasure = $1,
+           completion_bonus_claimed = FALSE,
+           last_opened_at = $2,
+           last_income_collected_at = $3,
+           rebirth_count = $4,
+           run_started_at = $3
+       WHERE user_id = $5`,
+      [RESET_GOLD, new Date(0), now, newRebirthNumber, userId]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: `${newRebirthNumber}번째 환생을 달성했습니다! 처음부터 다시 시작합니다.`,
+      rebirthNumber: newRebirthNumber,
+      durationMs,
+      totalTreasure: RESET_GOLD,
+      runStartedAt: now,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: '서버 오류로 환생에 실패했습니다.' });
+  } finally {
+    client.release();
+  }
+});
+
+// -------------------------------
+// 환생 기록 조회: GET /api/box/rebirth/history
+// -------------------------------
+router.get('/rebirth/history', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const historyResult = await db.query(
+      'SELECT rebirth_number, duration_ms, completed_at FROM rebirth_history WHERE user_id = $1 ORDER BY rebirth_number ASC',
+      [userId]
+    );
+
+    res.json({
+      history: historyResult.rows.map(r => ({
+        rebirthNumber: r.rebirth_number,
+        durationMs: parseInt(r.duration_ms, 10),
+        completedAt: r.completed_at,
+      })),
+      goldRequired: REBIRTH_GOLD_REQUIRED,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류가 발생했습니다.' });
   }
 });
 
