@@ -566,6 +566,7 @@
         card.title = item.obtained ? item.flavor : '아직 발견하지 못한 아이템입니다';
 
         const canCraft = item.obtained && item.count >= CRAFT_COST && item.rarity !== 'legendary';
+        const isMaxRarity = item.rarity === 'legendary';
         const canSell = item.obtained && item.count > 0;
         const canAfford = data.totalTreasure >= item.price;
 
@@ -573,14 +574,14 @@
           <span class="item-emoji">${item.obtained ? item.emoji : '❔'}</span>
           <div class="item-name">${item.obtained ? item.name : '???'}</div>
           ${item.obtained ? `<div class="item-count">x${item.count}</div>` : ''}
-          ${canCraft ? `<button class="craft-btn" data-key="${item.key}">합성(-${CRAFT_COST})</button>` : ''}
+          <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${isMaxRarity ? '최고 등급' : `합성(-${CRAFT_COST})`}</button>
           ${canSell ? `<button class="sell-btn" data-key="${item.key}">판매(+${item.sellPrice}G)</button>` : ''}
           <button class="buy-btn" data-key="${item.key}" ${canAfford ? '' : 'disabled'}>${item.price}G 구매</button>
         `;
         grid.appendChild(card);
       });
 
-      // 합성 버튼 클릭 이벤트 연결
+      // 합성 버튼 클릭 이벤트 연결 (disabled 상태는 클릭이 애초에 안 먹으므로 그대로 연결해도 안전)
       grid.querySelectorAll('.craft-btn').forEach(btn => {
         btn.addEventListener('click', () => craftItem(btn.dataset.key, btn));
       });
@@ -775,11 +776,28 @@
     localStorage.removeItem('boxGameToken');
     clearInterval(statusInterval);
     clearInterval(resyncInterval);
+    resetGameResultUI(); // 로그아웃 시 이전 결과 화면 흔적 제거
     gameScreen.classList.add('hidden');
     authScreen.classList.remove('hidden');
   });
 
+  // 계정을 전환하거나 새로 로그인할 때, 이전 세션의 결과 화면이 남아있지 않도록 초기화합니다.
+  function resetGameResultUI(){
+    const resultBox = document.getElementById('resultBox');
+    resultBox.style.display = 'none';
+    document.getElementById('treasureName').textContent = '';
+    document.getElementById('treasureDetail').textContent = '';
+    document.getElementById('rarityBadge').textContent = '';
+    document.getElementById('rarityBadge').className = 'rarity-badge';
+    document.getElementById('chest').classList.remove('open');
+
+    const craftResult = document.getElementById('craftResult');
+    craftResult.style.display = 'none';
+    craftResult.textContent = '';
+  }
+
   function enterGame(){
+    resetGameResultUI(); // 다른 계정의 이전 결과가 남아있지 않도록 먼저 초기화
     document.getElementById('userNickname').textContent = currentUser.nickname || currentUser.email;
     authScreen.classList.add('hidden');
     gameScreen.classList.remove('hidden');
