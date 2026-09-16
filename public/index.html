@@ -462,6 +462,7 @@
       <button id="backToGameBtn">← 돌아가기</button>
     </div>
     <p style="font-size:13px; color:var(--gold); margin-top:-10px; margin-bottom:4px;">보유 골드: <strong id="shopGold">0</strong></p>
+    <p class="hidden" id="hourlyIncomeText" style="font-size:12px; color:var(--teal); margin:0 0 4px;"></p>
     <p style="font-size:13px; color:var(--ink-dim); margin:0 0 12px;">수집 진행도: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong></p>
     <button class="btn-primary hidden" id="claimBonusBtn" style="margin-bottom:16px;">🎉 도감 완성 보상 받기</button>
     <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:16px;">같은 아이템 3개로 합성하거나, 골드로 바로 구매할 수 있어요</p>
@@ -532,13 +533,13 @@
         craftResult.style.color = 'var(--gold)';
         craftResult.textContent = `🎉 도감 완성! +${data.bonusGold}G 획득!`;
       }
-      await loadCollection(false);
+      await loadCollection(false, false);
     } finally {
       this.disabled = false;
     }
   });
 
-  async function loadCollection(showLoadingText = true){
+  async function loadCollection(showLoadingText = true, showIncomeToast = true){
     const grid = document.getElementById('collectionGrid');
     if (showLoadingText) {
       grid.innerHTML = '<p style="color:var(--ink-dim); font-size:13px;">불러오는 중...</p>';
@@ -551,6 +552,20 @@
 
       document.getElementById('shopGold').textContent = data.totalTreasure;
       document.getElementById('collectionProgress').textContent = `${data.progress.obtained}/${data.progress.total}`;
+
+      const incomeText = document.getElementById('hourlyIncomeText');
+      if (data.passiveIncome && data.passiveIncome.hourlyIncome > 0) {
+        incomeText.classList.remove('hidden');
+        incomeText.textContent = `⏳ 전설 아이템 수입: 시간당 +${data.passiveIncome.hourlyIncome}G`;
+        if (data.passiveIncome.earned > 0 && showIncomeToast) {
+          const craftResult = document.getElementById('craftResult');
+          craftResult.style.display = 'block';
+          craftResult.style.color = 'var(--teal)';
+          craftResult.textContent = `💰 자동 수입 정산: +${data.passiveIncome.earned}G`;
+        }
+      } else {
+        incomeText.classList.add('hidden');
+      }
 
       const claimBtn = document.getElementById('claimBonusBtn');
       if (data.isComplete && !data.bonusClaimed) {
@@ -624,7 +639,7 @@
         craftResult.innerHTML = `${data.sold.emoji} ${data.sold.name} 판매 <span class="arrow">→</span> +${data.goldEarned}G`;
       }
 
-      await loadCollection(false);
+      await loadCollection(false, false);
     } catch (err) {
       btnEl.disabled = false;
       btnEl.textContent = originalText;
@@ -657,7 +672,7 @@
         craftResult.innerHTML = `${data.pricePaid}G 지불 <span class="arrow">→</span> ${data.item.emoji} ${data.item.name} 구매 완료!`;
       }
 
-      await loadCollection(false); // 골드/보유량 최신화 (깜빡임 없이)
+      await loadCollection(false, false); // 골드/보유량 최신화 (깜빡임 없이)
     } catch (err) {
       btnEl.disabled = false;
       btnEl.textContent = originalText;
@@ -687,7 +702,7 @@
         craftResult.innerHTML = `${data.consumed.name} x${data.consumed.amount} <span class="arrow">→</span> ${data.result.emoji} ${data.result.name} 획득!`;
       }
 
-      await loadCollection(false); // 로딩 문구 없이 조용히 갱신 (깜빡임 방지)
+      await loadCollection(false, false); // 로딩 문구 없이 조용히 갱신 (깜빡임 방지)
     } catch (err) {
       btnEl.disabled = false;
       btnEl.textContent = `합성(-${CRAFT_COST})`;

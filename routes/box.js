@@ -32,6 +32,42 @@ const TREASURES = [
 // 등급별 구매 가격입니다. 상자 뽑기보다는 비싸게 잡아서, "직접 사는 것"이
 // 확률에 기대는 것보다 확실하지만 비용이 크다는 느낌을 주도록 했습니다.
 const SHOP_PRICES = { common: 60, rare: 250, epic: 900, legendary: 3000 };
+
+// 전설 등급 아이템 1개당, 시간당 자동으로 벌어들이는 골드
+const LEGENDARY_INCOME_PER_HOUR = 50;
+
+// 마지막 정산 이후 쌓인 패시브 수입을 계산해서 골드에 더하고, 정산 시각을 갱신합니다.
+// client는 이미 BEGIN된 트랜잭션의 client를 넘겨받습니다 (동시 요청에도 안전하도록).
+async function collectPassiveIncome(client, userId) {
+  const claimResult = await client.query(
+    'SELECT total_treasure, last_income_collected_at FROM box_claims WHERE user_id = $1 FOR UPDATE',
+    [userId]
+  );
+  if (claimResult.rows.length === 0) return null;
+
+  const { total_treasure, last_income_collected_at } = claimResult.rows[0];
+  const now = new Date();
+  const lastCollected = new Date(last_income_collected_at);
+  const elapsedHours = (now - lastCollected) / (1000 * 60 * 60);
+
+  // 보유한 전설 등급 아이템 개수(중복 포함) 조회
+  const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
+  const itemsResult = await client.query(
+    'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND item_key = ANY($2)',
+    [userId, legendaryKeys]
+  );
+  const legendaryCount = parseInt(itemsResult.rows[0].total, 10);
+
+  const earned = Math.floor(elapsedHours * legendaryCount * LEGENDARY_INCOME_PER_HOUR);
+  const newTotal = parseInt(total_treasure, 10) + earned;
+
+  await client.query(
+    'UPDATE box_claims SET total_treasure = $1, last_income_collected_at = $2 WHERE user_id = $3',
+    [newTotal, now, userId]
+  );
+
+  return { earned, newTotal, legendaryCount, hourlyIncome: legendaryCount * LEGENDARY_INCOME_PER_HOUR };
+}
 // 10분 쿨다운을 다 스킵해도 100골드(평균 21골드 상자 약 5번 분량) 정도가 되도록 잡았습니다.
 const INSTANT_OPEN_PRICE_PER_MINUTE = 10;
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
@@ -152,14 +188,20 @@ router.post('/open', verifyToken, async (req, res) => {
 // 프론트엔드에서 "지금 열 수 있는지, 몇 분 남았는지"를 표시할 때 씁니다.
 router.get('/status', verifyToken, async (req, res) => {
   const userId = req.user.userId;
+  const client = await db.getClient();
 
   try {
-    const result = await db.query(
+    await client.query('BEGIN');
+
+    const income = await collectPassiveIncome(client, userId); // 전설 아이템 시간당 수입 정산
+
+    const result = await client.query(
       'SELECT last_opened_at, total_treasure FROM box_claims WHERE user_id = $1',
       [userId]
     );
 
     if (result.rows.length === 0) {
+      await client.query('COMMIT');
       return res.json({ canOpen: true, totalTreasure: 0 });
     }
 
@@ -168,6 +210,8 @@ router.get('/status', verifyToken, async (req, res) => {
     const elapsedMs = now - lastOpened;
     const canOpen = elapsedMs >= COOLDOWN_MS;
 
+    await client.query('COMMIT');
+
     res.json({
       canOpen,
       totalTreasure: parseInt(result.rows[0].total_treasure, 10),
@@ -175,10 +219,14 @@ router.get('/status', verifyToken, async (req, res) => {
         ? null
         : new Date(lastOpened.getTime() + COOLDOWN_MS),
       serverTime: now,
+      passiveIncome: income ? { earned: income.earned, hourlyIncome: income.hourlyIncome } : null,
     });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  } finally {
+    client.release();
   }
 });
 
@@ -189,9 +237,13 @@ router.get('/status', verifyToken, async (req, res) => {
 // 아직 못 모은 아이템은 count가 0으로 내려가서, 프론트엔드에서 실루엣 처리할 수 있습니다.
 router.get('/collection', verifyToken, async (req, res) => {
   const userId = req.user.userId;
+  const client = await db.getClient();
 
   try {
-    const result = await db.query(
+    await client.query('BEGIN');
+    const income = await collectPassiveIncome(client, userId); // 전설 아이템 시간당 수입 정산
+
+    const result = await client.query(
       'SELECT item_key, count, first_obtained_at FROM user_items WHERE user_id = $1',
       [userId]
     );
@@ -219,7 +271,7 @@ router.get('/collection', verifyToken, async (req, res) => {
     }));
 
     // 화면 상단에 보유 골드를 같이 보여주기 위해 조회
-    const treasureResult = await db.query(
+    const treasureResult = await client.query(
       'SELECT total_treasure, completion_bonus_claimed FROM box_claims WHERE user_id = $1',
       [userId]
     );
@@ -229,16 +281,22 @@ router.get('/collection', verifyToken, async (req, res) => {
     const obtainedCount = collection.filter(item => item.obtained).length;
     const isComplete = obtainedCount === TREASURES.length;
 
+    await client.query('COMMIT');
+
     res.json({
       collection,
       totalTreasure,
       progress: { obtained: obtainedCount, total: TREASURES.length },
       isComplete,
       bonusClaimed,
+      passiveIncome: income ? { earned: income.earned, hourlyIncome: income.hourlyIncome } : null,
     });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  } finally {
+    client.release();
   }
 });
 
