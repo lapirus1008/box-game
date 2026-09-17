@@ -441,6 +441,8 @@
 
     <button class="instant-open-btn hidden" id="instantOpenBtn">즉시 오픈권 사용</button>
 
+    <button class="btn-primary hidden" id="mainRebirthBtn" style="margin-bottom:12px;">✨ 환생 가능! (100,000G)</button>
+
     <div class="result-box" id="resultBox">
       <div class="rarity-badge" id="rarityBadge"></div>
       <div class="treasure-name" id="treasureName"></div>
@@ -483,7 +485,8 @@
       <div class="hidden" id="rebirthHistoryList" style="margin-top:8px; font-size:12px; color:var(--ink-dim);"></div>
     </div>
 
-    <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:16px;">같은 아이템 3개로 합성하거나, 골드로 바로 구매할 수 있어요</p>
+    <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:8px;">같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요</p>
+    <button class="collection-link" id="craftAllBtn" style="margin-bottom:16px; background:var(--surface-2); border:1px solid var(--gold-dim); border-radius:10px; padding:10px; color:var(--gold); text-decoration:none;">⚡ 전체 합성 (가능한 만큼 한번에)</button>
     <div class="craft-result" id="craftResult"></div>
     <div class="collection-grid" id="collectionGrid"></div>
   </div>
@@ -536,33 +539,58 @@
 
   const CRAFT_COST = 3;
 
-  document.getElementById('rebirthBtn').addEventListener('click', async function(){
-    this.disabled = true;
+  // 환생 요청 처리 (메인 화면/도감 화면 버튼에서 공통으로 사용)
+  async function performRebirth(btnEl){
+    btnEl.disabled = true;
+    const onMainScreen = !gameScreen.classList.contains('hidden');
+
     try {
       const res = await authFetch('/api/box/rebirth', { method: 'POST' });
       const data = await res.json();
 
-      const craftResult = document.getElementById('craftResult');
-      craftResult.style.display = 'block';
       if (!res.ok) {
-        craftResult.style.color = 'var(--danger)';
-        craftResult.textContent = data.message;
+        if (onMainScreen) {
+          alert(data.message);
+        } else {
+          const craftResult = document.getElementById('craftResult');
+          craftResult.style.display = 'block';
+          craftResult.style.color = 'var(--danger)';
+          craftResult.textContent = data.message;
+        }
       } else {
-        craftResult.style.color = 'var(--gold)';
-        craftResult.textContent = `✨ ${data.rebirthNumber}번째 환생! 이번 판 기록: ${formatDuration(Math.floor(data.durationMs / 1000))} — 처음부터 다시 시작합니다`;
+        const resultMessage = `✨ ${data.rebirthNumber}번째 환생! 이번 판 기록: ${formatDuration(Math.floor(data.durationMs / 1000))} — 처음부터 다시 시작합니다`;
+
+        if (onMainScreen) {
+          document.getElementById('rarityBadge').textContent = '';
+          document.getElementById('treasureName').textContent = `✨ ${data.rebirthNumber}번째 환생 달성!`;
+          document.getElementById('treasureDetail').textContent = `기록: ${formatDuration(Math.floor(data.durationMs / 1000))}`;
+          document.getElementById('resultBox').style.display = 'block';
+        } else {
+          const craftResult = document.getElementById('craftResult');
+          craftResult.style.display = 'block';
+          craftResult.style.color = 'var(--gold)';
+          craftResult.textContent = resultMessage;
+        }
+
         cachedRunStartedAt = new Date(data.runStartedAt);
         cachedRebirthCount = data.rebirthNumber;
         cachedLegendaryCount = 0; // 아이템이 전부 초기화됐으니 패시브 수입 미리보기도 리셋
         cachedPerSecondIncome = 0;
         document.getElementById('rebirthCount').textContent = cachedRebirthCount;
         document.getElementById('totalTreasure').textContent = data.totalTreasure;
+        document.getElementById('mainRebirthBtn').classList.add('hidden');
       }
-      await loadCollection(false, false);
+      if (!collectionScreen.classList.contains('hidden')) {
+        await loadCollection(false, false);
+      }
       await refreshStatus(); // 쿨다운/골드가 초기화됐으니 게임 화면 상태도 재동기화
     } finally {
-      this.disabled = false;
+      btnEl.disabled = false;
     }
-  });
+  }
+
+  document.getElementById('rebirthBtn').addEventListener('click', function(){ performRebirth(this); });
+  document.getElementById('mainRebirthBtn').addEventListener('click', function(){ performRebirth(this); });
 
   document.getElementById('toggleRebirthHistoryBtn').addEventListener('click', async () => {
     const listEl = document.getElementById('rebirthHistoryList');
@@ -626,7 +654,6 @@
       document.getElementById('shopGold').textContent = data.totalTreasure;
       document.getElementById('collectionProgress').textContent = `${data.progress.obtained}/${data.progress.total}`;
 
-      const REBIRTH_GOLD_REQUIRED = 100000;
       document.getElementById('rebirthProgressText').textContent =
         `${data.totalTreasure.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
       document.getElementById('rebirthBtn').classList.toggle('hidden', data.totalTreasure < REBIRTH_GOLD_REQUIRED);
@@ -661,7 +688,6 @@
         const canCraft = item.obtained && item.count >= CRAFT_COST && item.rarity !== 'legendary';
         const isMaxRarity = item.rarity === 'legendary';
         const canSell = item.obtained && item.count > 0;
-        const canAfford = data.totalTreasure >= item.price;
 
         card.innerHTML = `
           <span class="item-emoji">${item.obtained ? item.emoji : '❔'}</span>
@@ -669,7 +695,6 @@
           ${item.obtained ? `<div class="item-count">x${item.count}</div>` : ''}
           <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${isMaxRarity ? '최고 등급' : `합성(-${CRAFT_COST})`}</button>
           ${canSell ? `<button class="sell-btn" data-key="${item.key}">판매(+${item.sellPrice}G)</button>` : ''}
-          <button class="buy-btn" data-key="${item.key}" ${canAfford ? '' : 'disabled'}>${item.price}G 구매</button>
         `;
         grid.appendChild(card);
       });
@@ -681,10 +706,6 @@
       // 판매 버튼 클릭 이벤트 연결
       grid.querySelectorAll('.sell-btn').forEach(btn => {
         btn.addEventListener('click', () => sellItem(btn.dataset.key, btn));
-      });
-      // 구매 버튼 클릭 이벤트 연결
-      grid.querySelectorAll('.buy-btn').forEach(btn => {
-        btn.addEventListener('click', () => buyItem(btn.dataset.key, btn));
       });
     } catch (err) {
       grid.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
@@ -724,38 +745,38 @@
     }
   }
 
-  async function buyItem(itemKey, btnEl){
-    btnEl.disabled = true;
-    const originalText = btnEl.textContent;
-    btnEl.textContent = '구매 중...';
+  document.getElementById('craftAllBtn').addEventListener('click', async function(){
+    this.disabled = true;
+    const originalText = this.textContent;
+    this.textContent = '합성 중...';
 
     try {
-      const res = await authFetch('/api/box/shop/buy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemKey }),
-      });
+      const res = await authFetch('/api/box/craft-all', { method: 'POST' });
       const data = await res.json();
 
       const craftResult = document.getElementById('craftResult');
+      craftResult.style.display = 'block';
       if (!res.ok) {
-        craftResult.style.display = 'block';
         craftResult.style.color = 'var(--danger)';
         craftResult.textContent = data.message;
-        btnEl.disabled = false;
-        btnEl.textContent = originalText;
+      } else if (data.totalCrafts === 0) {
+        craftResult.style.color = 'var(--ink-dim)';
+        craftResult.textContent = data.message;
       } else {
-        craftResult.style.display = 'block';
-        craftResult.style.color = 'var(--ink)';
-        craftResult.innerHTML = `${data.pricePaid}G 지불 <span class="arrow">→</span> ${data.item.emoji} ${data.item.name} 구매 완료!`;
+        craftResult.style.color = 'var(--gold)';
+        const summary = data.results.map(r => {
+          const obtainedText = r.obtained.map(o => `${o.emoji}${o.name}${o.count > 1 ? `x${o.count}` : ''}`).join(', ');
+          return `${r.consumedName} ${r.craftCount}세트 → ${obtainedText}`;
+        }).join(' / ');
+        craftResult.textContent = `⚡ 총 ${data.totalCrafts}번 합성! (${summary})`;
       }
 
-      await loadCollection(false, false); // 골드/보유량 최신화 (깜빡임 없이)
-    } catch (err) {
-      btnEl.disabled = false;
-      btnEl.textContent = originalText;
+      await loadCollection(false, false);
+    } finally {
+      this.disabled = false;
+      this.textContent = originalText;
     }
-  }
+  });
 
   async function craftItem(itemKey, btnEl){
     btnEl.disabled = true;
@@ -951,6 +972,8 @@
       cachedNextAvailableAt = data.nextAvailableAt ? new Date(data.nextAvailableAt) : null;
       cachedCanOpen = data.canOpen;
 
+      document.getElementById('mainRebirthBtn').classList.toggle('hidden', data.totalTreasure < REBIRTH_GOLD_REQUIRED);
+
       if (data.passiveIncomePreview) {
         cachedLegendaryCount = data.passiveIncomePreview.legendaryCount;
         cachedPerSecondIncome = data.passiveIncomePreview.perSecondIncome;
@@ -968,7 +991,8 @@
     }
   }
 
-  const INSTANT_OPEN_PRICE_PER_MINUTE = 10; // 화면에 예상 가격을 보여주기 위한 값 (최종 가격은 서버가 확정)
+  const INSTANT_OPEN_PRICE_PER_SECOND = 5; // 화면에 예상 가격을 보여주기 위한 값 (서버의 INSTANT_OPEN_PRICE_PER_SECOND와 반드시 일치시켜야 함)
+  const REBIRTH_GOLD_REQUIRED = 100000;
 
   // 네트워크 요청 없이, 저장해둔 기준 시각만으로 화면을 그리는 함수 (0.2초마다 호출됨)
   // 초 단위 숫자를 HH:MM:SS 문자열로 바꾸는 함수
@@ -1033,7 +1057,7 @@
     const s = Math.floor((remainingMs % 60000) / 1000);
     statusText.innerHTML = `다음 상자까지 <span class="timer">${m}분 ${s}초</span>`;
 
-    const estimatedPrice = Math.max(1, Math.ceil((remainingMs / 60000) * INSTANT_OPEN_PRICE_PER_MINUTE));
+    const estimatedPrice = Math.max(1, Math.ceil(remainingMs / 1000) * INSTANT_OPEN_PRICE_PER_SECOND);
     instantBtn.textContent = `⚡ 즉시 오픈권 사용 (${estimatedPrice}G)`;
     instantBtn.classList.remove('hidden');
     instantBtn.disabled = isOpening;

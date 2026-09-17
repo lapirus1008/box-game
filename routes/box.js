@@ -738,4 +738,87 @@ router.get('/rebirth/history', verifyToken, async (req, res) => {
   }
 });
 
+// -------------------------------
+// 일괄 합성: POST /api/box/craft-all
+// -------------------------------
+// 3개 이상 모인 아이템을 전부 찾아서, 가능한 만큼 반복적으로 합성합니다.
+// (예: 어떤 아이템이 7개 있으면 2번 합성하고 1개가 남습니다)
+router.post('/craft-all', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    const ownedResult = await client.query(
+      'SELECT item_key, count FROM user_items WHERE user_id = $1 AND count >= $2 FOR UPDATE',
+      [userId, CRAFT_COST]
+    );
+
+    const results = []; // 어떤 아이템을 몇 번 합성해서 뭘 얻었는지 기록
+    let totalCrafts = 0;
+
+    for (const row of ownedResult.rows) {
+      const sourceItem = TREASURES.find(t => t.key === row.item_key);
+      if (!sourceItem) continue;
+
+      const rarityIndex = RARITY_ORDER.indexOf(sourceItem.rarity);
+      if (rarityIndex === RARITY_ORDER.length - 1) continue; // 이미 최고 등급이면 스킵
+
+      const nextRarity = RARITY_ORDER[rarityIndex + 1];
+      const craftCount = Math.floor(row.count / CRAFT_COST); // 몇 번 합성 가능한지
+      if (craftCount === 0) continue;
+
+      // 재료 한 번에 소모
+      await client.query(
+        'UPDATE user_items SET count = count - $1 WHERE user_id = $2 AND item_key = $3',
+        [craftCount * CRAFT_COST, userId, row.item_key]
+      );
+
+      // 합성 횟수만큼 반복해서 결과 아이템 지급 (매번 랜덤이라 한 번씩 뽑아야 함)
+      const obtainedItems = {};
+      for (let i = 0; i < craftCount; i++) {
+        const resultItem = pickRandomFromRarity(nextRarity);
+        obtainedItems[resultItem.key] = (obtainedItems[resultItem.key] || 0) + 1;
+        await client.query(
+          `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
+           VALUES ($1, $2, 1, NOW())
+           ON CONFLICT (user_id, item_key)
+           DO UPDATE SET count = user_items.count + 1`,
+          [userId, resultItem.key]
+        );
+      }
+
+      totalCrafts += craftCount;
+      results.push({
+        consumedKey: sourceItem.key,
+        consumedName: sourceItem.name,
+        craftCount,
+        obtained: Object.entries(obtainedItems).map(([key, count]) => {
+          const item = TREASURES.find(t => t.key === key);
+          return { key, name: item.name, emoji: item.emoji, count };
+        }),
+      });
+    }
+
+    await client.query('COMMIT');
+
+    if (totalCrafts === 0) {
+      return res.json({ message: '합성 가능한 아이템이 없습니다.', totalCrafts: 0, results: [] });
+    }
+
+    res.json({
+      message: `총 ${totalCrafts}번 합성했습니다!`,
+      totalCrafts,
+      results,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: '서버 오류로 일괄 합성에 실패했습니다.' });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
