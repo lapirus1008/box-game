@@ -246,13 +246,11 @@ router.get('/status', verifyToken, async (req, res) => {
 // 아직 못 모은 아이템은 count가 0으로 내려가서, 프론트엔드에서 실루엣 처리할 수 있습니다.
 router.get('/collection', verifyToken, async (req, res) => {
   const userId = req.user.userId;
-  const client = await db.getClient();
 
   try {
-    await client.query('BEGIN');
-    const income = await collectPassiveIncome(client, userId); // 전설 아이템 시간당 수입 정산
-
-    const result = await client.query(
+    // 이제 자동으로 정산하지 않고, "받기" 버튼을 눌러야만 정산됩니다 (/api/box/collect-income).
+    // 여기서는 미리보기 계산에 필요한 원자료(전설 아이템 개수, 마지막 정산 시각)만 내려줍니다.
+    const result = await db.query(
       'SELECT item_key, count, first_obtained_at FROM user_items WHERE user_id = $1',
       [userId]
     );
@@ -280,8 +278,8 @@ router.get('/collection', verifyToken, async (req, res) => {
     }));
 
     // 화면 상단에 보유 골드를 같이 보여주기 위해 조회
-    const treasureResult = await client.query(
-      'SELECT total_treasure, completion_bonus_claimed FROM box_claims WHERE user_id = $1',
+    const treasureResult = await db.query(
+      'SELECT total_treasure, completion_bonus_claimed, last_income_collected_at FROM box_claims WHERE user_id = $1',
       [userId]
     );
     const totalTreasure = parseInt(treasureResult.rows[0]?.total_treasure || 0, 10);
@@ -290,7 +288,10 @@ router.get('/collection', verifyToken, async (req, res) => {
     const obtainedCount = collection.filter(item => item.obtained).length;
     const isComplete = obtainedCount === TREASURES.length;
 
-    await client.query('COMMIT');
+    const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
+    const legendaryCount = collection
+      .filter(item => legendaryKeys.includes(item.key))
+      .reduce((sum, item) => sum + item.count, 0);
 
     res.json({
       collection,
@@ -298,12 +299,45 @@ router.get('/collection', verifyToken, async (req, res) => {
       progress: { obtained: obtainedCount, total: TREASURES.length },
       isComplete,
       bonusClaimed,
-      passiveIncome: income ? { earned: income.earned, perSecondIncome: income.perSecondIncome } : null,
+      passiveIncomePreview: {
+        legendaryCount,
+        perSecondIncome: legendaryCount * LEGENDARY_INCOME_PER_SECOND,
+        lastCollectedAt: treasureResult.rows[0]?.last_income_collected_at,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// -------------------------------
+// 패시브 골드 받기: POST /api/box/collect-income
+// -------------------------------
+// 메인 화면/도감 화면의 "받기" 버튼에서 호출합니다. 실제 정산은 여기서만 일어납니다.
+router.post('/collect-income', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+  const client = await db.getClient();
+
+  try {
+    await client.query('BEGIN');
+    const income = await collectPassiveIncome(client, userId);
+    await client.query('COMMIT');
+
+    if (!income) {
+      return res.status(400).json({ message: '아직 게임을 시작하지 않았습니다.' });
+    }
+
+    res.json({
+      message: income.earned > 0 ? `${income.earned}G를 받았습니다!` : '아직 쌓인 골드가 없습니다.',
+      earned: income.earned,
+      totalTreasure: income.newTotal,
+      perSecondIncome: income.perSecondIncome,
     });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(err);
-    res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+    res.status(500).json({ message: '서버 오류로 수령에 실패했습니다.' });
   } finally {
     client.release();
   }

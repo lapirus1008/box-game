@@ -441,8 +441,6 @@
 
     <button class="instant-open-btn hidden" id="instantOpenBtn">즉시 오픈권 사용</button>
 
-    <button class="btn-primary hidden" id="mainRebirthBtn" style="margin-bottom:12px;">✨ 환생 가능! (100,000G)</button>
-
     <div class="result-box" id="resultBox">
       <div class="rarity-badge" id="rarityBadge"></div>
       <div class="treasure-name" id="treasureName"></div>
@@ -459,7 +457,25 @@
       <span class="value" id="playtimeDisplay" style="font-size:14px;">00:00:00</span>
     </div>
 
-    <p class="hidden" id="pendingIncomeNearBtn" style="font-size:12px; color:var(--teal); text-align:center; margin:8px 0 0;"></p>
+    <!-- 환생 목표 진행바: 항상 보이고, 다 채워지면 강조됩니다 -->
+    <div id="rebirthGoalBox" style="margin:14px 0 4px; padding:10px 12px; border-radius:12px; background:var(--surface-2); border:1px solid #2C3F6B;">
+      <p style="display:flex; justify-content:space-between; font-size:12px; margin:0 0 6px; color:var(--ink-dim);">
+        <span>🎯 환생까지</span>
+        <span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 100,000G</span>
+      </p>
+      <div style="background:#0B1220; border-radius:6px; height:8px; overflow:hidden;">
+        <div id="rebirthGoalBar" style="background:var(--gold); height:100%; width:0%; transition:width 0.3s;"></div>
+      </div>
+    </div>
+
+    <button class="btn-primary hidden" id="mainRebirthBtn" style="margin-bottom:12px;">✨ 환생하기! (100,000G)</button>
+
+    <!-- 전설 아이템 패시브 골드: 실시간으로 쌓이는 걸 보여주고, 받기 버튼으로 바로 수령 -->
+    <div class="hidden" id="mainIncomeBox" style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 10px; padding:8px 12px; background:var(--surface-2); border-radius:10px;">
+      <span id="pendingIncomeNearBtn" style="font-size:12px; color:var(--teal);"></span>
+      <button id="collectIncomeBtnMain" style="width:auto; padding:6px 12px; font-size:12px; background:var(--teal); color:#0B1220; border-radius:8px;">받기</button>
+    </div>
+
     <button class="collection-link" id="openCollectionBtn">📖 도감 보기</button>
   </div>
 
@@ -470,7 +486,10 @@
       <button id="backToGameBtn">← 돌아가기</button>
     </div>
     <p style="font-size:13px; color:var(--gold); margin-top:-10px; margin-bottom:4px;">보유 골드: <strong id="shopGold">0</strong></p>
-    <p class="hidden" id="hourlyIncomeText" style="font-size:12px; color:var(--teal); margin:0 0 4px;"></p>
+    <div class="hidden" id="collectionIncomeBox" style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 8px; padding:8px 12px; background:var(--surface-2); border-radius:10px;">
+      <span id="hourlyIncomeText" style="font-size:12px; color:var(--teal);"></span>
+      <button id="collectIncomeBtnCollection" style="width:auto; padding:6px 12px; font-size:12px; background:var(--teal); color:#0B1220; border-radius:8px;">받기</button>
+    </div>
     <p style="font-size:13px; color:var(--ink-dim); margin:0 0 12px;">수집 진행도: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong></p>
     <button class="btn-primary hidden" id="claimBonusBtn" style="margin-bottom:16px;">🎉 도감 완성 보상 받기</button>
 
@@ -589,6 +608,41 @@
     }
   }
 
+  // 패시브 골드 받기 (메인 화면/도감 화면 버튼 공용)
+  async function collectIncome(btnEl){
+    btnEl.disabled = true;
+    try {
+      const res = await authFetch('/api/box/collect-income', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) return;
+
+      document.getElementById('totalTreasure').textContent = data.totalTreasure;
+      document.getElementById('shopGold').textContent = data.totalTreasure;
+      cachedLastIncomeCollectedAt = new Date(); // 방금 정산했으니 미리보기도 0부터 다시 시작
+      updatePlaytimeAndIncomePreview();
+
+      if (data.earned > 0) {
+        const onMainScreen = !gameScreen.classList.contains('hidden');
+        if (onMainScreen) {
+          document.getElementById('rarityBadge').textContent = '';
+          document.getElementById('treasureName').textContent = `💰 +${data.earned}G`;
+          document.getElementById('treasureDetail').textContent = '패시브 수입을 받았습니다';
+          document.getElementById('resultBox').style.display = 'block';
+        } else {
+          const craftResult = document.getElementById('craftResult');
+          craftResult.style.display = 'block';
+          craftResult.style.color = 'var(--teal)';
+          craftResult.textContent = `💰 +${data.earned}G 받았습니다!`;
+        }
+      }
+    } finally {
+      btnEl.disabled = false;
+    }
+  }
+
+  document.getElementById('collectIncomeBtnMain').addEventListener('click', function(){ collectIncome(this); });
+  document.getElementById('collectIncomeBtnCollection').addEventListener('click', function(){ collectIncome(this); });
+
   document.getElementById('rebirthBtn').addEventListener('click', function(){ performRebirth(this); });
   document.getElementById('mainRebirthBtn').addEventListener('click', function(){ performRebirth(this); });
 
@@ -658,19 +712,14 @@
         `${data.totalTreasure.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
       document.getElementById('rebirthBtn').classList.toggle('hidden', data.totalTreasure < REBIRTH_GOLD_REQUIRED);
 
-      const incomeText = document.getElementById('hourlyIncomeText');
-      if (data.passiveIncome && data.passiveIncome.perSecondIncome > 0) {
-        incomeText.classList.remove('hidden');
-        incomeText.textContent = `⏳ 전설 아이템 수입: 초당 +${data.passiveIncome.perSecondIncome}G`;
-        if (data.passiveIncome.earned > 0 && showIncomeToast) {
-          const craftResult = document.getElementById('craftResult');
-          craftResult.style.display = 'block';
-          craftResult.style.color = 'var(--teal)';
-          craftResult.textContent = `💰 자동 수입 정산: +${data.passiveIncome.earned}G`;
-        }
-      } else {
-        incomeText.classList.add('hidden');
+      if (data.passiveIncomePreview) {
+        cachedLegendaryCount = data.passiveIncomePreview.legendaryCount;
+        cachedPerSecondIncome = data.passiveIncomePreview.perSecondIncome;
+        cachedLastIncomeCollectedAt = data.passiveIncomePreview.lastCollectedAt
+          ? new Date(data.passiveIncomePreview.lastCollectedAt)
+          : null;
       }
+      updatePlaytimeAndIncomePreview(); // 화면 전환 직후에도 바로 반영되도록 즉시 한 번 갱신
 
       const claimBtn = document.getElementById('claimBonusBtn');
       if (data.isComplete && !data.bonusClaimed) {
@@ -1010,14 +1059,34 @@
       document.getElementById('playtimeDisplay').textContent = formatDuration(Math.max(0, playSeconds));
     }
 
-    const pendingEl = document.getElementById('pendingIncomeNearBtn');
+    // 패시브 골드 미리보기 (메인 화면 + 도감 화면 둘 다 같은 값을 보여줌)
+    let pendingGold = 0;
     if (cachedLegendaryCount > 0 && cachedLastIncomeCollectedAt) {
       const pendingSeconds = Math.floor((adjustedNow() - cachedLastIncomeCollectedAt) / 1000);
-      const pendingGold = Math.max(0, pendingSeconds) * cachedPerSecondIncome;
-      pendingEl.textContent = `⏳ 지금 도감에 들어가면 +${pendingGold}G 정산돼요`;
-      pendingEl.classList.remove('hidden');
+      pendingGold = Math.max(0, pendingSeconds) * cachedPerSecondIncome;
+    }
+    const hasIncome = cachedLegendaryCount > 0;
+
+    document.getElementById('mainIncomeBox').classList.toggle('hidden', !hasIncome);
+    document.getElementById('pendingIncomeNearBtn').textContent = `⏳ 초당 +${cachedPerSecondIncome}G 쌓이는 중 · 지금 +${pendingGold}G`;
+
+    document.getElementById('collectionIncomeBox').classList.toggle('hidden', !hasIncome);
+    document.getElementById('hourlyIncomeText').textContent = `⏳ 초당 +${cachedPerSecondIncome}G 쌓이는 중 · 지금 +${pendingGold}G`;
+
+    // 메인 화면 환생 목표 진행바 (항상 갱신)
+    const goldNow = parseInt(document.getElementById('totalTreasure').textContent.replace(/,/g, ''), 10) || 0;
+    const pct = Math.min(100, (goldNow / REBIRTH_GOLD_REQUIRED) * 100);
+    document.getElementById('rebirthGoalText').textContent = `${goldNow.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
+    document.getElementById('rebirthGoalBar').style.width = `${pct}%`;
+
+    const goalBox = document.getElementById('rebirthGoalBox');
+    if (goldNow >= REBIRTH_GOLD_REQUIRED) {
+      goalBox.style.borderColor = 'var(--gold)';
+      goalBox.style.boxShadow = '0 0 12px rgba(227,178,60,0.4)';
+      document.getElementById('rebirthGoalBar').style.background = 'var(--gold)';
     } else {
-      pendingEl.classList.add('hidden');
+      goalBox.style.borderColor = '#2C3F6B';
+      goalBox.style.boxShadow = 'none';
     }
   }
 
