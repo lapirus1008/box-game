@@ -24,6 +24,12 @@
     --rarity-legendary:#E3B23C;
   }
   *{ box-sizing:border-box; }
+  /* 어떤 버튼이든 disabled 속성만 주면 자동으로 회색 처리됨 (자리는 그대로 유지) */
+  button:disabled{
+    opacity:0.4;
+    cursor:not-allowed;
+    filter:grayscale(50%);
+  }
   body{
     margin:0;
     min-height:100vh;
@@ -338,6 +344,34 @@
   .item-card.rare{ border-color:rgba(76,140,240,0.4); }
   .item-card.epic{ border-color:rgba(177,92,240,0.4); }
   .item-card.legendary{ border-color:rgba(227,178,60,0.5); }
+
+  .rank-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:10px 12px;
+    border-radius:10px;
+    background:var(--surface-2);
+    margin-bottom:6px;
+    font-size:13px;
+  }
+  .rank-row.me{
+    border:1px solid var(--gold);
+    background:rgba(227,178,60,0.08);
+  }
+  .rank-row .rank-num{
+    width:28px;
+    font-weight:700;
+    color:var(--gold);
+  }
+  .rank-row .rank-name{
+    flex:1;
+    padding:0 8px;
+  }
+  .rank-row .rank-time{
+    font-family:'Fraunces', serif;
+    color:var(--ink);
+  }
   .craft-btn{
     margin-top:8px;
     padding:6px;
@@ -439,7 +473,15 @@
 
     <div class="status-text" id="statusText">불러오는 중...</div>
 
-    <button class="instant-open-btn hidden" id="instantOpenBtn">즉시 오픈권 사용</button>
+    <!-- 수량 지정 일괄 열기: 항상 자리를 차지하고, 골드가 부족하면 disable됩니다 -->
+    <div style="background:var(--surface-2); border-radius:10px; padding:10px 12px; margin-bottom:14px;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+        <input type="number" id="bulkOpenQty" value="1" min="1" step="1"
+          style="width:70px; padding:8px; background:var(--bg); border:1px solid #2C3F6B; border-radius:8px; color:var(--ink); font-size:14px; text-align:center;">
+        <button id="bulkOpenBtn" style="flex:1; padding:10px; background:var(--gold); color:#1A1305; border-radius:8px; font-size:13px; font-weight:600;">한번에 열기</button>
+      </div>
+      <p id="bulkOpenCostText" style="font-size:11px; color:var(--ink-dim); margin:0; text-align:center;">개당 75G · 최대 0개 구매 가능</p>
+    </div>
 
     <div class="result-box" id="resultBox">
       <div class="rarity-badge" id="rarityBadge"></div>
@@ -477,6 +519,8 @@
     </div>
 
     <button class="collection-link" id="openCollectionBtn">📖 도감 보기</button>
+    <button class="collection-link" id="openRankingBtn">🏆 랭킹 보기</button>
+    <button class="collection-link" id="resetRunBtn" style="color:var(--danger);">🔄 초심으로 돌아가기</button>
   </div>
 
   <!-- 도감 화면 -->
@@ -510,6 +554,16 @@
     <div class="collection-grid" id="collectionGrid"></div>
   </div>
 
+  <!-- 랭킹 화면 -->
+  <div class="card hidden" id="rankingScreen">
+    <div class="top-row">
+      <h1 style="margin:0; font-size:20px;">🏆 랭킹</h1>
+      <button id="backFromRankingBtn">← 돌아가기</button>
+    </div>
+    <p style="font-size:12px; color:var(--ink-dim); margin-top:-10px; margin-bottom:16px;">10만 골드까지 가장 빨리 도달한 환생 기록입니다</p>
+    <div id="rankingList"></div>
+  </div>
+
 <script>
   // ⚠️ 배포 후에는 실제 백엔드 서버 주소로 바꿔주세요.
   // 예: const API_BASE = 'https://box-game-api.onrender.com';
@@ -523,6 +577,7 @@
   const authScreen = document.getElementById('authScreen');
   const gameScreen = document.getElementById('gameScreen');
   const collectionScreen = document.getElementById('collectionScreen');
+  const rankingScreen = document.getElementById('rankingScreen');
   const authError = document.getElementById('authError');
 
   // 페이지를 열자마자 저장된 토큰이 아직 유효한지 확인해서 자동 로그인 시도
@@ -542,6 +597,61 @@
   })();
 
   const RARITY_LABEL = { common: '일반', rare: '희귀', epic: '영웅', legendary: '전설' };
+
+  document.getElementById('openRankingBtn').addEventListener('click', async () => {
+    gameScreen.classList.add('hidden');
+    rankingScreen.classList.remove('hidden');
+    await loadRanking();
+  });
+
+  document.getElementById('backFromRankingBtn').addEventListener('click', () => {
+    rankingScreen.classList.add('hidden');
+    gameScreen.classList.remove('hidden');
+  });
+
+  async function loadRanking(){
+    const listEl = document.getElementById('rankingList');
+    listEl.innerHTML = '<p style="color:var(--ink-dim); font-size:13px;">불러오는 중...</p>';
+
+    try {
+      const res = await authFetch('/api/box/leaderboard');
+      const data = await res.json();
+      if (!res.ok) {
+        listEl.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
+        return;
+      }
+
+      if (data.leaderboard.length === 0) {
+        listEl.innerHTML = '<p style="color:var(--ink-dim); font-size:13px;">아직 환생 기록이 없습니다. 첫 기록의 주인공이 되어보세요!</p>';
+        return;
+      }
+
+      let html = data.leaderboard.map(r => `
+        <div class="rank-row ${r.isMe ? 'me' : ''}">
+          <span class="rank-num">#${r.rank}</span>
+          <span class="rank-name">${r.nickname}${r.isMe ? ' (나)' : ''}</span>
+          <span class="rank-time">${formatDuration(Math.floor(r.bestDurationMs / 1000))}</span>
+        </div>
+      `).join('');
+
+      if (data.myRank && data.myRank.outsideTop20) {
+        html += `
+          <div style="text-align:center; font-size:12px; color:var(--ink-dim); margin:8px 0;">⋯</div>
+          <div class="rank-row me">
+            <span class="rank-num">#${data.myRank.rank}</span>
+            <span class="rank-name">나</span>
+            <span class="rank-time">${formatDuration(Math.floor(data.myRank.bestDurationMs / 1000))}</span>
+          </div>
+        `;
+      } else if (!data.myRank) {
+        html += `<p style="text-align:center; font-size:12px; color:var(--ink-dim); margin-top:10px;">아직 환생 기록이 없어 순위에 없습니다.</p>`;
+      }
+
+      listEl.innerHTML = html;
+    } catch (err) {
+      listEl.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
+    }
+  }
 
   document.getElementById('openCollectionBtn').addEventListener('click', async () => {
     gameScreen.classList.add('hidden');
@@ -644,6 +754,28 @@
   document.getElementById('collectIncomeBtnCollection').addEventListener('click', function(){ collectIncome(this); });
 
   document.getElementById('rebirthBtn').addEventListener('click', function(){ performRebirth(this); });
+
+  document.getElementById('resetRunBtn').addEventListener('click', async function(){
+    const confirmed = confirm('정말 초심으로 돌아가시겠어요?\n지금 모은 골드와 아이템이 모두 사라지고, 다시 2000골드부터 시작합니다.\n(이건 환생이 아니라서 기록에 남지 않아요)');
+    if (!confirmed) return;
+
+    this.disabled = true;
+    try {
+      const res = await authFetch('/api/box/reset-run', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { alert(data.message); return; }
+
+      cachedRunStartedAt = new Date(data.runStartedAt);
+      cachedLegendaryCount = 0;
+      cachedPerSecondIncome = 0;
+      document.getElementById('totalTreasure').textContent = data.totalTreasure;
+      document.getElementById('resultBox').style.display = 'none';
+      updatePlaytimeAndIncomePreview();
+      await refreshStatus();
+    } finally {
+      this.disabled = false;
+    }
+  });
   document.getElementById('mainRebirthBtn').addEventListener('click', function(){ performRebirth(this); });
 
   document.getElementById('toggleRebirthHistoryBtn').addEventListener('click', async () => {
@@ -743,7 +875,7 @@
           <div class="item-name">${item.obtained ? item.name : '???'}</div>
           ${item.obtained ? `<div class="item-count">x${item.count}</div>` : ''}
           <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${isMaxRarity ? '최고 등급' : `합성(-${CRAFT_COST})`}</button>
-          ${canSell ? `<button class="sell-btn" data-key="${item.key}">판매(+${item.sellPrice}G)</button>` : ''}
+          <button class="sell-btn" data-key="${item.key}" ${canSell ? '' : 'disabled'}>판매(+${item.sellPrice}G)</button>
         `;
         grid.appendChild(card);
       });
@@ -1088,6 +1220,8 @@
       goalBox.style.borderColor = '#2C3F6B';
       goalBox.style.boxShadow = 'none';
     }
+
+    clampBulkOpenQty(); // 골드가 바뀔 때마다 최대 구매 가능 수량도 항상 최신 상태로 유지
   }
 
   function renderCountdown(){
@@ -1095,14 +1229,12 @@
 
     const statusText = document.getElementById('statusText');
     const chest = document.getElementById('chest');
-    const instantBtn = document.getElementById('instantOpenBtn');
 
     if (cachedCanOpen){
       statusText.textContent = '상자를 열 수 있습니다';
       statusText.classList.add('ready');
       chest.style.opacity = '1';
       chest.style.pointerEvents = isOpening ? 'none' : 'auto';
-      instantBtn.classList.add('hidden');
       return;
     }
 
@@ -1125,11 +1257,6 @@
     const m = Math.floor(remainingMs / 60000);
     const s = Math.floor((remainingMs % 60000) / 1000);
     statusText.innerHTML = `다음 상자까지 <span class="timer">${m}분 ${s}초</span>`;
-
-    const estimatedPrice = Math.max(1, Math.ceil(remainingMs / 1000) * INSTANT_OPEN_PRICE_PER_SECOND);
-    instantBtn.textContent = `⚡ 즉시 오픈권 사용 (${estimatedPrice}G)`;
-    instantBtn.classList.remove('hidden');
-    instantBtn.disabled = isOpening;
   }
 
   // 상자 열기가 성공했을 때(일반/즉시 오픈 공통) 화면을 갱신하는 함수
@@ -1179,27 +1306,74 @@
   });
 
   // 즉시 오픈권 클릭 → 골드를 내고 쿨다운 없이 바로 열기
-  document.getElementById('instantOpenBtn').addEventListener('click', async function(){
+  const BULK_OPEN_PRICE_PER_BOX = 75; // 서버의 FULL_OPEN_PRICE와 반드시 일치시켜야 함 (15초 x 초당 5골드)
+
+  function getMaxAffordableQty(){
+    const gold = parseInt(document.getElementById('totalTreasure').textContent.replace(/,/g, ''), 10) || 0;
+    return Math.max(0, Math.floor(gold / BULK_OPEN_PRICE_PER_BOX));
+  }
+
+  // 수량 입력값이 "최대 구매 가능 수량"을 넘지 않도록 항상 보정
+  function clampBulkOpenQty(){
+    const input = document.getElementById('bulkOpenQty');
+    const max = getMaxAffordableQty();
+    let value = parseInt(input.value, 10);
+    if (isNaN(value) || value < 1) value = 1;
+    if (value > max) value = max;
+    input.value = max === 0 ? 0 : value;
+
+    const cost = value * BULK_OPEN_PRICE_PER_BOX;
+    document.getElementById('bulkOpenCostText').textContent = `개당 ${BULK_OPEN_PRICE_PER_BOX}G · 총 ${cost}G · 최대 ${max}개 구매 가능`;
+
+    const bulkBtn = document.getElementById('bulkOpenBtn');
+    bulkBtn.disabled = max === 0 || value < 1 || isOpening;
+  }
+
+  document.getElementById('bulkOpenQty').addEventListener('input', clampBulkOpenQty);
+
+  document.getElementById('bulkOpenBtn').addEventListener('click', async function(){
     if (isOpening) return;
+    const quantity = parseInt(document.getElementById('bulkOpenQty').value, 10);
+    if (!quantity || quantity < 1) return;
+
     isOpening = true;
     this.disabled = true;
     const originalText = this.textContent;
     this.textContent = '여는 중...';
 
     try {
-      const res = await authFetch('/api/box/instant-open', { method: 'POST' });
+      const res = await authFetch('/api/box/bulk-open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity }),
+      });
       const data = await res.json();
 
       if (!res.ok){
-        alert(data.message); // 간단한 안내 - 골드 부족 등
-        this.textContent = originalText;
+        alert(data.message);
         return;
       }
-      handleOpenSuccess(data);
+
+      syncServerTime(data.serverTime);
+      cachedNextAvailableAt = new Date(data.nextAvailableAt);
+      cachedCanOpen = false;
+      renderCountdown();
+
+      document.getElementById('totalTreasure').textContent = data.totalTreasure;
+      document.getElementById('rarityBadge').textContent = '';
+      document.getElementById('treasureName').textContent = `📦 ${data.quantity}개 일괄 오픈`;
+      document.getElementById('treasureDetail').textContent =
+        data.obtained.map(o => `${o.emoji}${o.name} x${o.count}`).join(', ');
+      document.getElementById('resultBox').style.display = 'block';
+
+      clampBulkOpenQty();
+      refreshStatus(); // 전설 아이템을 얻었을 수도 있으니 패시브 수입 미리보기도 재동기화
     } catch (err) {
-      this.textContent = originalText;
+      // 네트워크 실패 시 별도 처리 없이 다음 시도에 맡김
     } finally {
       isOpening = false;
+      this.textContent = originalText;
+      clampBulkOpenQty();
     }
   });
 </script>

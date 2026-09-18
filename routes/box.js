@@ -546,73 +546,94 @@ router.post('/collection/claim-bonus', verifyToken, async (req, res) => {
 // 즉시 오픈권: POST /api/box/instant-open
 // -------------------------------
 // 쿨다운이 남아있어도 골드를 내고 바로 상자를 엽니다. 가격은 남은 시간에 비례합니다.
-router.post('/instant-open', verifyToken, async (req, res) => {
+// 상자 1개를 "그냥 사서" 즉시 여는 가격 (쿨다운 전체를 스킵하는 값과 동일하게 맞춤: 15초 x 초당 5골드)
+const FULL_OPEN_PRICE = (COOLDOWN_MS / 1000) * INSTANT_OPEN_PRICE_PER_SECOND;
+const MAX_BULK_OPEN_QUANTITY = 500; // 한 번 요청에 허용하는 최대 수량 (서버 보호용 상한선)
+
+// -------------------------------
+// 수량 지정 일괄 열기: POST /api/box/bulk-open
+// -------------------------------
+// 쿨다운을 신경쓰지 않고, 골드로 상자를 원하는 개수만큼 한 번에 삽니다.
+// 상자 1개당 가격은 FULL_OPEN_PRICE로 고정입니다.
+router.post('/bulk-open', verifyToken, async (req, res) => {
   const userId = req.user.userId;
+  const quantity = parseInt(req.body.quantity, 10);
+
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return res.status(400).json({ message: '수량은 1 이상의 정수여야 합니다.' });
+  }
+  if (quantity > MAX_BULK_OPEN_QUANTITY) {
+    return res.status(400).json({ message: `한 번에 최대 ${MAX_BULK_OPEN_QUANTITY}개까지만 열 수 있습니다.` });
+  }
 
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
 
     const result = await client.query(
-      'SELECT last_opened_at, total_treasure FROM box_claims WHERE user_id = $1 FOR UPDATE',
+      'SELECT total_treasure FROM box_claims WHERE user_id = $1 FOR UPDATE',
       [userId]
     );
-
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ message: '아직 상자를 연 적이 없어 즉시 오픈권이 필요 없습니다. 그냥 상자를 여세요.' });
+      return res.status(400).json({ message: '아직 게임을 시작하지 않았습니다.' });
     }
 
-    const now = new Date();
-    const lastOpened = new Date(result.rows[0].last_opened_at);
-    const elapsedMs = now - lastOpened;
-    const remainingMs = COOLDOWN_MS - elapsedMs;
-
-    if (remainingMs <= 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ message: '이미 열 수 있는 상태입니다. 즉시 오픈권 없이 그냥 여세요.' });
-    }
-
-    const price = Math.max(1, Math.ceil(remainingMs / 1000) * INSTANT_OPEN_PRICE_PER_SECOND);
     const currentGold = parseInt(result.rows[0].total_treasure, 10);
+    const totalCost = FULL_OPEN_PRICE * quantity;
 
-    if (currentGold < price) {
+    if (currentGold < totalCost) {
       await client.query('ROLLBACK');
       return res.status(400).json({
-        message: `골드가 부족합니다. (필요: ${price}, 보유: ${currentGold})`,
-        price,
+        message: `골드가 부족합니다. (필요: ${totalCost}, 보유: ${currentGold})`,
+        maxAffordable: Math.floor(currentGold / FULL_OPEN_PRICE),
       });
     }
 
-    const treasure = pickRandomTreasure();
-    const remainingGold = currentGold - price; // 골드는 소모만 하고, 상자에서 다시 지급되진 않음
+    // quantity번 랜덤으로 뽑되, DB에는 아이템별로 합산해서 한 번씩만 반영 (효율적으로)
+    const obtainedCounts = {};
+    for (let i = 0; i < quantity; i++) {
+      const treasure = pickRandomTreasure();
+      obtainedCounts[treasure.key] = (obtainedCounts[treasure.key] || 0) + 1;
+    }
 
+    for (const [itemKey, count] of Object.entries(obtainedCounts)) {
+      await client.query(
+        `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (user_id, item_key)
+         DO UPDATE SET count = user_items.count + $3`,
+        [userId, itemKey, count]
+      );
+    }
+
+    const now = new Date();
+    const remainingGold = currentGold - totalCost;
     await client.query(
-      `UPDATE box_claims SET last_opened_at = $1, total_treasure = $2 WHERE user_id = $3`,
+      'UPDATE box_claims SET last_opened_at = $1, total_treasure = $2 WHERE user_id = $3',
       [now, remainingGold, userId]
-    );
-    await client.query(
-      `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
-       VALUES ($1, $2, 1, NOW())
-       ON CONFLICT (user_id, item_key)
-       DO UPDATE SET count = user_items.count + 1`,
-      [userId, treasure.key]
     );
 
     await client.query('COMMIT');
 
+    const obtainedList = Object.entries(obtainedCounts).map(([key, count]) => {
+      const item = TREASURES.find(t => t.key === key);
+      return { key, name: item.name, emoji: item.emoji, rarity: item.rarity, count };
+    });
+
     res.json({
-      message: '즉시 오픈권을 사용해 상자를 열었습니다!',
-      treasure,
-      pricePaid: price,
+      message: `상자 ${quantity}개를 열었습니다!`,
+      quantity,
+      totalCost,
       totalTreasure: remainingGold,
+      obtained: obtainedList,
       nextAvailableAt: new Date(now.getTime() + COOLDOWN_MS),
       serverTime: now,
     });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(err);
-    res.status(500).json({ message: '서버 오류로 즉시 오픈에 실패했습니다.' });
+    res.status(500).json({ message: '서버 오류로 일괄 열기에 실패했습니다.' });
   } finally {
     client.release();
   }
@@ -672,6 +693,40 @@ router.post('/sell', verifyToken, async (req, res) => {
 });
 
 const REBIRTH_GOLD_REQUIRED = 100000;
+
+// -------------------------------
+// 초심으로 돌아가기: POST /api/box/reset-run
+// -------------------------------
+// 10만 골드를 못 모았어도, 언제든 지금 판을 포기하고 처음부터 다시 시작할 수 있습니다.
+// 환생과 달리 "성공한 기록"이 아니라서 rebirth_count나 기록에는 남기지 않습니다.
+router.post('/reset-run', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+  const RESET_GOLD = 2000;
+
+  try {
+    await db.query('DELETE FROM user_items WHERE user_id = $1', [userId]);
+    const now = new Date();
+    await db.query(
+      `UPDATE box_claims
+       SET total_treasure = $1,
+           completion_bonus_claimed = FALSE,
+           last_opened_at = $2,
+           last_income_collected_at = $3,
+           run_started_at = $3
+       WHERE user_id = $4`,
+      [RESET_GOLD, new Date(0), now, userId]
+    );
+
+    res.json({
+      message: '초심으로 돌아갔습니다. 다시 도전해보세요!',
+      totalTreasure: RESET_GOLD,
+      runStartedAt: now,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
 
 // -------------------------------
 // 환생: POST /api/box/rebirth
@@ -852,6 +907,62 @@ router.post('/craft-all', verifyToken, async (req, res) => {
     res.status(500).json({ message: '서버 오류로 일괄 합성에 실패했습니다.' });
   } finally {
     client.release();
+  }
+});
+
+// -------------------------------
+// 랭킹 조회: GET /api/box/leaderboard
+// -------------------------------
+// 모든 유저의 "가장 빨랐던 환생 기록"을 뽑아서 순위를 매깁니다.
+router.get('/leaderboard', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const result = await db.query(
+      `SELECT u.id AS user_id, u.nickname, MIN(rh.duration_ms) AS best_duration_ms
+       FROM rebirth_history rh
+       JOIN users u ON u.id = rh.user_id
+       GROUP BY u.id, u.nickname
+       ORDER BY best_duration_ms ASC
+       LIMIT 20`
+    );
+
+    const leaderboard = result.rows.map((row, index) => ({
+      rank: index + 1,
+      userId: row.user_id,
+      nickname: row.nickname,
+      bestDurationMs: parseInt(row.best_duration_ms, 10),
+      isMe: row.user_id === userId,
+    }));
+
+    // 내가 top 20 밖이면, 내 순위를 별도로 계산해서 같이 내려줌
+    let myRank = leaderboard.find(r => r.isMe) || null;
+    if (!myRank) {
+      const myBestResult = await db.query(
+        `SELECT MIN(duration_ms) AS best_duration_ms FROM rebirth_history WHERE user_id = $1`,
+        [userId]
+      );
+      const myBest = myBestResult.rows[0]?.best_duration_ms;
+      if (myBest) {
+        const rankResult = await db.query(
+          `SELECT COUNT(*) + 1 AS rank FROM (
+             SELECT user_id, MIN(duration_ms) AS best FROM rebirth_history GROUP BY user_id
+           ) t WHERE t.best < $1`,
+          [myBest]
+        );
+        myRank = {
+          rank: parseInt(rankResult.rows[0].rank, 10),
+          bestDurationMs: parseInt(myBest, 10),
+          isMe: true,
+          outsideTop20: true,
+        };
+      }
+    }
+
+    res.json({ leaderboard, myRank });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류가 발생했습니다.' });
   }
 });
 
