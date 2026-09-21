@@ -98,12 +98,7 @@
     background:var(--gold);
     color:#1A1305;
   }
-  .btn-primary:hover{ background:#eebd52; }
-  .btn-primary:disabled{
-    background:#5C5030;
-    color:#8A8266;
-    cursor:not-allowed;
-  }
+  .btn-primary:hover:not(:disabled){ background:#eebd52; }
   .switch-line{
     text-align:center;
     margin-top:18px;
@@ -151,6 +146,7 @@
     display:flex;
     justify-content:center;
     margin:8px 0 24px;
+    position:relative;
   }
   .chest{
     width:140px;
@@ -178,9 +174,7 @@
     transform-origin:bottom;
     transition:transform 0.4s cubic-bezier(.34,1.56,.64,1);
   }
-  .chest.open .chest-lid{
-    transform:rotateX(115deg);
-  }
+  .chest.open .chest-lid{ transform:rotateX(115deg); }
   .chest-lock{
     position:absolute;
     top:44px;
@@ -204,45 +198,110 @@
     opacity:0;
     transition:opacity 0.3s, transform 0.3s;
   }
-  .chest.open .chest-glow{
-    opacity:1;
-    transform:translateX(-50%) scale(1.4);
+  .chest.open .chest-glow{ opacity:1; transform:translateX(-50%) scale(1.4); }
+
+  /* 전설 아이템 획득 이펙트 */
+  #legendaryFlash{
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    z-index:999;
+    opacity:0;
+    background:radial-gradient(circle at 50% 40%, rgba(227,178,60,0.55), transparent 65%);
   }
+  #legendaryFlash.play{ animation:legendaryFlashAnim 1.4s ease-out; }
+  @keyframes legendaryFlashAnim{
+    0%{ opacity:0; }
+    15%{ opacity:1; }
+    100%{ opacity:0; }
+  }
+  .legendary-glow{
+    animation:legendaryPulse 0.8s ease-in-out 3;
+    box-shadow:0 0 26px 6px rgba(227,178,60,0.55) !important;
+    border-color:var(--gold) !important;
+  }
+  @keyframes legendaryPulse{
+    0%,100%{ transform:scale(1); }
+    50%{ transform:scale(1.03); }
+  }
+  .legendary-sparkle{
+    position:absolute;
+    font-size:20px;
+    animation:sparkleFloat 1.2s ease-out forwards;
+    pointer-events:none;
+  }
+  @keyframes sparkleFloat{
+    0%{ opacity:0; transform:translateY(0) scale(0.5); }
+    30%{ opacity:1; }
+    100%{ opacity:0; transform:translateY(-60px) scale(1.2); }
+  }
+
   .status-text{
     text-align:center;
     font-size:14px;
     color:var(--ink-dim);
     min-height:20px;
-    margin-bottom:24px;
+    margin-bottom:16px;
   }
   .status-text.ready{ color:var(--teal); }
   .timer{
     font-family:'Fraunces', serif;
-    font-size:22px;
+    font-size:20px;
     color:var(--gold);
   }
-  .instant-open-btn{
-    background:none;
-    border:1px solid var(--gold-dim);
-    color:var(--gold);
-    padding:6px 14px;
-    font-size:12px;
-    border-radius:20px;
-    margin:0 auto 16px;
-    display:block;
+  .charge-bar-wrap{
+    background:#0B1220;
+    border-radius:6px;
+    height:8px;
+    overflow:hidden;
+    margin:0 0 16px;
+  }
+  .charge-bar-fill{
+    background:var(--teal);
+    height:100%;
+    width:0%;
+    transition:width 0.3s;
+  }
+
+  .bulk-open-box{
+    background:var(--surface-2);
+    border-radius:10px;
+    padding:10px 12px;
+    margin-bottom:14px;
+  }
+  .bulk-open-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:6px;
+  }
+  .bulk-open-row input{
+    width:64px;
+    padding:8px;
+    margin:0;
+    background:var(--bg);
+    border:1px solid #2C3F6B;
+    border-radius:8px;
+    color:var(--ink);
+    font-size:14px;
+    text-align:center;
+  }
+  .bulk-open-row button{
     width:auto;
+    padding:10px;
+    font-size:13px;
   }
-  .instant-open-btn:disabled{
-    opacity:0.4;
-    cursor:not-allowed;
-  }
+  #bulkOpenBtn{ flex:1; background:var(--gold); color:#1A1305; border-radius:8px; }
+  #maxQtyBtn{ background:var(--surface); border:1px solid #2C3F6B; color:var(--ink-dim); border-radius:8px; padding:10px 12px; font-size:12px; }
+  #bulkOpenCostText{ font-size:11px; color:var(--ink-dim); margin:0; text-align:center; }
+
   .result-box{
     background:var(--surface-2);
     border:1px solid #2C3F6B;
     border-radius:12px;
     padding:16px;
     text-align:center;
-    margin-bottom:20px;
+    margin-bottom:16px;
     display:none;
   }
   .result-box .treasure-name{
@@ -251,21 +310,6 @@
     color:var(--gold);
     margin-bottom:2px;
   }
-  .stats-row{
-    display:flex;
-    justify-content:space-between;
-    padding-top:20px;
-    border-top:1px solid #22335C;
-    font-size:14px;
-  }
-  .stats-row .label{ color:var(--ink-dim); }
-  .stats-row .value{
-    font-family:'Fraunces', serif;
-    color:var(--gold);
-    font-size:18px;
-  }
-
-  /* 등급 뱃지 (결과창에 표시) */
   .rarity-badge{
     display:inline-block;
     font-size:11px;
@@ -279,11 +323,78 @@
   .rarity-badge.epic{ background:rgba(177,92,240,0.2); color:var(--rarity-epic); }
   .rarity-badge.legendary{ background:rgba(227,178,60,0.2); color:var(--rarity-legendary); }
 
-  /* 도감 열기 링크 */
+  .stats-row{
+    display:flex;
+    justify-content:space-between;
+    padding-top:14px;
+    border-top:1px solid #22335C;
+    font-size:14px;
+  }
+  .stats-row .label{ color:var(--ink-dim); }
+  .stats-row .value{
+    font-family:'Fraunces', serif;
+    color:var(--gold);
+    font-size:18px;
+  }
+
+  .goal-box{
+    margin:14px 0 4px;
+    padding:10px 12px;
+    border-radius:12px;
+    background:var(--surface-2);
+    border:1px solid #2C3F6B;
+    transition:border-color 0.3s, box-shadow 0.3s;
+  }
+  .goal-box .goal-top{
+    display:flex;
+    justify-content:space-between;
+    font-size:12px;
+    margin:0 0 6px;
+    color:var(--ink-dim);
+  }
+  .goal-bar-wrap{
+    background:#0B1220;
+    border-radius:6px;
+    height:8px;
+    overflow:hidden;
+  }
+  .goal-bar-fill{
+    background:var(--gold);
+    height:100%;
+    width:0%;
+    transition:width 0.3s;
+  }
+
+  .income-box{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    margin:0 0 10px;
+    padding:8px 12px;
+    background:var(--surface-2);
+    border-radius:10px;
+  }
+  .income-box span{ font-size:12px; color:var(--teal); }
+  .income-box button{
+    width:auto;
+    padding:6px 12px;
+    font-size:12px;
+    background:var(--teal);
+    color:#0B1220;
+    border-radius:8px;
+  }
+  .income-hint{
+    font-size:11px;
+    color:var(--ink-dim);
+    margin:-6px 0 12px;
+    text-align:center;
+  }
+
   .collection-link{
     display:block;
     text-align:center;
-    margin-top:18px;
+    margin-top:10px;
     font-size:13px;
     color:var(--ink-dim);
     text-decoration:underline;
@@ -295,13 +406,13 @@
   }
 
   /* 도감 화면 */
-  #collectionScreen .top-row{
+  #collectionScreen .top-row, #rankingScreen .top-row{
     display:flex;
     justify-content:space-between;
     align-items:center;
     margin-bottom:20px;
   }
-  #backToGameBtn{
+  #backToGameBtn, #backFromRankingBtn{
     all:unset;
     color:var(--ink-dim);
     font-size:13px;
@@ -320,58 +431,14 @@
     text-align:center;
     border:2px solid transparent;
   }
-  .item-card.locked{
-    opacity:0.4;
-  }
-  .item-card .item-emoji{
-    font-size:28px;
-    display:block;
-    margin-bottom:6px;
-  }
-  .item-card .item-name{
-    font-size:11px;
-    color:var(--ink);
-    line-height:1.3;
-    min-height:28px;
-  }
-  .item-card .item-count{
-    font-size:11px;
-    color:var(--gold);
-    margin-top:4px;
-    font-weight:600;
-  }
+  .item-card.locked{ opacity:0.4; }
+  .item-card .item-emoji{ font-size:28px; display:block; margin-bottom:6px; }
+  .item-card .item-name{ font-size:11px; color:var(--ink); line-height:1.3; min-height:28px; }
+  .item-card .item-count{ font-size:11px; color:var(--gold); margin-top:4px; font-weight:600; }
   .item-card.common{ border-color:rgba(154,163,178,0.4); }
   .item-card.rare{ border-color:rgba(76,140,240,0.4); }
   .item-card.epic{ border-color:rgba(177,92,240,0.4); }
   .item-card.legendary{ border-color:rgba(227,178,60,0.5); }
-
-  .rank-row{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    padding:10px 12px;
-    border-radius:10px;
-    background:var(--surface-2);
-    margin-bottom:6px;
-    font-size:13px;
-  }
-  .rank-row.me{
-    border:1px solid var(--gold);
-    background:rgba(227,178,60,0.08);
-  }
-  .rank-row .rank-num{
-    width:28px;
-    font-weight:700;
-    color:var(--gold);
-  }
-  .rank-row .rank-name{
-    flex:1;
-    padding:0 8px;
-  }
-  .rank-row .rank-time{
-    font-family:'Fraunces', serif;
-    color:var(--ink);
-  }
   .craft-btn{
     margin-top:8px;
     padding:6px;
@@ -380,32 +447,18 @@
     color:#0B1220;
     border-radius:8px;
   }
-  .craft-btn:disabled{
-    background:#2C3F6B;
-    color:var(--ink-dim);
-    cursor:not-allowed;
+
+  .rebirth-box{
+    background:var(--surface-2);
+    border-radius:12px;
+    padding:14px;
+    margin-bottom:16px;
   }
-  .buy-btn{
-    margin-top:6px;
-    padding:6px;
-    font-size:11px;
-    background:var(--gold);
-    color:#1A1305;
-    border-radius:8px;
-  }
-  .buy-btn:disabled{
-    background:#5C5030;
-    color:#8A8266;
-    cursor:not-allowed;
-  }
-  .sell-btn{
-    margin-top:6px;
-    padding:6px;
-    font-size:11px;
-    background:var(--surface);
-    border:1px solid var(--gold-dim);
-    color:var(--gold);
-    border-radius:8px;
+  .rebirth-box .rebirth-top{
+    font-size:13px;
+    margin:0 0 6px;
+    display:flex;
+    justify-content:space-between;
   }
   .craft-result{
     background:var(--surface-2);
@@ -418,18 +471,46 @@
     font-size:13px;
   }
   .craft-result .arrow{ color:var(--ink-dim); margin:0 6px; }
+
+  /* 랭킹 화면 */
+  .rank-row{
+    display:grid;
+    grid-template-columns:36px 1fr 90px;
+    align-items:center;
+    padding:10px 12px;
+    border-radius:10px;
+    background:var(--surface-2);
+    margin-bottom:6px;
+    font-size:13px;
+    min-height:20px;
+  }
+  .rank-row.me{ border:1px solid var(--gold); background:rgba(227,178,60,0.08); }
+  .rank-row.empty{ background:transparent; opacity:0.25; }
+  .rank-row .rank-num{ font-weight:700; color:var(--gold); }
+  .rank-row .rank-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:8px; }
+  .rank-row .rank-time{ font-family:'Fraunces', serif; color:var(--ink); text-align:right; }
+  .rank-pagination{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:14px;
+    margin-top:12px;
+  }
+  .rank-pagination button{ width:auto; padding:8px 14px; font-size:13px; background:var(--surface-2); border:1px solid #2C3F6B; color:var(--ink); border-radius:8px; }
+  .rank-pagination span{ font-size:13px; color:var(--ink-dim); }
 </style>
 </head>
 <body>
 
+<div id="legendaryFlash"></div>
+
   <!-- 로그인 / 회원가입 화면 -->
   <div class="card" id="authScreen">
     <h1>시간의 상자</h1>
-    <p class="subtitle">10분에 한 번, 상자를 열어 아이템을 모으세요</p>
+    <p class="subtitle">상자를 열어 아이템을 모으고, 10만 골드로 환생하세요</p>
 
     <div class="error-msg" id="authError"></div>
 
-    <!-- 로그인 폼 -->
     <form id="loginForm">
       <label for="loginEmail">이메일</label>
       <input type="email" id="loginEmail" required>
@@ -438,7 +519,6 @@
       <button type="submit" class="btn-primary">로그인</button>
     </form>
 
-    <!-- 회원가입 폼 -->
     <form id="signupForm" class="hidden">
       <label for="signupNickname">닉네임</label>
       <input type="text" id="signupNickname" required>
@@ -472,15 +552,15 @@
     </div>
 
     <div class="status-text" id="statusText">불러오는 중...</div>
+    <div class="charge-bar-wrap"><div class="charge-bar-fill" id="chargeBarFill"></div></div>
 
-    <!-- 수량 지정 일괄 열기: 항상 자리를 차지하고, 골드가 부족하면 disable됩니다 -->
-    <div style="background:var(--surface-2); border-radius:10px; padding:10px 12px; margin-bottom:14px;">
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-        <input type="number" id="bulkOpenQty" value="1" min="1" step="1"
-          style="width:70px; padding:8px; background:var(--bg); border:1px solid #2C3F6B; border-radius:8px; color:var(--ink); font-size:14px; text-align:center;">
-        <button id="bulkOpenBtn" style="flex:1; padding:10px; background:var(--gold); color:#1A1305; border-radius:8px; font-size:13px; font-weight:600;">한번에 열기</button>
+    <div class="bulk-open-box">
+      <div class="bulk-open-row">
+        <input type="number" id="bulkOpenQty" value="1" min="1" step="1">
+        <button id="maxQtyBtn">최대로</button>
+        <button id="bulkOpenBtn">한번에 열기</button>
       </div>
-      <p id="bulkOpenCostText" style="font-size:11px; color:var(--ink-dim); margin:0; text-align:center;">개당 75G · 최대 0개 구매 가능</p>
+      <p id="bulkOpenCostText">충전 0/100 · 무료로 소모</p>
     </div>
 
     <div class="result-box" id="resultBox">
@@ -499,24 +579,18 @@
       <span class="value" id="playtimeDisplay" style="font-size:14px;">00:00:00</span>
     </div>
 
-    <!-- 환생 목표 진행바: 항상 보이고, 다 채워지면 강조됩니다 -->
-    <div id="rebirthGoalBox" style="margin:14px 0 4px; padding:10px 12px; border-radius:12px; background:var(--surface-2); border:1px solid #2C3F6B;">
-      <p style="display:flex; justify-content:space-between; font-size:12px; margin:0 0 6px; color:var(--ink-dim);">
-        <span>🎯 환생까지</span>
-        <span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 100,000G</span>
-      </p>
-      <div style="background:#0B1220; border-radius:6px; height:8px; overflow:hidden;">
-        <div id="rebirthGoalBar" style="background:var(--gold); height:100%; width:0%; transition:width 0.3s;"></div>
-      </div>
+    <div class="goal-box" id="rebirthGoalBox">
+      <p class="goal-top"><span>🎯 환생까지</span><span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 100,000G</span></p>
+      <div class="goal-bar-wrap"><div class="goal-bar-fill" id="rebirthGoalBar"></div></div>
     </div>
 
-    <button class="btn-primary hidden" id="mainRebirthBtn" style="margin-bottom:12px;">✨ 환생하기! (100,000G)</button>
+    <button class="btn-primary" id="mainRebirthBtn" disabled style="margin:12px 0;">✨ 환생하기! (100,000G)</button>
 
-    <!-- 전설 아이템 패시브 골드: 실시간으로 쌓이는 걸 보여주고, 받기 버튼으로 바로 수령 -->
-    <div class="hidden" id="mainIncomeBox" style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 10px; padding:8px 12px; background:var(--surface-2); border-radius:10px;">
-      <span id="pendingIncomeNearBtn" style="font-size:12px; color:var(--teal);"></span>
-      <button id="collectIncomeBtnMain" style="width:auto; padding:6px 12px; font-size:12px; background:var(--teal); color:#0B1220; border-radius:8px;">받기</button>
+    <div class="income-box" id="mainIncomeBox">
+      <span id="pendingIncomeNearBtn"></span>
+      <button id="collectIncomeBtnMain">받기</button>
     </div>
+    <p class="income-hint">💡 기본 초당 1G + 전설 아이템 1개당 초당 1G 추가로 쌓여요</p>
 
     <button class="collection-link" id="openCollectionBtn">📖 도감 보기</button>
     <button class="collection-link" id="openRankingBtn">🏆 랭킹 보기</button>
@@ -530,26 +604,24 @@
       <button id="backToGameBtn">← 돌아가기</button>
     </div>
     <p style="font-size:13px; color:var(--gold); margin-top:-10px; margin-bottom:4px;">보유 골드: <strong id="shopGold">0</strong></p>
-    <div class="hidden" id="collectionIncomeBox" style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 8px; padding:8px 12px; background:var(--surface-2); border-radius:10px;">
-      <span id="hourlyIncomeText" style="font-size:12px; color:var(--teal);"></span>
-      <button id="collectIncomeBtnCollection" style="width:auto; padding:6px 12px; font-size:12px; background:var(--teal); color:#0B1220; border-radius:8px;">받기</button>
-    </div>
     <p style="font-size:13px; color:var(--ink-dim); margin:0 0 12px;">수집 진행도: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong></p>
     <button class="btn-primary hidden" id="claimBonusBtn" style="margin-bottom:16px;">🎉 도감 완성 보상 받기</button>
 
-    <!-- 환생 섹션 -->
-    <div style="background:var(--surface-2); border-radius:12px; padding:14px; margin-bottom:16px;">
-      <p style="font-size:13px; margin:0 0 6px; display:flex; justify-content:space-between;">
-        <span>🌀 환생 진행도</span>
-        <span id="rebirthProgressText" style="color:var(--gold);">0 / 100,000G</span>
-      </p>
-      <button class="btn-primary hidden" id="rebirthBtn" style="margin-bottom:8px;">✨ 환생하기 (100,000G)</button>
+    <div class="rebirth-box">
+      <p class="rebirth-top"><span>🌀 환생 진행도</span><span id="rebirthProgressText" style="color:var(--gold);">0 / 100,000G</span></p>
+      <button class="btn-primary" id="rebirthBtn" disabled style="margin-bottom:8px;">✨ 환생하기 (100,000G)</button>
       <button class="collection-link" id="toggleRebirthHistoryBtn" style="margin:0; font-size:12px;">환생 기록 보기</button>
       <div class="hidden" id="rebirthHistoryList" style="margin-top:8px; font-size:12px; color:var(--ink-dim);"></div>
     </div>
 
+    <div class="income-box" id="collectionIncomeBox">
+      <span id="hourlyIncomeText"></span>
+      <button id="collectIncomeBtnCollection">받기</button>
+    </div>
+
     <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:8px;">같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요</p>
     <button class="collection-link" id="craftAllBtn" style="margin-bottom:16px; background:var(--surface-2); border:1px solid var(--gold-dim); border-radius:10px; padding:10px; color:var(--gold); text-decoration:none;">⚡ 전체 합성 (가능한 만큼 한번에)</button>
+
     <div class="craft-result" id="craftResult"></div>
     <div class="collection-grid" id="collectionGrid"></div>
   </div>
@@ -562,23 +634,62 @@
     </div>
     <p style="font-size:12px; color:var(--ink-dim); margin-top:-10px; margin-bottom:16px;">10만 골드까지 가장 빨리 도달한 환생 기록입니다</p>
     <div id="rankingList"></div>
+    <div class="rank-pagination hidden" id="rankPagination">
+      <button id="rankPrevBtn">← 이전</button>
+      <span id="rankPageText">1 / 1</span>
+      <button id="rankNextBtn">다음 →</button>
+    </div>
+    <div class="hidden" id="myRankFooter" style="margin-top:14px;"></div>
   </div>
 
 <script>
-  // ⚠️ 배포 후에는 실제 백엔드 서버 주소로 바꿔주세요.
-  // 예: const API_BASE = 'https://box-game-api.onrender.com';
   const API_BASE = 'https://box-game-6y1g.onrender.com';
 
-  // 배포된 사이트에서는 새로고침해도 로그인이 유지되도록 토큰을 localStorage에 저장합니다.
+  const CHARGE_INTERVAL_MS = 15 * 1000; // 서버의 CHARGE_INTERVAL_MS와 반드시 일치
+  const MAX_BOX_CHARGES = 100;
+  const REBIRTH_GOLD_REQUIRED = 100000;
+  const CRAFT_COST = 3;
+  const RANK_PAGE_SIZE = 20;
+
   let authToken = localStorage.getItem('boxGameToken');
   let currentUser = null;
   let statusInterval = null;
+  let resyncInterval = null;
+  let isOpening = false;
+
+  // 캐시된 상태값 (0.2초마다 로컬에서 다시 그릴 때 사용)
+  let cachedCharges = 0;
+  let cachedMaxCharges = MAX_BOX_CHARGES;
+  let cachedNextChargeAt = null;
+  let cachedLegendaryCount = 0;
+  let cachedBaseIncome = 1;
+  let cachedLegendaryIncome = 0;
+  let cachedPerSecondIncome = 1;
+  let cachedLastIncomeCollectedAt = null;
+  let cachedRunStartedAt = null;
+  let cachedRebirthCount = 0;
+  let serverTimeOffset = 0;
+  let currentRankPage = 1;
 
   const authScreen = document.getElementById('authScreen');
   const gameScreen = document.getElementById('gameScreen');
   const collectionScreen = document.getElementById('collectionScreen');
   const rankingScreen = document.getElementById('rankingScreen');
   const authError = document.getElementById('authError');
+
+  function syncServerTime(serverTimeStr){
+    if (!serverTimeStr) return;
+    serverTimeOffset = new Date(serverTimeStr).getTime() - Date.now();
+  }
+  function adjustedNow(){
+    return new Date(Date.now() + serverTimeOffset);
+  }
+  function formatDuration(totalSeconds){
+    const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+    const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+    const s = String(Math.floor(totalSeconds % 60)).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  }
 
   // 페이지를 열자마자 저장된 토큰이 아직 유효한지 확인해서 자동 로그인 시도
   (async function tryAutoLogin(){
@@ -590,135 +701,360 @@
       currentUser = data.user;
       enterGame();
     } catch (err) {
-      // 토큰이 만료됐거나 유효하지 않으면 지우고 로그인 화면 유지
       localStorage.removeItem('boxGameToken');
       authToken = null;
     }
   })();
 
+  function showAuthError(message){
+    authError.textContent = message;
+    authError.style.display = 'block';
+  }
+  function clearAuthError(){ authError.style.display = 'none'; }
+
+  document.getElementById('switchToSignup').addEventListener('click', () => {
+    document.getElementById('loginForm').classList.add('hidden');
+    document.getElementById('signupForm').classList.remove('hidden');
+    document.getElementById('switchToSignupLine').classList.add('hidden');
+    document.getElementById('switchToLoginLine').classList.remove('hidden');
+    clearAuthError();
+  });
+  document.getElementById('switchToLogin').addEventListener('click', () => {
+    document.getElementById('signupForm').classList.add('hidden');
+    document.getElementById('loginForm').classList.remove('hidden');
+    document.getElementById('switchToLoginLine').classList.add('hidden');
+    document.getElementById('switchToSignupLine').classList.remove('hidden');
+    clearAuthError();
+  });
+
+  document.getElementById('signupForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearAuthError();
+    const nickname = document.getElementById('signupNickname').value;
+    const email = document.getElementById('signupEmail').value;
+    const password = document.getElementById('signupPassword').value;
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, nickname }),
+      });
+      const data = await res.json();
+      if (!res.ok) return showAuthError(data.message || '회원가입에 실패했습니다.');
+      authToken = data.token;
+      localStorage.setItem('boxGameToken', data.token);
+      currentUser = data.user;
+      enterGame();
+    } catch (err) {
+      showAuthError('서버에 연결할 수 없습니다.');
+    }
+  });
+
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearAuthError();
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) return showAuthError(data.message || '로그인에 실패했습니다.');
+      authToken = data.token;
+      localStorage.setItem('boxGameToken', data.token);
+      currentUser = data.user;
+      enterGame();
+    } catch (err) {
+      showAuthError('서버에 연결할 수 없습니다.');
+    }
+  });
+
+  // 계정이 바뀔 때 이전 결과/이펙트 흔적이 남지 않도록 초기화
+  function resetGameResultUI(){
+    document.getElementById('resultBox').style.display = 'none';
+    document.getElementById('craftResult').style.display = 'none';
+    document.getElementById('chest').classList.remove('open');
+    document.getElementById('rankingHistoryList')?.classList.add('hidden');
+  }
+
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    authToken = null;
+    currentUser = null;
+    localStorage.removeItem('boxGameToken');
+    clearInterval(statusInterval);
+    clearInterval(resyncInterval);
+    resetGameResultUI();
+    gameScreen.classList.add('hidden');
+    authScreen.classList.remove('hidden');
+  });
+
+  function enterGame(){
+    document.getElementById('userNickname').textContent = currentUser.nickname || currentUser.email;
+    authScreen.classList.add('hidden');
+    gameScreen.classList.remove('hidden');
+    resetGameResultUI();
+
+    refreshStatus();
+    clearInterval(statusInterval);
+    statusInterval = setInterval(renderTick, 200);
+    clearInterval(resyncInterval);
+    resyncInterval = setInterval(refreshStatus, 15000);
+  }
+
+  async function authFetch(path, options = {}){
+    return fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { ...(options.headers || {}), 'Authorization': `Bearer ${authToken}` },
+    });
+  }
+
+  // 서버에서 정확한 상태를 받아와 기준값을 갱신
+  async function refreshStatus(){
+    try {
+      const res = await authFetch('/api/box/status');
+      const data = await res.json();
+      if (!res.ok) return;
+
+      syncServerTime(data.serverTime);
+      document.getElementById('totalTreasure').textContent = data.totalTreasure;
+      cachedCharges = data.charges;
+      cachedMaxCharges = data.maxCharges;
+      cachedNextChargeAt = data.nextChargeInMs != null ? new Date(adjustedNow().getTime() + data.nextChargeInMs) : null;
+
+      if (data.passiveIncomePreview) {
+        cachedLegendaryCount = data.passiveIncomePreview.legendaryCount;
+        cachedBaseIncome = data.passiveIncomePreview.baseIncome;
+        cachedLegendaryIncome = data.passiveIncomePreview.legendaryIncome;
+        cachedPerSecondIncome = data.passiveIncomePreview.perSecondIncome;
+        cachedLastIncomeCollectedAt = new Date(data.passiveIncomePreview.lastCollectedAt);
+      }
+      if (data.runStartedAt) cachedRunStartedAt = new Date(data.runStartedAt);
+      if (typeof data.rebirthCount === 'number') {
+        cachedRebirthCount = data.rebirthCount;
+        document.getElementById('rebirthCount').textContent = cachedRebirthCount;
+      }
+
+      renderTick();
+    } catch (err) {
+      // 네트워크 문제는 조용히 무시하고 다음 동기화 때 재시도
+    }
+  }
+
+  // 0.2초마다 호출: 네트워크 없이 로컬 계산만으로 화면을 그림
+  function renderTick(){
+    const statusText = document.getElementById('statusText');
+    const chest = document.getElementById('chest');
+
+    // 충전 로컬 시뮬레이션: 다음 충전 시각이 지났으면 1개씩 늘려줌
+    if (cachedCharges < cachedMaxCharges && cachedNextChargeAt) {
+      while (cachedNextChargeAt && adjustedNow() >= cachedNextChargeAt && cachedCharges < cachedMaxCharges) {
+        cachedCharges++;
+        cachedNextChargeAt = new Date(cachedNextChargeAt.getTime() + CHARGE_INTERVAL_MS);
+      }
+      if (cachedCharges >= cachedMaxCharges) cachedNextChargeAt = null;
+    }
+
+    const canOpen = cachedCharges >= 1;
+    chest.style.opacity = canOpen ? '1' : '0.6';
+    chest.style.pointerEvents = (canOpen && !isOpening) ? 'auto' : 'none';
+
+    if (canOpen) {
+      statusText.textContent = `충전된 상자 ${cachedCharges}개 · 열 수 있습니다`;
+      statusText.classList.add('ready');
+    } else {
+      statusText.classList.remove('ready');
+      statusText.textContent = '충전된 상자가 없습니다';
+    }
+
+    document.getElementById('chargeBarFill').style.width = `${(cachedCharges / cachedMaxCharges) * 100}%`;
+
+    // 플레이타임
+    if (cachedRunStartedAt) {
+      const playSeconds = Math.floor((adjustedNow() - cachedRunStartedAt) / 1000);
+      document.getElementById('playtimeDisplay').textContent = formatDuration(Math.max(0, playSeconds));
+    }
+
+    // 패시브 골드 미리보기 (항상 표시: 기본 수입은 누구나 있음)
+    let pendingGold = 0;
+    if (cachedLastIncomeCollectedAt) {
+      const pendingSeconds = Math.floor((adjustedNow() - cachedLastIncomeCollectedAt) / 1000);
+      pendingGold = Math.max(0, pendingSeconds) * cachedPerSecondIncome;
+    }
+    const incomeLine = cachedLegendaryCount > 0
+      ? `⏳ 초당 +${cachedPerSecondIncome}G (기본 ${cachedBaseIncome} + 전설 ${cachedLegendaryIncome}) · 지금 +${pendingGold}G`
+      : `⏳ 초당 +${cachedBaseIncome}G 쌓이는 중 · 지금 +${pendingGold}G`;
+    document.getElementById('pendingIncomeNearBtn').textContent = incomeLine;
+    document.getElementById('hourlyIncomeText').textContent = incomeLine;
+
+    // 환생 목표 진행바
+    const goldNow = parseInt(document.getElementById('totalTreasure').textContent.replace(/,/g, ''), 10) || 0;
+    const pct = Math.min(100, (goldNow / REBIRTH_GOLD_REQUIRED) * 100);
+    document.getElementById('rebirthGoalText').textContent = `${goldNow.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
+    document.getElementById('rebirthGoalBar').style.width = `${pct}%`;
+
+    const goalBox = document.getElementById('rebirthGoalBox');
+    const goalReady = goldNow >= REBIRTH_GOLD_REQUIRED;
+    goalBox.style.borderColor = goalReady ? 'var(--gold)' : '#2C3F6B';
+    goalBox.style.boxShadow = goalReady ? '0 0 12px rgba(227,178,60,0.4)' : 'none';
+    document.getElementById('mainRebirthBtn').disabled = !goalReady;
+
+    clampBulkOpenQty();
+  }
+
+  function getMaxOpenableQty(){
+    return Math.max(0, cachedCharges);
+  }
+
+  function clampBulkOpenQty(){
+    const input = document.getElementById('bulkOpenQty');
+    const max = getMaxOpenableQty();
+    let value = parseInt(input.value, 10);
+    if (isNaN(value) || value < 1) value = 1;
+    if (value > max) value = max;
+    input.value = max === 0 ? 0 : value;
+
+    document.getElementById('bulkOpenCostText').textContent =
+      `충전 ${cachedCharges}/${cachedMaxCharges} · 최대 ${max}개까지 무료로 열 수 있어요`;
+
+    document.getElementById('bulkOpenBtn').disabled = max === 0 || value < 1 || isOpening;
+    document.getElementById('maxQtyBtn').disabled = max === 0;
+  }
+
+  document.getElementById('bulkOpenQty').addEventListener('input', clampBulkOpenQty);
+  document.getElementById('maxQtyBtn').addEventListener('click', () => {
+    document.getElementById('bulkOpenQty').value = getMaxOpenableQty();
+    clampBulkOpenQty();
+  });
+
+  // -------------------------------
+  // 전설 아이템 이펙트
+  // -------------------------------
+  function triggerLegendaryEffect(){
+    const flash = document.getElementById('legendaryFlash');
+    flash.classList.remove('play');
+    void flash.offsetWidth; // 리플로우 강제 (같은 애니메이션 다시 재생하려고)
+    flash.classList.add('play');
+
+    const resultBox = document.getElementById('resultBox');
+    resultBox.classList.remove('legendary-glow');
+    void resultBox.offsetWidth;
+    resultBox.classList.add('legendary-glow');
+    setTimeout(() => resultBox.classList.remove('legendary-glow'), 2600);
+
+    const wrap = document.querySelector('.chest-wrap');
+    for (let i = 0; i < 6; i++) {
+      const sparkle = document.createElement('div');
+      sparkle.className = 'legendary-sparkle';
+      sparkle.textContent = '✨';
+      sparkle.style.left = `${40 + Math.random() * 60}px`;
+      sparkle.style.top = `${20 + Math.random() * 40}px`;
+      sparkle.style.animationDelay = `${Math.random() * 0.3}s`;
+      wrap.appendChild(sparkle);
+      setTimeout(() => sparkle.remove(), 1600);
+    }
+  }
+
+  function checkAndTriggerLegendary(items){
+    // items: 단일 아이템 객체 또는 아이템 배열 둘 다 받을 수 있게
+    const list = Array.isArray(items) ? items : [items];
+    if (list.some(item => item && item.rarity === 'legendary')) {
+      triggerLegendaryEffect();
+    }
+  }
+
+  // 상자 열기가 성공했을 때 화면을 갱신하는 공통 함수
+  function handleOpenSuccess(data){
+    syncServerTime(data.serverTime);
+    cachedCharges = data.charges;
+    cachedMaxCharges = data.maxCharges;
+    cachedNextChargeAt = data.nextChargeInMs != null ? new Date(adjustedNow().getTime() + data.nextChargeInMs) : null;
+    renderTick();
+
+    const chest = document.getElementById('chest');
+    chest.classList.add('open');
+    const rarityBadge = document.getElementById('rarityBadge');
+    rarityBadge.textContent = RARITY_LABEL[data.treasure.rarity] || '';
+    rarityBadge.className = `rarity-badge ${data.treasure.rarity}`;
+    document.getElementById('treasureName').textContent = `${data.treasure.emoji} ${data.treasure.name}`;
+    document.getElementById('treasureDetail').textContent = data.treasure.flavor || '';
+    document.getElementById('resultBox').style.display = 'block';
+    document.getElementById('totalTreasure').textContent = data.totalTreasure;
+
+    checkAndTriggerLegendary(data.treasure);
+
+    setTimeout(() => { chest.classList.remove('open'); }, 1500);
+    refreshStatus();
+  }
+
   const RARITY_LABEL = { common: '일반', rare: '희귀', epic: '영웅', legendary: '전설' };
 
-  document.getElementById('openRankingBtn').addEventListener('click', async () => {
-    gameScreen.classList.add('hidden');
-    rankingScreen.classList.remove('hidden');
-    await loadRanking();
-  });
-
-  document.getElementById('backFromRankingBtn').addEventListener('click', () => {
-    rankingScreen.classList.add('hidden');
-    gameScreen.classList.remove('hidden');
-  });
-
-  async function loadRanking(){
-    const listEl = document.getElementById('rankingList');
-    listEl.innerHTML = '<p style="color:var(--ink-dim); font-size:13px;">불러오는 중...</p>';
+  document.getElementById('chest').addEventListener('click', async function(){
+    if (cachedCharges < 1 || isOpening) return;
+    isOpening = true;
+    this.style.pointerEvents = 'none';
 
     try {
-      const res = await authFetch('/api/box/leaderboard');
+      const res = await authFetch('/api/box/open', { method: 'POST' });
       const data = await res.json();
-      if (!res.ok) {
-        listEl.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
-        return;
-      }
-
-      if (data.leaderboard.length === 0) {
-        listEl.innerHTML = '<p style="color:var(--ink-dim); font-size:13px;">아직 환생 기록이 없습니다. 첫 기록의 주인공이 되어보세요!</p>';
-        return;
-      }
-
-      let html = data.leaderboard.map(r => `
-        <div class="rank-row ${r.isMe ? 'me' : ''}">
-          <span class="rank-num">#${r.rank}</span>
-          <span class="rank-name">${r.nickname}${r.isMe ? ' (나)' : ''}</span>
-          <span class="rank-time">${formatDuration(Math.floor(r.bestDurationMs / 1000))}</span>
-        </div>
-      `).join('');
-
-      if (data.myRank && data.myRank.outsideTop20) {
-        html += `
-          <div style="text-align:center; font-size:12px; color:var(--ink-dim); margin:8px 0;">⋯</div>
-          <div class="rank-row me">
-            <span class="rank-num">#${data.myRank.rank}</span>
-            <span class="rank-name">나</span>
-            <span class="rank-time">${formatDuration(Math.floor(data.myRank.bestDurationMs / 1000))}</span>
-          </div>
-        `;
-      } else if (!data.myRank) {
-        html += `<p style="text-align:center; font-size:12px; color:var(--ink-dim); margin-top:10px;">아직 환생 기록이 없어 순위에 없습니다.</p>`;
-      }
-
-      listEl.innerHTML = html;
+      if (!res.ok){ refreshStatus(); return; }
+      handleOpenSuccess(data);
     } catch (err) {
-      listEl.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
+      refreshStatus();
+    } finally {
+      isOpening = false;
     }
-  }
-
-  document.getElementById('openCollectionBtn').addEventListener('click', async () => {
-    gameScreen.classList.add('hidden');
-    collectionScreen.classList.remove('hidden');
-    document.getElementById('craftResult').style.display = 'none';
-    await loadCollection();
   });
 
-  document.getElementById('backToGameBtn').addEventListener('click', () => {
-    collectionScreen.classList.add('hidden');
-    gameScreen.classList.remove('hidden');
-    refreshStatus(); // 상점에서 골드를 썼을 수 있으니 게임 화면 골드 표시도 갱신
-  });
+  document.getElementById('bulkOpenBtn').addEventListener('click', async function(){
+    if (isOpening) return;
+    const quantity = parseInt(document.getElementById('bulkOpenQty').value, 10);
+    if (!quantity || quantity < 1) return;
 
-  const CRAFT_COST = 3;
-
-  // 환생 요청 처리 (메인 화면/도감 화면 버튼에서 공통으로 사용)
-  async function performRebirth(btnEl){
-    btnEl.disabled = true;
-    const onMainScreen = !gameScreen.classList.contains('hidden');
+    isOpening = true;
+    this.disabled = true;
+    const originalText = this.textContent;
+    this.textContent = '여는 중...';
 
     try {
-      const res = await authFetch('/api/box/rebirth', { method: 'POST' });
+      const res = await authFetch('/api/box/bulk-open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity }),
+      });
       const data = await res.json();
+      if (!res.ok){ alert(data.message); return; }
 
-      if (!res.ok) {
-        if (onMainScreen) {
-          alert(data.message);
-        } else {
-          const craftResult = document.getElementById('craftResult');
-          craftResult.style.display = 'block';
-          craftResult.style.color = 'var(--danger)';
-          craftResult.textContent = data.message;
-        }
-      } else {
-        const resultMessage = `✨ ${data.rebirthNumber}번째 환생! 이번 판 기록: ${formatDuration(Math.floor(data.durationMs / 1000))} — 처음부터 다시 시작합니다`;
+      syncServerTime(data.serverTime);
+      cachedCharges = data.charges;
+      cachedMaxCharges = data.maxCharges;
+      cachedNextChargeAt = data.nextChargeInMs != null ? new Date(adjustedNow().getTime() + data.nextChargeInMs) : null;
 
-        if (onMainScreen) {
-          document.getElementById('rarityBadge').textContent = '';
-          document.getElementById('treasureName').textContent = `✨ ${data.rebirthNumber}번째 환생 달성!`;
-          document.getElementById('treasureDetail').textContent = `기록: ${formatDuration(Math.floor(data.durationMs / 1000))}`;
-          document.getElementById('resultBox').style.display = 'block';
-        } else {
-          const craftResult = document.getElementById('craftResult');
-          craftResult.style.display = 'block';
-          craftResult.style.color = 'var(--gold)';
-          craftResult.textContent = resultMessage;
-        }
+      document.getElementById('totalTreasure').textContent = data.totalTreasure;
+      document.getElementById('rarityBadge').textContent = '';
+      document.getElementById('treasureName').textContent = `📦 ${data.quantity}개 일괄 오픈`;
+      document.getElementById('treasureDetail').textContent =
+        data.obtained.map(o => `${o.emoji}${o.name} x${o.count}`).join(', ');
+      document.getElementById('resultBox').style.display = 'block';
 
-        cachedRunStartedAt = new Date(data.runStartedAt);
-        cachedRebirthCount = data.rebirthNumber;
-        cachedLegendaryCount = 0; // 아이템이 전부 초기화됐으니 패시브 수입 미리보기도 리셋
-        cachedPerSecondIncome = 0;
-        document.getElementById('rebirthCount').textContent = cachedRebirthCount;
-        document.getElementById('totalTreasure').textContent = data.totalTreasure;
-        document.getElementById('mainRebirthBtn').classList.add('hidden');
-      }
-      if (!collectionScreen.classList.contains('hidden')) {
-        await loadCollection(false, false);
-      }
-      await refreshStatus(); // 쿨다운/골드가 초기화됐으니 게임 화면 상태도 재동기화
+      checkAndTriggerLegendary(data.obtained);
+
+      renderTick();
+      refreshStatus();
+    } catch (err) {
+      // 네트워크 실패 시 다음 시도에 맡김
     } finally {
-      btnEl.disabled = false;
+      isOpening = false;
+      this.textContent = originalText;
+      clampBulkOpenQty();
     }
-  }
+  });
 
-  // 패시브 골드 받기 (메인 화면/도감 화면 버튼 공용)
+  // -------------------------------
+  // 패시브 골드 받기
+  // -------------------------------
   async function collectIncome(btnEl){
     btnEl.disabled = true;
     try {
@@ -728,8 +1064,8 @@
 
       document.getElementById('totalTreasure').textContent = data.totalTreasure;
       document.getElementById('shopGold').textContent = data.totalTreasure;
-      cachedLastIncomeCollectedAt = new Date(); // 방금 정산했으니 미리보기도 0부터 다시 시작
-      updatePlaytimeAndIncomePreview();
+      cachedLastIncomeCollectedAt = new Date();
+      renderTick();
 
       if (data.earned > 0) {
         const onMainScreen = !gameScreen.classList.contains('hidden');
@@ -749,11 +1085,56 @@
       btnEl.disabled = false;
     }
   }
-
   document.getElementById('collectIncomeBtnMain').addEventListener('click', function(){ collectIncome(this); });
   document.getElementById('collectIncomeBtnCollection').addEventListener('click', function(){ collectIncome(this); });
 
+  // -------------------------------
+  // 환생 / 초심으로 돌아가기
+  // -------------------------------
+  async function performRebirth(btnEl){
+    btnEl.disabled = true;
+    const onMainScreen = !gameScreen.classList.contains('hidden');
+    try {
+      const res = await authFetch('/api/box/rebirth', { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (onMainScreen) alert(data.message);
+        else {
+          const craftResult = document.getElementById('craftResult');
+          craftResult.style.display = 'block';
+          craftResult.style.color = 'var(--danger)';
+          craftResult.textContent = data.message;
+        }
+      } else {
+        const msg = `✨ ${data.rebirthNumber}번째 환생! 이번 판 기록: ${formatDuration(Math.floor(data.durationMs / 1000))} — 처음부터 다시 시작합니다`;
+        if (onMainScreen) {
+          document.getElementById('rarityBadge').textContent = '';
+          document.getElementById('treasureName').textContent = `✨ ${data.rebirthNumber}번째 환생 달성!`;
+          document.getElementById('treasureDetail').textContent = `기록: ${formatDuration(Math.floor(data.durationMs / 1000))}`;
+          document.getElementById('resultBox').style.display = 'block';
+        } else {
+          const craftResult = document.getElementById('craftResult');
+          craftResult.style.display = 'block';
+          craftResult.style.color = 'var(--gold)';
+          craftResult.textContent = msg;
+        }
+        cachedRunStartedAt = new Date(data.runStartedAt);
+        cachedRebirthCount = data.rebirthNumber;
+        cachedLegendaryCount = 0;
+        cachedLegendaryIncome = 0;
+        cachedPerSecondIncome = cachedBaseIncome;
+        document.getElementById('rebirthCount').textContent = cachedRebirthCount;
+        document.getElementById('totalTreasure').textContent = data.totalTreasure;
+      }
+      if (!collectionScreen.classList.contains('hidden')) await loadCollection(false, false);
+      await refreshStatus();
+    } finally {
+      btnEl.disabled = false;
+    }
+  }
   document.getElementById('rebirthBtn').addEventListener('click', function(){ performRebirth(this); });
+  document.getElementById('mainRebirthBtn').addEventListener('click', function(){ performRebirth(this); });
 
   document.getElementById('resetRunBtn').addEventListener('click', async function(){
     const confirmed = confirm('정말 초심으로 돌아가시겠어요?\n지금 모은 골드와 아이템이 모두 사라지고, 다시 2000골드부터 시작합니다.\n(이건 환생이 아니라서 기록에 남지 않아요)');
@@ -767,70 +1148,36 @@
 
       cachedRunStartedAt = new Date(data.runStartedAt);
       cachedLegendaryCount = 0;
-      cachedPerSecondIncome = 0;
+      cachedLegendaryIncome = 0;
+      cachedPerSecondIncome = cachedBaseIncome;
       document.getElementById('totalTreasure').textContent = data.totalTreasure;
       document.getElementById('resultBox').style.display = 'none';
-      updatePlaytimeAndIncomePreview();
+      renderTick();
       await refreshStatus();
     } finally {
       this.disabled = false;
     }
   });
-  document.getElementById('mainRebirthBtn').addEventListener('click', function(){ performRebirth(this); });
 
-  document.getElementById('toggleRebirthHistoryBtn').addEventListener('click', async () => {
-    const listEl = document.getElementById('rebirthHistoryList');
-    if (!listEl.classList.contains('hidden')) {
-      listEl.classList.add('hidden');
-      return;
-    }
-
-    listEl.classList.remove('hidden');
-    listEl.textContent = '불러오는 중...';
-
-    try {
-      const res = await authFetch('/api/box/rebirth/history');
-      const data = await res.json();
-      if (!res.ok || data.history.length === 0) {
-        listEl.textContent = '아직 환생 기록이 없습니다.';
-        return;
-      }
-
-      listEl.innerHTML = data.history.map(h => {
-        const date = new Date(h.completedAt).toLocaleString();
-        return `<div style="padding:4px 0; border-bottom:1px solid #22335C;">#${h.rebirthNumber} — ${formatDuration(Math.floor(h.durationMs / 1000))} (${date})</div>`;
-      }).join('');
-    } catch (err) {
-      listEl.textContent = '불러오지 못했습니다.';
-    }
+  // -------------------------------
+  // 도감 화면
+  // -------------------------------
+  document.getElementById('openCollectionBtn').addEventListener('click', async () => {
+    gameScreen.classList.add('hidden');
+    collectionScreen.classList.remove('hidden');
+    document.getElementById('craftResult').style.display = 'none';
+    await loadCollection();
   });
 
-  document.getElementById('claimBonusBtn').addEventListener('click', async function(){
-    this.disabled = true;
-    try {
-      const res = await authFetch('/api/box/collection/claim-bonus', { method: 'POST' });
-      const data = await res.json();
-
-      const craftResult = document.getElementById('craftResult');
-      craftResult.style.display = 'block';
-      if (!res.ok) {
-        craftResult.style.color = 'var(--danger)';
-        craftResult.textContent = data.message;
-      } else {
-        craftResult.style.color = 'var(--gold)';
-        craftResult.textContent = `🎉 도감 완성! +${data.bonusGold}G 획득!`;
-      }
-      await loadCollection(false, false);
-    } finally {
-      this.disabled = false;
-    }
+  document.getElementById('backToGameBtn').addEventListener('click', () => {
+    collectionScreen.classList.add('hidden');
+    gameScreen.classList.remove('hidden');
+    refreshStatus();
   });
 
-  async function loadCollection(showLoadingText = true, showIncomeToast = true){
+  async function loadCollection(showLoadingText = true){
     const grid = document.getElementById('collectionGrid');
-    if (showLoadingText) {
-      grid.innerHTML = '<p style="color:var(--ink-dim); font-size:13px;">불러오는 중...</p>';
-    }
+    if (showLoadingText) grid.innerHTML = '<p style="color:var(--ink-dim); font-size:13px;">불러오는 중...</p>';
 
     try {
       const res = await authFetch('/api/box/collection');
@@ -839,26 +1186,22 @@
 
       document.getElementById('shopGold').textContent = data.totalTreasure;
       document.getElementById('collectionProgress').textContent = `${data.progress.obtained}/${data.progress.total}`;
-
       document.getElementById('rebirthProgressText').textContent =
         `${data.totalTreasure.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
-      document.getElementById('rebirthBtn').classList.toggle('hidden', data.totalTreasure < REBIRTH_GOLD_REQUIRED);
+      document.getElementById('rebirthBtn').disabled = data.totalTreasure < REBIRTH_GOLD_REQUIRED;
+
+      const claimBtn = document.getElementById('claimBonusBtn');
+      if (data.isComplete && !data.bonusClaimed) claimBtn.classList.remove('hidden');
+      else claimBtn.classList.add('hidden');
 
       if (data.passiveIncomePreview) {
         cachedLegendaryCount = data.passiveIncomePreview.legendaryCount;
+        cachedBaseIncome = data.passiveIncomePreview.baseIncome;
+        cachedLegendaryIncome = data.passiveIncomePreview.legendaryIncome;
         cachedPerSecondIncome = data.passiveIncomePreview.perSecondIncome;
-        cachedLastIncomeCollectedAt = data.passiveIncomePreview.lastCollectedAt
-          ? new Date(data.passiveIncomePreview.lastCollectedAt)
-          : null;
+        cachedLastIncomeCollectedAt = data.passiveIncomePreview.lastCollectedAt ? new Date(data.passiveIncomePreview.lastCollectedAt) : null;
       }
-      updatePlaytimeAndIncomePreview(); // 화면 전환 직후에도 바로 반영되도록 즉시 한 번 갱신
-
-      const claimBtn = document.getElementById('claimBonusBtn');
-      if (data.isComplete && !data.bonusClaimed) {
-        claimBtn.classList.remove('hidden');
-      } else {
-        claimBtn.classList.add('hidden');
-      }
+      renderTick();
 
       grid.innerHTML = '';
       data.collection.forEach(item => {
@@ -868,73 +1211,51 @@
 
         const canCraft = item.obtained && item.count >= CRAFT_COST && item.rarity !== 'legendary';
         const isMaxRarity = item.rarity === 'legendary';
-        const canSell = item.obtained && item.count > 0;
 
         card.innerHTML = `
           <span class="item-emoji">${item.obtained ? item.emoji : '❔'}</span>
           <div class="item-name">${item.obtained ? item.name : '???'}</div>
           ${item.obtained ? `<div class="item-count">x${item.count}</div>` : ''}
           <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${isMaxRarity ? '최고 등급' : `합성(-${CRAFT_COST})`}</button>
-          <button class="sell-btn" data-key="${item.key}" ${canSell ? '' : 'disabled'}>판매(+${item.sellPrice}G)</button>
         `;
         grid.appendChild(card);
       });
 
-      // 합성 버튼 클릭 이벤트 연결 (disabled 상태는 클릭이 애초에 안 먹으므로 그대로 연결해도 안전)
       grid.querySelectorAll('.craft-btn').forEach(btn => {
         btn.addEventListener('click', () => craftItem(btn.dataset.key, btn));
-      });
-      // 판매 버튼 클릭 이벤트 연결
-      grid.querySelectorAll('.sell-btn').forEach(btn => {
-        btn.addEventListener('click', () => sellItem(btn.dataset.key, btn));
       });
     } catch (err) {
       grid.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
     }
   }
 
-  async function sellItem(itemKey, btnEl){
-    btnEl.disabled = true;
-    const originalText = btnEl.textContent;
-    btnEl.textContent = '판매 중...';
-
+  document.getElementById('claimBonusBtn').addEventListener('click', async function(){
+    this.disabled = true;
     try {
-      const res = await authFetch('/api/box/sell', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemKey }),
-      });
+      const res = await authFetch('/api/box/collection/claim-bonus', { method: 'POST' });
       const data = await res.json();
-
       const craftResult = document.getElementById('craftResult');
+      craftResult.style.display = 'block';
       if (!res.ok) {
-        craftResult.style.display = 'block';
         craftResult.style.color = 'var(--danger)';
         craftResult.textContent = data.message;
-        btnEl.disabled = false;
-        btnEl.textContent = originalText;
       } else {
-        craftResult.style.display = 'block';
         craftResult.style.color = 'var(--gold)';
-        craftResult.innerHTML = `${data.sold.emoji} ${data.sold.name} 판매 <span class="arrow">→</span> +${data.goldEarned}G`;
+        craftResult.textContent = `🎉 도감 완성! +${data.bonusGold}G 획득!`;
       }
-
-      await loadCollection(false, false);
-    } catch (err) {
-      btnEl.disabled = false;
-      btnEl.textContent = originalText;
+      await loadCollection(false);
+    } finally {
+      this.disabled = false;
     }
-  }
+  });
 
   document.getElementById('craftAllBtn').addEventListener('click', async function(){
     this.disabled = true;
     const originalText = this.textContent;
     this.textContent = '합성 중...';
-
     try {
       const res = await authFetch('/api/box/craft-all', { method: 'POST' });
       const data = await res.json();
-
       const craftResult = document.getElementById('craftResult');
       craftResult.style.display = 'block';
       if (!res.ok) {
@@ -951,8 +1272,7 @@
         }).join(' / ');
         craftResult.textContent = `⚡ 총 ${data.totalCrafts}번 합성! (${summary})`;
       }
-
-      await loadCollection(false, false);
+      await loadCollection(false);
     } finally {
       this.disabled = false;
       this.textContent = originalText;
@@ -962,7 +1282,6 @@
   async function craftItem(itemKey, btnEl){
     btnEl.disabled = true;
     btnEl.textContent = '합성 중...';
-
     try {
       const res = await authFetch('/api/box/craft', {
         method: 'POST',
@@ -970,412 +1289,126 @@
         body: JSON.stringify({ itemKey }),
       });
       const data = await res.json();
-
       const craftResult = document.getElementById('craftResult');
+      craftResult.style.display = 'block';
       if (!res.ok) {
-        craftResult.style.display = 'block';
         craftResult.style.color = 'var(--danger)';
         craftResult.textContent = data.message;
       } else {
-        craftResult.style.display = 'block';
         craftResult.style.color = 'var(--ink)';
         craftResult.innerHTML = `${data.consumed.name} x${data.consumed.amount} <span class="arrow">→</span> ${data.result.emoji} ${data.result.name} 획득!`;
       }
-
-      await loadCollection(false, false); // 로딩 문구 없이 조용히 갱신 (깜빡임 방지)
-    } catch (err) {
+      await loadCollection(false);
+    } finally {
       btnEl.disabled = false;
-      btnEl.textContent = `합성(-${CRAFT_COST})`;
     }
   }
 
-  function showAuthError(message){
-    authError.textContent = message;
-    authError.style.display = 'block';
-  }
-  function clearAuthError(){
-    authError.style.display = 'none';
-  }
+  document.getElementById('toggleRebirthHistoryBtn').addEventListener('click', async () => {
+    const listEl = document.getElementById('rebirthHistoryList');
+    if (!listEl.classList.contains('hidden')) { listEl.classList.add('hidden'); return; }
 
-  // 로그인 / 회원가입 폼 전환
-  document.getElementById('switchToSignup').addEventListener('click', () => {
-    document.getElementById('loginForm').classList.add('hidden');
-    document.getElementById('signupForm').classList.remove('hidden');
-    document.getElementById('switchToSignupLine').classList.add('hidden');
-    document.getElementById('switchToLoginLine').classList.remove('hidden');
-    clearAuthError();
-  });
-  document.getElementById('switchToLogin').addEventListener('click', () => {
-    document.getElementById('signupForm').classList.add('hidden');
-    document.getElementById('loginForm').classList.remove('hidden');
-    document.getElementById('switchToLoginLine').classList.add('hidden');
-    document.getElementById('switchToSignupLine').classList.remove('hidden');
-    clearAuthError();
-  });
-
-  // 회원가입 처리
-  document.getElementById('signupForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    clearAuthError();
-    const nickname = document.getElementById('signupNickname').value;
-    const email = document.getElementById('signupEmail').value;
-    const password = document.getElementById('signupPassword').value;
-
+    listEl.classList.remove('hidden');
+    listEl.textContent = '불러오는 중...';
     try {
-      const res = await fetch(`${API_BASE}/api/auth/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, nickname }),
-      });
+      const res = await authFetch('/api/box/rebirth/history');
       const data = await res.json();
-      if (!res.ok) return showAuthError(data.message || '회원가입에 실패했습니다.');
-
-      authToken = data.token;
-      localStorage.setItem('boxGameToken', data.token);
-      currentUser = data.user;
-      enterGame();
+      if (!res.ok || data.history.length === 0) {
+        listEl.textContent = '아직 환생 기록이 없습니다.';
+        return;
+      }
+      listEl.innerHTML = data.history.map(h => {
+        const date = new Date(h.completedAt).toLocaleString();
+        return `<div style="padding:4px 0; border-bottom:1px solid #22335C;">#${h.rebirthNumber} — ${formatDuration(Math.floor(h.durationMs / 1000))} (${date})</div>`;
+      }).join('');
     } catch (err) {
-      showAuthError('서버에 연결할 수 없습니다.');
+      listEl.textContent = '불러오지 못했습니다.';
     }
   });
 
-  // 로그인 처리
-  document.getElementById('loginForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    clearAuthError();
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
-
-    try {
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) return showAuthError(data.message || '로그인에 실패했습니다.');
-
-      authToken = data.token;
-      localStorage.setItem('boxGameToken', data.token);
-      currentUser = data.user;
-      enterGame();
-    } catch (err) {
-      showAuthError('서버에 연결할 수 없습니다.');
-    }
-  });
-
-  // 로그아웃
-  document.getElementById('logoutBtn').addEventListener('click', () => {
-    authToken = null;
-    currentUser = null;
-    localStorage.removeItem('boxGameToken');
-    clearInterval(statusInterval);
-    clearInterval(resyncInterval);
-    resetGameResultUI(); // 로그아웃 시 이전 결과 화면 흔적 제거
+  // -------------------------------
+  // 랭킹 화면
+  // -------------------------------
+  document.getElementById('openRankingBtn').addEventListener('click', async () => {
     gameScreen.classList.add('hidden');
-    authScreen.classList.remove('hidden');
+    rankingScreen.classList.remove('hidden');
+    currentRankPage = 1;
+    await loadRanking();
   });
-
-  // 계정을 전환하거나 새로 로그인할 때, 이전 세션의 결과 화면이 남아있지 않도록 초기화합니다.
-  function resetGameResultUI(){
-    const resultBox = document.getElementById('resultBox');
-    resultBox.style.display = 'none';
-    document.getElementById('treasureName').textContent = '';
-    document.getElementById('treasureDetail').textContent = '';
-    document.getElementById('rarityBadge').textContent = '';
-    document.getElementById('rarityBadge').className = 'rarity-badge';
-    document.getElementById('chest').classList.remove('open');
-
-    const craftResult = document.getElementById('craftResult');
-    craftResult.style.display = 'none';
-    craftResult.textContent = '';
-  }
-
-  function enterGame(){
-    resetGameResultUI(); // 다른 계정의 이전 결과가 남아있지 않도록 먼저 초기화
-    document.getElementById('userNickname').textContent = currentUser.nickname || currentUser.email;
-    authScreen.classList.add('hidden');
+  document.getElementById('backFromRankingBtn').addEventListener('click', () => {
+    rankingScreen.classList.add('hidden');
     gameScreen.classList.remove('hidden');
-
-    refreshStatus(); // 최초 1회 서버에서 정확한 상태를 가져옴
-
-    // 화면 갱신은 서버에 매번 묻지 않고, 로컬 시계로 0.2초마다 자체 계산합니다.
-    // (네트워크 왕복 시간이 카운트다운 오차로 쌓이는 걸 막기 위함)
-    clearInterval(statusInterval);
-    statusInterval = setInterval(renderCountdown, 200);
-
-    // 다만 오래 켜두면 로컬 시계가 아주 조금씩 어긋날 수 있으니,
-    // 30초마다 한 번씩 서버와 다시 맞춥니다.
-    clearInterval(resyncInterval);
-    resyncInterval = setInterval(refreshStatus, 30000);
-  }
-
-  // 서버에 인증 토큰을 담아 요청하는 공통 함수
-  async function authFetch(path, options = {}){
-    return fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: {
-        ...(options.headers || {}),
-        'Authorization': `Bearer ${authToken}`,
-      },
-    });
-  }
-
-  let cachedNextAvailableAt = null;
-  let cachedLegendaryCount = 0;
-  let cachedPerSecondIncome = 0;
-  let cachedLastIncomeCollectedAt = null;
-  let cachedRunStartedAt = null;
-  let cachedRebirthCount = 0;
-  let cachedCanOpen = false;
-  let resyncInterval = null;
-  // 서버 시각과 내 기기 시각의 차이(밀리초). 이 값을 더하면 "서버 기준 지금"을 알 수 있습니다.
-  let serverTimeOffset = 0;
-  let isOpening = false;
-
-  function syncServerTime(serverTimeStr){
-    serverTimeOffset = new Date(serverTimeStr).getTime() - Date.now();
-  }
-
-  function adjustedNow(){
-    return new Date(Date.now() + serverTimeOffset);
-  }
-
-  // 서버에서 정확한 상태를 받아와 기준값을 갱신 (자주 호출하지 않음)
-  async function refreshStatus(){
-    try {
-      const res = await authFetch('/api/box/status');
-      const data = await res.json();
-      if (!res.ok) return;
-
-      syncServerTime(data.serverTime);
-      document.getElementById('totalTreasure').textContent = data.totalTreasure;
-      cachedNextAvailableAt = data.nextAvailableAt ? new Date(data.nextAvailableAt) : null;
-      cachedCanOpen = data.canOpen;
-
-      document.getElementById('mainRebirthBtn').classList.toggle('hidden', data.totalTreasure < REBIRTH_GOLD_REQUIRED);
-
-      if (data.passiveIncomePreview) {
-        cachedLegendaryCount = data.passiveIncomePreview.legendaryCount;
-        cachedPerSecondIncome = data.passiveIncomePreview.perSecondIncome;
-        cachedLastIncomeCollectedAt = new Date(data.passiveIncomePreview.lastCollectedAt);
-      }
-      if (data.runStartedAt) cachedRunStartedAt = new Date(data.runStartedAt);
-      if (typeof data.rebirthCount === 'number') {
-        cachedRebirthCount = data.rebirthCount;
-        document.getElementById('rebirthCount').textContent = cachedRebirthCount;
-      }
-
-      renderCountdown();
-    } catch (err) {
-      // 네트워크 문제는 조용히 무시하고 다음 동기화 때 재시도
-    }
-  }
-
-  const INSTANT_OPEN_PRICE_PER_SECOND = 5; // 화면에 예상 가격을 보여주기 위한 값 (서버의 INSTANT_OPEN_PRICE_PER_SECOND와 반드시 일치시켜야 함)
-  const REBIRTH_GOLD_REQUIRED = 100000;
-
-  // 네트워크 요청 없이, 저장해둔 기준 시각만으로 화면을 그리는 함수 (0.2초마다 호출됨)
-  // 초 단위 숫자를 HH:MM:SS 문자열로 바꾸는 함수
-  function formatDuration(totalSeconds){
-    const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
-    const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-    const s = String(Math.floor(totalSeconds % 60)).padStart(2, '0');
-    return `${h}:${m}:${s}`;
-  }
-
-  // 플레이타임 시계와, "도감 보기" 근처의 패시브 골드 미리보기를 매 tick마다 갱신
-  function updatePlaytimeAndIncomePreview(){
-    if (cachedRunStartedAt) {
-      const playSeconds = Math.floor((adjustedNow() - cachedRunStartedAt) / 1000);
-      document.getElementById('playtimeDisplay').textContent = formatDuration(Math.max(0, playSeconds));
-    }
-
-    // 패시브 골드 미리보기 (메인 화면 + 도감 화면 둘 다 같은 값을 보여줌)
-    let pendingGold = 0;
-    if (cachedLegendaryCount > 0 && cachedLastIncomeCollectedAt) {
-      const pendingSeconds = Math.floor((adjustedNow() - cachedLastIncomeCollectedAt) / 1000);
-      pendingGold = Math.max(0, pendingSeconds) * cachedPerSecondIncome;
-    }
-    const hasIncome = cachedLegendaryCount > 0;
-
-    document.getElementById('mainIncomeBox').classList.toggle('hidden', !hasIncome);
-    document.getElementById('pendingIncomeNearBtn').textContent = `⏳ 초당 +${cachedPerSecondIncome}G 쌓이는 중 · 지금 +${pendingGold}G`;
-
-    document.getElementById('collectionIncomeBox').classList.toggle('hidden', !hasIncome);
-    document.getElementById('hourlyIncomeText').textContent = `⏳ 초당 +${cachedPerSecondIncome}G 쌓이는 중 · 지금 +${pendingGold}G`;
-
-    // 메인 화면 환생 목표 진행바 (항상 갱신)
-    const goldNow = parseInt(document.getElementById('totalTreasure').textContent.replace(/,/g, ''), 10) || 0;
-    const pct = Math.min(100, (goldNow / REBIRTH_GOLD_REQUIRED) * 100);
-    document.getElementById('rebirthGoalText').textContent = `${goldNow.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
-    document.getElementById('rebirthGoalBar').style.width = `${pct}%`;
-
-    const goalBox = document.getElementById('rebirthGoalBox');
-    if (goldNow >= REBIRTH_GOLD_REQUIRED) {
-      goalBox.style.borderColor = 'var(--gold)';
-      goalBox.style.boxShadow = '0 0 12px rgba(227,178,60,0.4)';
-      document.getElementById('rebirthGoalBar').style.background = 'var(--gold)';
-    } else {
-      goalBox.style.borderColor = '#2C3F6B';
-      goalBox.style.boxShadow = 'none';
-    }
-
-    clampBulkOpenQty(); // 골드가 바뀔 때마다 최대 구매 가능 수량도 항상 최신 상태로 유지
-  }
-
-  function renderCountdown(){
-    updatePlaytimeAndIncomePreview(); // 매 tick마다 플레이타임/패시브 골드 미리보기도 함께 갱신
-
-    const statusText = document.getElementById('statusText');
-    const chest = document.getElementById('chest');
-
-    if (cachedCanOpen){
-      statusText.textContent = '상자를 열 수 있습니다';
-      statusText.classList.add('ready');
-      chest.style.opacity = '1';
-      chest.style.pointerEvents = isOpening ? 'none' : 'auto';
-      return;
-    }
-
-    statusText.classList.remove('ready');
-    chest.style.opacity = '0.6';
-    chest.style.pointerEvents = 'none';
-
-    if (!cachedNextAvailableAt) return;
-
-    const remainingMs = cachedNextAvailableAt - adjustedNow();
-    if (remainingMs <= 0){
-      // 로컬 계산상 시간이 다 됐으면 즉시 열 수 있는 상태로 전환하고,
-      // 확인 차 서버와 한 번 더 맞춰봅니다.
-      cachedCanOpen = true;
-      renderCountdown();
-      refreshStatus();
-      return;
-    }
-
-    const m = Math.floor(remainingMs / 60000);
-    const s = Math.floor((remainingMs % 60000) / 1000);
-    statusText.innerHTML = `다음 상자까지 <span class="timer">${m}분 ${s}초</span>`;
-  }
-
-  // 상자 열기가 성공했을 때(일반/즉시 오픈 공통) 화면을 갱신하는 함수
-  function handleOpenSuccess(data){
-    syncServerTime(data.serverTime);
-    cachedNextAvailableAt = new Date(data.nextAvailableAt);
-    cachedCanOpen = false;
-    renderCountdown();
-
-    const chest = document.getElementById('chest');
-    chest.classList.add('open');
-    const rarityBadge = document.getElementById('rarityBadge');
-    rarityBadge.textContent = RARITY_LABEL[data.treasure.rarity] || '';
-    rarityBadge.className = `rarity-badge ${data.treasure.rarity}`;
-    document.getElementById('treasureName').textContent = `${data.treasure.emoji} ${data.treasure.name}`;
-    document.getElementById('treasureDetail').textContent = `도감에서 ${data.treasure.amount}G에 판매할 수 있어요`;
-    document.getElementById('resultBox').style.display = 'block';
-    document.getElementById('totalTreasure').textContent = data.totalTreasure;
-
-    setTimeout(() => { chest.classList.remove('open'); }, 1500);
-
-    // 방금 전설 아이템을 얻었을 수도 있으니, 패시브 골드 미리보기가 바로 반영되도록 조용히 재동기화
-    refreshStatus();
-  }
-
-  // 상자 클릭 → 실제 오픈 요청
-  document.getElementById('chest').addEventListener('click', async function(){
-    if (!cachedCanOpen || isOpening) return;
-
-    isOpening = true;
-    this.style.pointerEvents = 'none';
-
-    try {
-      const res = await authFetch('/api/box/open', { method: 'POST' });
-      const data = await res.json();
-
-      if (!res.ok){
-        refreshStatus();
-        return;
-      }
-      handleOpenSuccess(data);
-    } catch (err) {
-      refreshStatus();
-    } finally {
-      isOpening = false;
-    }
+  });
+  document.getElementById('rankPrevBtn').addEventListener('click', async () => {
+    if (currentRankPage > 1) { currentRankPage--; await loadRanking(); }
+  });
+  document.getElementById('rankNextBtn').addEventListener('click', async () => {
+    currentRankPage++;
+    await loadRanking();
   });
 
-  // 즉시 오픈권 클릭 → 골드를 내고 쿨다운 없이 바로 열기
-  const BULK_OPEN_PRICE_PER_BOX = 75; // 서버의 FULL_OPEN_PRICE와 반드시 일치시켜야 함 (15초 x 초당 5골드)
-
-  function getMaxAffordableQty(){
-    const gold = parseInt(document.getElementById('totalTreasure').textContent.replace(/,/g, ''), 10) || 0;
-    return Math.max(0, Math.floor(gold / BULK_OPEN_PRICE_PER_BOX));
+  function renderRankRow(rank, nickname, ms, isMe){
+    return `
+      <div class="rank-row ${isMe ? 'me' : ''}">
+        <span class="rank-num">#${rank}</span>
+        <span class="rank-name">${nickname}${isMe ? ' (나)' : ''}</span>
+        <span class="rank-time">${formatDuration(Math.floor(ms / 1000))}</span>
+      </div>
+    `;
+  }
+  function renderEmptyRankRow(){
+    return `<div class="rank-row empty"><span class="rank-num"></span><span class="rank-name">-</span><span class="rank-time">--:--:--</span></div>`;
   }
 
-  // 수량 입력값이 "최대 구매 가능 수량"을 넘지 않도록 항상 보정
-  function clampBulkOpenQty(){
-    const input = document.getElementById('bulkOpenQty');
-    const max = getMaxAffordableQty();
-    let value = parseInt(input.value, 10);
-    if (isNaN(value) || value < 1) value = 1;
-    if (value > max) value = max;
-    input.value = max === 0 ? 0 : value;
-
-    const cost = value * BULK_OPEN_PRICE_PER_BOX;
-    document.getElementById('bulkOpenCostText').textContent = `개당 ${BULK_OPEN_PRICE_PER_BOX}G · 총 ${cost}G · 최대 ${max}개 구매 가능`;
-
-    const bulkBtn = document.getElementById('bulkOpenBtn');
-    bulkBtn.disabled = max === 0 || value < 1 || isOpening;
-  }
-
-  document.getElementById('bulkOpenQty').addEventListener('input', clampBulkOpenQty);
-
-  document.getElementById('bulkOpenBtn').addEventListener('click', async function(){
-    if (isOpening) return;
-    const quantity = parseInt(document.getElementById('bulkOpenQty').value, 10);
-    if (!quantity || quantity < 1) return;
-
-    isOpening = true;
-    this.disabled = true;
-    const originalText = this.textContent;
-    this.textContent = '여는 중...';
+  async function loadRanking(){
+    const listEl = document.getElementById('rankingList');
+    const footerEl = document.getElementById('myRankFooter');
+    const paginationEl = document.getElementById('rankPagination');
+    listEl.innerHTML = '<p style="color:var(--ink-dim); font-size:13px;">불러오는 중...</p>';
+    footerEl.classList.add('hidden');
+    paginationEl.classList.add('hidden');
 
     try {
-      const res = await authFetch('/api/box/bulk-open', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity }),
-      });
+      const res = await authFetch(`/api/box/leaderboard?page=${currentRankPage}`);
       const data = await res.json();
-
-      if (!res.ok){
-        alert(data.message);
+      if (!res.ok) {
+        listEl.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
         return;
       }
 
-      syncServerTime(data.serverTime);
-      cachedNextAvailableAt = new Date(data.nextAvailableAt);
-      cachedCanOpen = false;
-      renderCountdown();
+      if (data.totalPlayers === 0) {
+        listEl.innerHTML = '<p style="color:var(--ink-dim); font-size:13px; text-align:center; padding:20px 0;">아직 환생 기록이 없습니다.<br>첫 기록의 주인공이 되어보세요!</p>';
+        return;
+      }
 
-      document.getElementById('totalTreasure').textContent = data.totalTreasure;
-      document.getElementById('rarityBadge').textContent = '';
-      document.getElementById('treasureName').textContent = `📦 ${data.quantity}개 일괄 오픈`;
-      document.getElementById('treasureDetail').textContent =
-        data.obtained.map(o => `${o.emoji}${o.name} x${o.count}`).join(', ');
-      document.getElementById('resultBox').style.display = 'block';
+      // 항상 RANK_PAGE_SIZE칸의 틀을 유지: 부족한 줄은 빈 자리로 채움
+      let html = data.leaderboard.map(r => renderRankRow(r.rank, r.nickname, r.bestDurationMs, r.isMe)).join('');
+      for (let i = data.leaderboard.length; i < RANK_PAGE_SIZE; i++) {
+        html += renderEmptyRankRow();
+      }
+      listEl.innerHTML = html;
 
-      clampBulkOpenQty();
-      refreshStatus(); // 전설 아이템을 얻었을 수도 있으니 패시브 수입 미리보기도 재동기화
+      // 페이지네이션
+      if (data.totalPages > 1) {
+        paginationEl.classList.remove('hidden');
+        document.getElementById('rankPageText').textContent = `${data.page} / ${data.totalPages}`;
+        document.getElementById('rankPrevBtn').disabled = data.page <= 1;
+        document.getElementById('rankNextBtn').disabled = data.page >= data.totalPages;
+      }
+
+      // 내가 이 페이지에 없으면 하단에 고정 표시
+      if (data.myRank && data.myRank.outsideCurrentPage) {
+        footerEl.classList.remove('hidden');
+        footerEl.innerHTML = `<p style="font-size:11px; color:var(--ink-dim); margin:0 0 6px; text-align:center;">내 순위</p>` +
+          renderRankRow(data.myRank.rank, '나', data.myRank.bestDurationMs, true);
+      } else if (!data.myRank) {
+        footerEl.classList.remove('hidden');
+        footerEl.innerHTML = `<p style="text-align:center; font-size:12px; color:var(--ink-dim);">아직 환생 기록이 없어 순위에 없습니다.</p>`;
+      }
     } catch (err) {
-      // 네트워크 실패 시 별도 처리 없이 다음 시도에 맡김
-    } finally {
-      isOpening = false;
-      this.textContent = originalText;
-      clampBulkOpenQty();
+      listEl.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
     }
-  });
+  }
 </script>
 
 </body>
