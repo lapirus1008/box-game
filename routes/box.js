@@ -26,7 +26,7 @@ const COMPLETION_BONUS_GOLD = 2000;   // 도감 완성 보상
 const REBIRTH_GOLD_REQUIRED = 100000; // 환생에 필요한 골드
 const MAX_BULK_OPEN_QUANTITY = MAX_BOX_CHARGES; // 한 번에 열 수 있는 최대 개수 (충전 최대치와 동일)
 const GOLD_PER_BOX_PURCHASE = 75; // 충전과 별개로, 골드를 내고 상자를 즉시 구매할 때의 개당 가격
-const MAX_GOLD_BOX_PURCHASE = 500; // 한 번에 골드로 구매할 수 있는 최대 개수 (서버 보호용 상한선)
+const MAX_GOLD_BOX_PURCHASE = 9999; // 한 번에 골드로 구매할 수 있는 최대 개수 (서버 보호용 상한선)
 
 // 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
 // key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
