@@ -553,6 +553,7 @@
 
     <div class="status-text" id="statusText">불러오는 중...</div>
     <div class="charge-bar-wrap"><div class="charge-bar-fill" id="chargeBarFill"></div></div>
+    <p id="nextChargeText" style="font-size:12px; color:var(--ink-dim); text-align:center; margin:4px 0 12px;"></p>
 
     <div class="bulk-open-box">
       <div class="bulk-open-row">
@@ -561,6 +562,16 @@
         <button id="bulkOpenBtn">한번에 열기</button>
       </div>
       <p id="bulkOpenCostText">충전 0/100 · 무료로 소모</p>
+    </div>
+
+    <!-- 충전과는 완전히 별개: 골드만 내면 충전 여부와 상관없이 상자를 바로 구매해서 엽니다 -->
+    <div class="bulk-open-box" style="border:1px solid var(--gold-dim);">
+      <div class="bulk-open-row">
+        <input type="number" id="buyBoxQty" value="1" min="1" step="1">
+        <button id="maxBuyQtyBtn">최대로</button>
+        <button id="buyBoxBtn" style="background:var(--gold); color:#1A1305;">골드로 구매해서 열기</button>
+      </div>
+      <p id="buyBoxCostText" style="font-size:11px; color:var(--ink-dim); margin:0; text-align:center;">개당 75G · 충전과 무관하게 구매</p>
     </div>
 
     <div class="result-box" id="resultBox">
@@ -871,6 +882,15 @@
 
     document.getElementById('chargeBarFill').style.width = `${(cachedCharges / cachedMaxCharges) * 100}%`;
 
+    // 다음 충전까지 몇 초 남았는지 표시 (꽉 찼으면 안내 문구로 대체)
+    const nextChargeText = document.getElementById('nextChargeText');
+    if (cachedCharges >= cachedMaxCharges) {
+      nextChargeText.textContent = '충전이 꽉 찼습니다 (최대 100개)';
+    } else if (cachedNextChargeAt) {
+      const secondsLeft = Math.max(0, Math.ceil((cachedNextChargeAt - adjustedNow()) / 1000));
+      nextChargeText.textContent = `다음 충전까지 ${secondsLeft}초`;
+    }
+
     // 플레이타임
     if (cachedRunStartedAt) {
       const playSeconds = Math.floor((adjustedNow() - cachedRunStartedAt) / 1000);
@@ -902,7 +922,80 @@
     document.getElementById('mainRebirthBtn').disabled = !goalReady;
 
     clampBulkOpenQty();
+    clampBuyBoxQty();
   }
+
+  const GOLD_PER_BOX_PURCHASE = 75; // 서버의 GOLD_PER_BOX_PURCHASE와 반드시 일치시켜야 함
+
+  function getMaxBuyableQty(){
+    const gold = parseInt(document.getElementById('totalTreasure').textContent.replace(/,/g, ''), 10) || 0;
+    return Math.max(0, Math.floor(gold / GOLD_PER_BOX_PURCHASE));
+  }
+
+  function clampBuyBoxQty(){
+    const input = document.getElementById('buyBoxQty');
+    const max = getMaxBuyableQty();
+    let value = parseInt(input.value, 10);
+    if (isNaN(value) || value < 1) value = 1;
+    if (value > max) value = max;
+    input.value = max === 0 ? 0 : value;
+
+    const cost = value * GOLD_PER_BOX_PURCHASE;
+    document.getElementById('buyBoxCostText').textContent =
+      `개당 ${GOLD_PER_BOX_PURCHASE}G · 총 ${cost}G · 최대 ${max}개 구매 가능 (충전과 무관)`;
+
+    document.getElementById('buyBoxBtn').disabled = max === 0 || value < 1 || isOpening;
+    document.getElementById('maxBuyQtyBtn').disabled = max === 0;
+  }
+
+  document.getElementById('buyBoxQty').addEventListener('input', clampBuyBoxQty);
+
+  document.getElementById('maxBuyQtyBtn').addEventListener('click', () => {
+    document.getElementById('buyBoxQty').value = getMaxBuyableQty();
+    clampBuyBoxQty();
+  });
+
+  document.getElementById('buyBoxBtn').addEventListener('click', async function(){
+    if (isOpening) return;
+    const quantity = parseInt(document.getElementById('buyBoxQty').value, 10);
+    if (!quantity || quantity < 1) return;
+
+    isOpening = true;
+    this.disabled = true;
+    const originalText = this.textContent;
+    this.textContent = '구매 중...';
+
+    try {
+      const res = await authFetch('/api/box/buy-boxes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity }),
+      });
+      const data = await res.json();
+
+      if (!res.ok){
+        alert(data.message);
+        return;
+      }
+
+      document.getElementById('totalTreasure').textContent = data.totalTreasure;
+      document.getElementById('rarityBadge').textContent = '';
+      document.getElementById('treasureName').textContent = `💰 ${data.quantity}개 구매 오픈`;
+      document.getElementById('treasureDetail').textContent =
+        data.obtained.map(o => `${o.emoji}${o.name} x${o.count}`).join(', ');
+      document.getElementById('resultBox').style.display = 'block';
+
+      checkAndTriggerLegendary(data.obtained);
+      clampBuyBoxQty();
+      refreshStatus();
+    } catch (err) {
+      // 네트워크 실패 시 별도 처리 없이 다음 시도에 맡김
+    } finally {
+      isOpening = false;
+      this.textContent = originalText;
+      clampBuyBoxQty();
+    }
+  });
 
   function getMaxOpenableQty(){
     return Math.max(0, cachedCharges);

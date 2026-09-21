@@ -25,6 +25,8 @@ const CRAFT_COST = 3;                 // 합성에 필요한 같은 아이템 �
 const COMPLETION_BONUS_GOLD = 2000;   // 도감 완성 보상
 const REBIRTH_GOLD_REQUIRED = 100000; // 환생에 필요한 골드
 const MAX_BULK_OPEN_QUANTITY = MAX_BOX_CHARGES; // 한 번에 열 수 있는 최대 개수 (충전 최대치와 동일)
+const GOLD_PER_BOX_PURCHASE = 75; // 충전과 별개로, 골드를 내고 상자를 즉시 구매할 때의 개당 가격
+const MAX_GOLD_BOX_PURCHASE = 500; // 한 번에 골드로 구매할 수 있는 최대 개수 (서버 보호용 상한선)
 
 // 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
 // key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
@@ -281,6 +283,88 @@ router.post('/bulk-open', verifyToken, async (req, res) => {
     await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ message: '서버 오류로 일괄 열기에 실패했습니다.' });
+  } finally {
+    client.release();
+  }
+});
+
+// -------------------------------
+// 골드로 상자 구매해서 열기: POST /api/box/buy-boxes (충전과 무관, 골드만 소모)
+// -------------------------------
+router.post('/buy-boxes', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+  const quantity = parseInt(req.body.quantity, 10);
+
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return res.status(400).json({ message: '수량은 1 이상의 정수여야 합니다.' });
+  }
+  if (quantity > MAX_GOLD_BOX_PURCHASE) {
+    return res.status(400).json({ message: `한 번에 최대 ${MAX_GOLD_BOX_PURCHASE}개까지만 구매할 수 있습니다.` });
+  }
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      'SELECT total_treasure FROM box_claims WHERE user_id = $1 FOR UPDATE',
+      [userId]
+    );
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: '아직 게임을 시작하지 않았습니다.' });
+    }
+
+    const currentGold = parseInt(result.rows[0].total_treasure, 10);
+    const totalCost = GOLD_PER_BOX_PURCHASE * quantity;
+
+    if (currentGold < totalCost) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        message: `골드가 부족합니다. (필요: ${totalCost}, 보유: ${currentGold})`,
+        maxAffordable: Math.floor(currentGold / GOLD_PER_BOX_PURCHASE),
+      });
+    }
+
+    // quantity번 랜덤으로 뽑되, DB에는 아이템별로 합산해서 반영 (효율적으로)
+    const obtainedCounts = {};
+    for (let i = 0; i < quantity; i++) {
+      const treasure = pickRandomTreasure();
+      obtainedCounts[treasure.key] = (obtainedCounts[treasure.key] || 0) + 1;
+    }
+
+    for (const [itemKey, count] of Object.entries(obtainedCounts)) {
+      await client.query(
+        `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (user_id, item_key)
+         DO UPDATE SET count = user_items.count + $3`,
+        [userId, itemKey, count]
+      );
+    }
+
+    const remainingGold = currentGold - totalCost;
+    // 주의: 이건 충전(box_charges)과 완전히 무관합니다. 골드만 쓰고, 충전은 그대로 유지됩니다.
+    await client.query('UPDATE box_claims SET total_treasure = $1 WHERE user_id = $2', [remainingGold, userId]);
+
+    await client.query('COMMIT');
+
+    const obtainedList = Object.entries(obtainedCounts).map(([key, count]) => {
+      const item = TREASURES.find(t => t.key === key);
+      return { key, name: item.name, emoji: item.emoji, rarity: item.rarity, count };
+    });
+
+    res.json({
+      message: `골드로 상자 ${quantity}개를 구매해서 열었습니다!`,
+      quantity,
+      totalCost,
+      totalTreasure: remainingGold,
+      obtained: obtainedList,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: '서버 오류로 구매에 실패했습니다.' });
   } finally {
     client.release();
   }
@@ -764,7 +848,7 @@ router.get('/rebirth/history', verifyToken, async (req, res) => {
 // -------------------------------
 router.get('/leaderboard', verifyToken, async (req, res) => {
   const userId = req.user.userId;
-  const pageSize = 20;
+  const pageSize = 10;
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const offset = (page - 1) * pageSize;
 
