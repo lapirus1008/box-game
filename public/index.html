@@ -564,6 +564,12 @@
       <p id="bulkOpenCostText">충전 0/100 · 무료로 소모</p>
     </div>
 
+    <div class="result-box" id="resultBox">
+      <div class="rarity-badge" id="rarityBadge"></div>
+      <div class="treasure-name" id="treasureName"></div>
+      <div id="treasureDetail" style="font-size:13px; color:var(--ink-dim);"></div>
+    </div>
+
     <!-- 충전과는 완전히 별개: 골드만 내면 충전 여부와 상관없이 상자를 바로 구매해서 엽니다 -->
     <div class="bulk-open-box" style="border:1px solid var(--gold-dim);">
       <div class="bulk-open-row">
@@ -574,14 +580,8 @@
       <p id="buyBoxCostText" style="font-size:11px; color:var(--ink-dim); margin:0; text-align:center;">개당 75G · 충전과 무관하게 구매</p>
     </div>
 
-    <div class="result-box" id="resultBox">
-      <div class="rarity-badge" id="rarityBadge"></div>
-      <div class="treasure-name" id="treasureName"></div>
-      <div id="treasureDetail" style="font-size:13px; color:var(--ink-dim);"></div>
-    </div>
-
     <div class="stats-row">
-      <span class="label">누적 골드</span>
+      <span class="label">보유 골드</span>
       <span class="value" id="totalTreasure">0</span>
     </div>
 
