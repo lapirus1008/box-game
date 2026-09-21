@@ -660,7 +660,7 @@
   const MAX_BOX_CHARGES = 100;
   const REBIRTH_GOLD_REQUIRED = 100000;
   const CRAFT_COST = 3;
-  const RANK_PAGE_SIZE = 20;
+  const RANK_PAGE_SIZE = 10;
 
   let authToken = localStorage.getItem('boxGameToken');
   let currentUser = null;
@@ -1175,6 +1175,7 @@
         }
       }
     } finally {
+      refreshStatus();
       btnEl.disabled = false;
     }
   }
