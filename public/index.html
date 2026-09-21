@@ -555,6 +555,12 @@
     <div class="charge-bar-wrap"><div class="charge-bar-fill" id="chargeBarFill"></div></div>
     <p id="nextChargeText" style="font-size:12px; color:var(--ink-dim); text-align:center; margin:4px 0 12px;"></p>
 
+    <div class="result-box" id="resultBox">
+      <div class="rarity-badge" id="rarityBadge"></div>
+      <div class="treasure-name" id="treasureName"></div>
+      <div id="treasureDetail" style="font-size:13px; color:var(--ink-dim);"></div>
+    </div>
+
     <div class="bulk-open-box">
       <div class="bulk-open-row">
         <input type="number" id="bulkOpenQty" value="1" min="1" step="1">
@@ -562,12 +568,6 @@
         <button id="bulkOpenBtn">한번에 열기</button>
       </div>
       <p id="bulkOpenCostText">충전 0/100 · 무료로 소모</p>
-    </div>
-
-    <div class="result-box" id="resultBox">
-      <div class="rarity-badge" id="rarityBadge"></div>
-      <div class="treasure-name" id="treasureName"></div>
-      <div id="treasureDetail" style="font-size:13px; color:var(--ink-dim);"></div>
     </div>
 
     <!-- 충전과는 완전히 별개: 골드만 내면 충전 여부와 상관없이 상자를 바로 구매해서 엽니다 -->
