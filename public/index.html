@@ -1175,6 +1175,10 @@
         }
       }
     } finally {
+      // 메인 화면 상태뿐 아니라, 도감 화면에 있다면 환생 진행도(rebirthProgressText 등)도 같이 갱신
+      if (!collectionScreen.classList.contains('hidden')) {
+        loadCollection(false);
+      }
       refreshStatus();
       btnEl.disabled = false;
     }
