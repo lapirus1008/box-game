@@ -20,13 +20,14 @@ const CHARGE_INTERVAL_MS = 15 * 1000; // 충전 1개가 쌓이는 데 걸리는 
 const MAX_BOX_CHARGES = 100;          // 충전은 최대 이만큼만 쌓입니다
 const BASE_INCOME_PER_SECOND = 1;     // 누구나 기본으로 받는 초당 골드
 const LEGENDARY_INCOME_PER_SECOND = 1; // 전설 아이템 1개당 추가되는 초당 골드
-const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
+const MYTHIC_INCOME_PER_SECOND = 5;    // 신화 아이템 1개당 추가되는 초당 골드 (훨씬 희귀해서 더 많이 줌)
+const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic'];
 const CRAFT_COST = 3;                 // 합성에 필요한 같은 아이템 개수
 const COMPLETION_BONUS_GOLD = 2000;   // 도감 완성 보상
 const REBIRTH_GOLD_REQUIRED = 100000; // 환생에 필요한 골드
 const MAX_BULK_OPEN_QUANTITY = MAX_BOX_CHARGES; // 한 번에 열 수 있는 최대 개수 (충전 최대치와 동일)
 const GOLD_PER_BOX_PURCHASE = 75; // 충전과 별개로, 골드를 내고 상자를 즉시 구매할 때의 개당 가격
-const MAX_GOLD_BOX_PURCHASE = 9999; // 한 번에 골드로 구매할 수 있는 최대 개수 (서버 보호용 상한선)
+const MAX_GOLD_BOX_PURCHASE = 500; // 한 번에 골드로 구매할 수 있는 최대 개수 (서버 보호용 상한선)
 
 // 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
 // key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
@@ -46,6 +47,8 @@ const TREASURES = [
   // 전설 (legendary) - 매우 희귀, 갖고 있으면 초당 골드도 추가로 벌립니다
   { key: 'phoenix_feather', name: '불사조의 깃털', rarity: 'legendary', emoji: '🔥', amount: 500, weight: 0.3, flavor: '전설 속에서만 존재한다던 그 깃털.' },
   { key: 'hourglass_sand',  name: '시간의 모래',   rarity: 'legendary', emoji: '⏳', amount: 600, weight: 0.2, flavor: '만지는 순간 시간이 멈춘 듯한 착각이 든다.' },
+  // 신화 (mythic) - 극악의 확률, 전설보다도 훨씬 희귀하고 훨씬 많은 초당 골드를 줍니다
+  { key: 'astral_compass', name: '천체의 나침반', rarity: 'mythic', emoji: '🧭', amount: 5000, weight: 0.02, flavor: '전설조차 가리키지 못하는 곳을 가리킨다는, 전해지기만 하던 나침반.' },
 ];
 
 // -------------------------------
@@ -122,12 +125,21 @@ async function collectPassiveIncome(client, userId) {
   const elapsedSeconds = (now - lastCollected) / 1000;
 
   const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
-  const itemsResult = await client.query(
+  const mythicKeys = TREASURES.filter(t => t.rarity === 'mythic').map(t => t.key);
+
+  const legendaryResult = await client.query(
     'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND item_key = ANY($2)',
     [userId, legendaryKeys]
   );
-  const legendaryCount = parseInt(itemsResult.rows[0].total, 10);
-  const perSecondIncome = BASE_INCOME_PER_SECOND + legendaryCount * LEGENDARY_INCOME_PER_SECOND;
+  const mythicResult = await client.query(
+    'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND item_key = ANY($2)',
+    [userId, mythicKeys]
+  );
+  const legendaryCount = parseInt(legendaryResult.rows[0].total, 10);
+  const mythicCount = parseInt(mythicResult.rows[0].total, 10);
+  const perSecondIncome = BASE_INCOME_PER_SECOND
+    + legendaryCount * LEGENDARY_INCOME_PER_SECOND
+    + mythicCount * MYTHIC_INCOME_PER_SECOND;
 
   const earned = Math.floor(elapsedSeconds * perSecondIncome);
   const newTotal = parseInt(total_treasure, 10) + earned;
@@ -141,13 +153,26 @@ async function collectPassiveIncome(client, userId) {
     earned,
     newTotal,
     legendaryCount,
+    mythicCount,
     baseIncome: BASE_INCOME_PER_SECOND,
     legendaryIncome: legendaryCount * LEGENDARY_INCOME_PER_SECOND,
+    mythicIncome: mythicCount * MYTHIC_INCOME_PER_SECOND,
     perSecondIncome,
   };
 }
 
-// 아이템을 얻을 때마다 도감(user_items)에 기록/카운트 증가
+// 아이템을 하나 "발견했다"는 사실을 영구 기록합니다 (환생해도 절대 지워지지 않음).
+// 같은 아이템을 또 발견해도 딱 한 번만 기록됩니다 (최초 발견일만 남김).
+async function recordDiscovery(client, userId, itemKey) {
+  await client.query(
+    `INSERT INTO user_discoveries (user_id, item_key, first_discovered_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (user_id, item_key) DO NOTHING`,
+    [userId, itemKey]
+  );
+}
+
+// 아이템을 얻을 때마다 "이번 판 보유 개수"(user_items)에 반영 + 영구 발견 기록도 함께 남김
 async function recordItemObtained(client, userId, itemKey) {
   await client.query(
     `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
@@ -156,6 +181,7 @@ async function recordItemObtained(client, userId, itemKey) {
      DO UPDATE SET count = user_items.count + 1`,
     [userId, itemKey]
   );
+  await recordDiscovery(client, userId, itemKey);
 }
 
 // -------------------------------
@@ -258,6 +284,7 @@ router.post('/bulk-open', verifyToken, async (req, res) => {
          DO UPDATE SET count = user_items.count + $3`,
         [userId, itemKey, count]
       );
+      await recordDiscovery(client, userId, itemKey);
     }
 
     const goldResult = await client.query('SELECT total_treasure FROM box_claims WHERE user_id = $1', [userId]);
@@ -341,6 +368,7 @@ router.post('/buy-boxes', verifyToken, async (req, res) => {
          DO UPDATE SET count = user_items.count + $3`,
         [userId, itemKey, count]
       );
+      await recordDiscovery(client, userId, itemKey);
     }
 
     const remainingGold = currentGold - totalCost;
@@ -393,11 +421,20 @@ router.get('/status', verifyToken, async (req, res) => {
     );
 
     const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
-    const itemsResult = await client.query(
+    const mythicKeys = TREASURES.filter(t => t.rarity === 'mythic').map(t => t.key);
+    const legendaryResult = await client.query(
       'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND item_key = ANY($2)',
       [userId, legendaryKeys]
     );
-    const legendaryCount = parseInt(itemsResult.rows[0].total, 10);
+    const mythicResult = await client.query(
+      'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND item_key = ANY($2)',
+      [userId, mythicKeys]
+    );
+    const legendaryCount = parseInt(legendaryResult.rows[0].total, 10);
+    const mythicCount = parseInt(mythicResult.rows[0].total, 10);
+    const perSecondIncome = BASE_INCOME_PER_SECOND
+      + legendaryCount * LEGENDARY_INCOME_PER_SECOND
+      + mythicCount * MYTHIC_INCOME_PER_SECOND;
 
     await client.query('COMMIT');
 
@@ -409,9 +446,11 @@ router.get('/status', verifyToken, async (req, res) => {
       serverTime: chargeInfo.serverTime,
       passiveIncomePreview: {
         legendaryCount,
+        mythicCount,
         baseIncome: BASE_INCOME_PER_SECOND,
         legendaryIncome: legendaryCount * LEGENDARY_INCOME_PER_SECOND,
-        perSecondIncome: BASE_INCOME_PER_SECOND + legendaryCount * LEGENDARY_INCOME_PER_SECOND,
+        mythicIncome: mythicCount * MYTHIC_INCOME_PER_SECOND,
+        perSecondIncome,
         lastCollectedAt: row.rows[0].last_income_collected_at,
       },
       rebirthCount: row.rows[0].rebirth_count,
@@ -433,16 +472,23 @@ router.get('/collection', verifyToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    const result = await db.query(
-      'SELECT item_key, count, first_obtained_at FROM user_items WHERE user_id = $1',
+    // 수집모드: 영구 발견 기록 (환생해도 절대 안 지워짐)
+    const discoveryResult = await db.query(
+      'SELECT item_key, first_discovered_at FROM user_discoveries WHERE user_id = $1',
       [userId]
     );
-
-    // key로 빠르게 찾을 수 있도록 맵으로 변환 (한 번이라도 얻었으면 count가 0이어도 존재함 = 획득한 것으로 침)
-    const obtainedMap = {};
-    result.rows.forEach(row => {
-      obtainedMap[row.item_key] = { count: row.count, firstObtainedAt: row.first_obtained_at };
+    const discoveryMap = {};
+    discoveryResult.rows.forEach(row => {
+      discoveryMap[row.item_key] = row.first_discovered_at;
     });
+
+    // 기록모드: 이번 판 보유 개수 (환생하면 0으로 초기화됨)
+    const itemsResult = await db.query(
+      'SELECT item_key, count FROM user_items WHERE user_id = $1',
+      [userId]
+    );
+    const countMap = {};
+    itemsResult.rows.forEach(row => { countMap[row.item_key] = row.count; });
 
     const collection = TREASURES.map(item => ({
       key: item.key,
@@ -450,8 +496,9 @@ router.get('/collection', verifyToken, async (req, res) => {
       rarity: item.rarity,
       emoji: item.emoji,
       flavor: item.flavor,
-      count: obtainedMap[item.key]?.count || 0,
-      obtained: Boolean(obtainedMap[item.key]), // 존재 여부 기준 (합성으로 0개가 돼도 계속 true)
+      count: countMap[item.key] || 0,               // 이번 판 보유 개수
+      obtained: Boolean(discoveryMap[item.key]),      // 평생 한 번이라도 발견했는지 (영구)
+      firstDiscoveredAt: discoveryMap[item.key] || null,
     }));
 
     const treasureResult = await db.query(
@@ -461,13 +508,17 @@ router.get('/collection', verifyToken, async (req, res) => {
     const totalTreasure = parseInt(treasureResult.rows[0]?.total_treasure || 0, 10);
     const bonusClaimed = treasureResult.rows[0]?.completion_bonus_claimed || false;
 
+    // 도감 완성 여부는 "평생 발견 기록" 기준입니다 (이번 판 보유량과 무관)
     const obtainedCount = collection.filter(item => item.obtained).length;
     const isComplete = obtainedCount === TREASURES.length;
 
     const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
-    const legendaryCount = collection
-      .filter(item => legendaryKeys.includes(item.key))
-      .reduce((sum, item) => sum + item.count, 0);
+    const mythicKeys = TREASURES.filter(t => t.rarity === 'mythic').map(t => t.key);
+    const legendaryCount = collection.filter(i => legendaryKeys.includes(i.key)).reduce((s, i) => s + i.count, 0);
+    const mythicCount = collection.filter(i => mythicKeys.includes(i.key)).reduce((s, i) => s + i.count, 0);
+    const perSecondIncome = BASE_INCOME_PER_SECOND
+      + legendaryCount * LEGENDARY_INCOME_PER_SECOND
+      + mythicCount * MYTHIC_INCOME_PER_SECOND;
 
     res.json({
       collection,
@@ -477,9 +528,11 @@ router.get('/collection', verifyToken, async (req, res) => {
       bonusClaimed,
       passiveIncomePreview: {
         legendaryCount,
+        mythicCount,
         baseIncome: BASE_INCOME_PER_SECOND,
         legendaryIncome: legendaryCount * LEGENDARY_INCOME_PER_SECOND,
-        perSecondIncome: BASE_INCOME_PER_SECOND + legendaryCount * LEGENDARY_INCOME_PER_SECOND,
+        mythicIncome: mythicCount * MYTHIC_INCOME_PER_SECOND,
+        perSecondIncome,
         lastCollectedAt: treasureResult.rows[0]?.last_income_collected_at,
       },
     });
@@ -567,6 +620,7 @@ router.post('/craft', verifyToken, async (req, res) => {
        DO UPDATE SET count = user_items.count + 1`,
       [userId, resultItem.key]
     );
+    await recordDiscovery(client, userId, resultItem.key);
 
     await client.query('COMMIT');
 
@@ -629,6 +683,7 @@ router.post('/craft-all', verifyToken, async (req, res) => {
            DO UPDATE SET count = user_items.count + 1`,
           [userId, resultItem.key]
         );
+        await recordDiscovery(client, userId, resultItem.key);
       }
 
       totalCrafts += craftCount;
@@ -682,9 +737,9 @@ router.post('/collection/claim-bonus', verifyToken, async (req, res) => {
       return res.status(400).json({ message: '이미 완성 보상을 받으셨습니다.' });
     }
 
-    // 한 번이라도 얻은 적 있으면 인정 (합성으로 소모돼서 지금 0개여도 상관없음)
+    // 평생 한 번이라도 발견한 적 있으면 인정 (환생해서 이번 판엔 없어도 상관없음)
     const itemsResult = await client.query(
-      'SELECT item_key FROM user_items WHERE user_id = $1',
+      'SELECT item_key FROM user_discoveries WHERE user_id = $1',
       [userId]
     );
     const obtainedKeys = new Set(itemsResult.rows.map(r => r.item_key));
