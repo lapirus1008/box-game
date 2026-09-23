@@ -124,6 +124,65 @@
   }
   .hidden{ display:none !important; }
 
+  /* 모드 표시/전환 바 */
+  .mode-bar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    margin-bottom:18px;
+    padding:10px 12px;
+    border-radius:12px;
+    background:var(--surface-2);
+    border:1px solid #2C3F6B;
+    transition:background 0.3s, border-color 0.3s;
+  }
+  .mode-badge{
+    font-size:13px;
+    font-weight:700;
+    color:var(--gold);
+  }
+  .mode-hint{
+    display:block;
+    font-size:11px;
+    font-weight:400;
+    color:var(--ink-dim);
+    margin-top:2px;
+  }
+  #switchModeBtn{
+    all:unset;
+    cursor:pointer;
+    font-size:12px;
+    font-weight:600;
+    color:var(--teal);
+    padding:6px 10px;
+    border:1px solid var(--teal);
+    border-radius:8px;
+  }
+  #switchModeBtn:hover{ background:rgba(58,145,136,0.15); }
+
+  /* 수집모드일 때는 테마 색을 티얼 계열로 바꿔서 기록모드와 확연히 구분되게 함 */
+  body.mode-collection{ --gold: var(--teal); --gold-dim: #2A5A54; }
+  body.mode-collection .mode-badge{ color:var(--teal); }
+  body.mode-collection .mode-bar{ border-color:var(--teal); background:rgba(58,145,136,0.08); }
+  body.mode-collection #switchModeBtn{ color:var(--rarity-legendary); border-color:var(--rarity-legendary); }
+
+  .record-only{ }
+  body.mode-collection .record-only{ display:none !important; }
+
+  .collection-mode-notice{
+    background:rgba(58,145,136,0.12);
+    border:1px solid var(--teal);
+    border-radius:12px;
+    padding:12px 14px;
+    font-size:12px;
+    color:var(--ink-dim);
+    margin-bottom:16px;
+    text-align:center;
+    display:none;
+  }
+  body.mode-collection .collection-mode-notice{ display:block; }
+
   /* 게임 화면 */
   #gameScreen .top-row{
     display:flex;
@@ -536,7 +595,7 @@
   <!-- 로그인 / 회원가입 화면 -->
   <div class="card" id="authScreen">
     <h1>시간의 상자</h1>
-    <p class="subtitle">상자를 열어 아이템을 모으고, 10만 골드로 환생하세요</p>
+    <p class="subtitle">상자를 열어 아이템을 모으세요<br>🏆 기록모드로 환생·랭킹 경쟁 / 📖 수집모드로 도감을 영구 수집</p>
 
     <div class="error-msg" id="authError"></div>
 
@@ -570,6 +629,16 @@
       <div class="greeting">안녕하세요, <strong id="userNickname"></strong>님</div>
       <button id="logoutBtn">로그아웃</button>
     </div>
+
+    <div class="mode-bar">
+      <span class="mode-badge" id="modeBadge">
+        🏆 기록모드
+        <span class="mode-hint" id="modeHint">환생하며 랭킹에 도전해요</span>
+      </span>
+      <button id="switchModeBtn">📖 수집모드로</button>
+    </div>
+
+    <p class="collection-mode-notice">📖 수집모드에서는 환생이 없어요. 상자를 열어 도감을 영구히 채워보세요!</p>
 
     <div class="chest-wrap">
       <div class="chest" id="chest">
@@ -615,16 +684,16 @@
     </div>
 
     <div class="stats-row" style="border-top:none; padding-top:8px;">
-      <span class="label">플레이타임 (환생 <span id="rebirthCount">0</span>회)</span>
+      <span class="label">플레이타임<span class="record-only"> (환생 <span id="rebirthCount">0</span>회)</span></span>
       <span class="value" id="playtimeDisplay" style="font-size:14px;">00:00:00</span>
     </div>
 
-    <div class="goal-box" id="rebirthGoalBox">
+    <div class="goal-box record-only" id="rebirthGoalBox">
       <p class="goal-top"><span>🎯 환생까지</span><span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 100,000G</span></p>
       <div class="goal-bar-wrap"><div class="goal-bar-fill" id="rebirthGoalBar"></div></div>
     </div>
 
-    <button class="btn-primary" id="mainRebirthBtn" disabled style="margin:12px 0;">✨ 환생하기! (100,000G)</button>
+    <button class="btn-primary record-only" id="mainRebirthBtn" disabled style="margin:12px 0;">✨ 환생하기! (100,000G)</button>
 
     <div class="income-box" id="mainIncomeBox">
       <span id="pendingIncomeNearBtn"></span>
@@ -633,7 +702,7 @@
     <p class="income-hint">💡 기본 초당 1G + 전설 아이템 1개당 초당 1G 추가로 쌓여요</p>
 
     <button class="collection-link" id="openCollectionBtn">📖 도감 보기</button>
-    <button class="collection-link" id="openRankingBtn">🏆 랭킹 보기</button>
+    <button class="collection-link record-only" id="openRankingBtn">🏆 랭킹 보기</button>
     <button class="collection-link" id="resetRunBtn" style="color:var(--danger);">🔄 초심으로 돌아가기</button>
   </div>
 
@@ -644,8 +713,9 @@
       <button id="backToGameBtn">← 돌아가기</button>
     </div>
     <p style="font-size:13px; color:var(--gold); margin-top:-10px; margin-bottom:4px;">보유 골드: <strong id="shopGold">0</strong></p>
+    <p style="font-size:11px; color:var(--ink-dim); margin:0 0 12px;" id="collectionModeSubtext"></p>
 
-    <div class="rebirth-box">
+    <div class="rebirth-box record-only">
       <p class="rebirth-top"><span>🌀 환생 진행도</span><span id="rebirthProgressText" style="color:var(--gold);">0 / 100,000G</span></p>
       <button class="btn-primary" id="rebirthBtn" disabled style="margin-bottom:8px;">✨ 환생하기 (100,000G)</button>
       <button class="collection-link" id="toggleRebirthHistoryBtn" style="margin:0; font-size:12px;">환생 기록 보기</button>
@@ -674,7 +744,7 @@
 
     <!-- 기록모드: 이번 판에 실제로 들고 있는 아이템 (환생하면 비워짐) -->
     <div id="runModeView" class="hidden">
-      <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:8px;">같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요</p>
+      <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:8px;" id="runModeHint">같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요</p>
       <button class="collection-link" id="craftAllBtn" style="margin-bottom:16px; background:var(--surface-2); border:1px solid var(--gold-dim); border-radius:10px; padding:10px; color:var(--gold); text-decoration:none;">⚡ 전체 합성 (가능한 만큼 한번에)</button>
       <div class="collection-grid" id="runInventoryGrid"></div>
     </div>
@@ -707,6 +777,7 @@
 
   let authToken = localStorage.getItem('boxGameToken');
   let currentUser = null;
+  let currentMode = 'record'; // 'record' | 'collection'
   let statusInterval = null;
   let resyncInterval = null;
   let isOpening = false;
@@ -847,11 +918,71 @@
     authScreen.classList.remove('hidden');
   });
 
+  // 현재 모드에 맞춰 화면 전체를 갱신 (배지, 색상, 기록모드 전용 요소 표시 여부, 문구)
+  function applyModeUI(mode){
+    currentMode = mode;
+    const isRecord = mode === 'record';
+    document.body.classList.toggle('mode-collection', !isRecord);
+
+    document.getElementById('modeBadge').innerHTML = isRecord
+      ? '🏆 기록모드<span class="mode-hint">환생하며 랭킹에 도전해요</span>'
+      : '📖 수집모드<span class="mode-hint">환생 없이 도감을 영구히 채워요</span>';
+    document.getElementById('switchModeBtn').textContent = isRecord ? '📖 수집모드로' : '🏆 기록모드로';
+
+    document.getElementById('collectionModeSubtext').textContent = isRecord
+      ? '기록모드: 도감은 이번 판 한정이에요. 환생하면 함께 초기화돼요.'
+      : '수집모드: 도감은 영구 보존돼요. 초심으로 돌아가도 지워지지 않아요.';
+
+    document.getElementById('modeTabRun').textContent = isRecord ? '🎒 이번 판 보유' : '🎒 보유 아이템';
+    document.getElementById('runModeHint').textContent = isRecord
+      ? '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (환생하면 비워져요)'
+      : '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요';
+  }
+
+  async function switchMode(targetMode){
+    const btn = document.getElementById('switchModeBtn');
+    btn.disabled = true;
+    try {
+      const res = await authFetch('/api/box/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: targetMode }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.message); return; }
+
+      applyModeUI(data.mode);
+      resetGameResultUI();
+      document.getElementById('craftResult').style.display = 'none';
+
+      // 화면에 남아있던 이전 모드의 잔상(패시브 수입, 환생 진행도 등)을 지우고 새로 불러옴
+      cachedLegendaryCount = 0;
+      cachedMythicCount = 0;
+      cachedLegendaryIncome = 0;
+      cachedMythicIncome = 0;
+
+      await refreshStatus();
+      if (!collectionScreen.classList.contains('hidden')) await loadCollection(true);
+    } catch (err) {
+      alert('모드를 전환하지 못했습니다.');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById('switchModeBtn').addEventListener('click', () => {
+    switchMode(currentMode === 'record' ? 'collection' : 'record');
+  });
+
   function enterGame(){
     document.getElementById('userNickname').textContent = currentUser.nickname || currentUser.email;
     authScreen.classList.add('hidden');
     gameScreen.classList.remove('hidden');
     resetGameResultUI();
+
+    // /me 응답에 담겨온 현재 모드로 즉시 UI를 맞춰서, 첫 상태 조회가 끝나기 전에도
+    // 깜빡임 없이 올바른 모드로 보이게 합니다.
+    applyModeUI(currentUser.active_mode || 'record');
 
     refreshStatus();
     clearInterval(statusInterval);
@@ -875,6 +1006,7 @@
       if (!res.ok) return;
 
       syncServerTime(data.serverTime);
+      if (data.mode && data.mode !== currentMode) applyModeUI(data.mode);
       document.getElementById('totalTreasure').textContent = data.totalTreasure;
       cachedCharges = data.charges;
       cachedMaxCharges = data.maxCharges;
@@ -1338,6 +1470,7 @@
       const data = await res.json();
       if (!res.ok) return;
 
+      if (data.mode && data.mode !== currentMode) applyModeUI(data.mode);
       document.getElementById('shopGold').textContent = data.totalTreasure;
       document.getElementById('collectionProgress').textContent = `${data.progress.obtained}/${data.progress.total}`;
       document.getElementById('rebirthProgressText').textContent =

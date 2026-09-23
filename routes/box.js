@@ -1,11 +1,26 @@
 // routes/box.js
 // 로그인한 사용자가 상자를 열어 아이템을 모으는 API입니다.
 //
-// [핵심 구조]
+// [핵심 구조 - 모드 시스템]
+// 이 게임은 "기록모드"와 "수집모드", 두 개의 완전히 분리된 세이브로 동작합니다.
+// 계정의 현재 활성 모드는 users.active_mode 에 저장되고, 모든 API는 요청이 올 때마다
+// 이 값을 먼저 확인해서 그 모드에 해당하는 골드/충전/아이템/도감만 읽고 씁니다.
+//
+//   - 기록모드 (record):     환생을 반복하며 랭킹과 경쟁합니다.
+//                            환생하거나 초심으로 돌아가면 골드·아이템뿐 아니라
+//                            도감(발견기록)도 함께 초기화됩니다. ("도감은 이번 판만")
+//   - 수집모드 (collection):  환생이 없습니다. 상자를 열어 도감을 영구히 채워나가는 데
+//                            집중하는 모드입니다. 초심으로 돌아가기를 해도 도감은
+//                            절대 지워지지 않습니다.
+//
+// 두 모드는 골드/충전/보유아이템/도감까지 전부 독립적이라, 사실상 계정 하나에
+// 두 개의 세이브 슬롯이 있는 것과 같습니다. (마이그레이션에서 각 테이블에 mode
+// 컬럼을 추가하고 UNIQUE 제약을 (user_id, mode[, item_key])로 바꿔두었습니다.)
+//
 // - 상자는 "충전"이 다 돼야 열 수 있는 게 아니라, 시간이 지날수록 충전이 쌓입니다 (최대 100개).
 //   원할 때 한 번에 몰아서 열 수도, 조금씩 열 수도 있습니다.
 // - 골드는 기본적으로 초당 1골드씩 자동으로 쌓이고, 전설 등급 아이템을 갖고 있으면 개당 추가로 더 쌓입니다.
-// - 10만 골드를 모으면 "환생"으로 기록을 남기고 처음부터 다시 시작할 수 있습니다.
+// - 기록모드에서는 10만 골드를 모으면 "환생"으로 기록을 남기고 처음부터 다시 시작할 수 있습니다.
 
 const express = require('express');
 const db = require('../db');
@@ -24,13 +39,14 @@ const MYTHIC_INCOME_PER_SECOND = 5;    // 신화 아이템 1개당 추가되는 
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic'];
 const CRAFT_COST = 3;                 // 합성에 필요한 같은 아이템 개수
 const COMPLETION_BONUS_GOLD = 2000;   // 도감 완성 보상
-const REBIRTH_GOLD_REQUIRED = 100000; // 환생에 필요한 골드
+const REBIRTH_GOLD_REQUIRED = 100000; // 환생에 필요한 골드 (기록모드 전용)
 const MAX_BULK_OPEN_QUANTITY = MAX_BOX_CHARGES; // 한 번에 열 수 있는 최대 개수 (충전 최대치와 동일)
 const GOLD_PER_BOX_PURCHASE = 75; // 충전과 별개로, 골드를 내고 상자를 즉시 구매할 때의 개당 가격
-// 환생 목표(10만 골드)를 다 써도 75G씩 최대 약 1,333개까지밖에 못 사므로,
-// 그보다 넉넉하게 잡아서 "골드만 있으면 사실상 제한 없이" 느껴지도록 합니다.
-// (완전히 무제한으로 두면 악의적인 요청으로 서버가 과도한 반복 작업을 하게 될 수 있어 안전장치로만 남겨둠)
 const MAX_GOLD_BOX_PURCHASE = 2000;
+const RESET_GOLD = 2000; // 초심으로 돌아가기 / 새 세이브 시작 골드
+
+const VALID_MODES = ['record', 'collection'];
+const DEFAULT_MODE = 'record';
 
 // 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
 // key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
@@ -81,12 +97,20 @@ function pickRandomFromRarity(rarity) {
   return pool[0];
 }
 
+// 이 요청 시점에 유저가 어떤 모드(기록/수집)를 쓰고 있는지 확인합니다.
+// client가 주어지면 그 트랜잭션 커넥션으로, 아니면 그냥 db.query로 조회합니다.
+async function getActiveMode(userId, client) {
+  const runner = client || db;
+  const result = await runner.query('SELECT active_mode FROM users WHERE id = $1', [userId]);
+  return result.rows[0]?.active_mode || DEFAULT_MODE;
+}
+
 // 충전 개수를 최신 상태로 계산해서 필요하면 DB에 반영합니다.
 // client는 이미 BEGIN된 트랜잭션의 client여야 합니다 (동시 요청 안전성을 위해 FOR UPDATE 사용).
-async function syncBoxCharges(client, userId) {
+async function syncBoxCharges(client, userId, mode) {
   const result = await client.query(
-    'SELECT box_charges, last_charge_calculated_at FROM box_claims WHERE user_id = $1 FOR UPDATE',
-    [userId]
+    'SELECT box_charges, last_charge_calculated_at FROM box_claims WHERE user_id = $1 AND mode = $2 FOR UPDATE',
+    [userId, mode]
   );
   if (result.rows.length === 0) return null;
 
@@ -100,12 +124,11 @@ async function syncBoxCharges(client, userId) {
 
   if (gained > 0) {
     newCharges = Math.min(MAX_BOX_CHARGES, box_charges + gained);
-    // 꽉 찼으면 더 이상 시간을 쌓아둘 필요가 없으니 기준 시각을 지금으로 당겨둡니다.
     newLastCalc = newCharges >= MAX_BOX_CHARGES ? now : new Date(lastCalc.getTime() + gained * CHARGE_INTERVAL_MS);
 
     await client.query(
-      'UPDATE box_claims SET box_charges = $1, last_charge_calculated_at = $2 WHERE user_id = $3',
-      [newCharges, newLastCalc, userId]
+      'UPDATE box_claims SET box_charges = $1, last_charge_calculated_at = $2 WHERE user_id = $3 AND mode = $4',
+      [newCharges, newLastCalc, userId, mode]
     );
   }
 
@@ -115,10 +138,10 @@ async function syncBoxCharges(client, userId) {
 }
 
 // 마지막 정산 이후 쌓인 패시브 골드(기본 + 전설 아이템 보너스)를 계산해서 반영합니다.
-async function collectPassiveIncome(client, userId) {
+async function collectPassiveIncome(client, userId, mode) {
   const claimResult = await client.query(
-    'SELECT total_treasure, last_income_collected_at FROM box_claims WHERE user_id = $1 FOR UPDATE',
-    [userId]
+    'SELECT total_treasure, last_income_collected_at FROM box_claims WHERE user_id = $1 AND mode = $2 FOR UPDATE',
+    [userId, mode]
   );
   if (claimResult.rows.length === 0) return null;
 
@@ -131,12 +154,12 @@ async function collectPassiveIncome(client, userId) {
   const mythicKeys = TREASURES.filter(t => t.rarity === 'mythic').map(t => t.key);
 
   const legendaryResult = await client.query(
-    'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND item_key = ANY($2)',
-    [userId, legendaryKeys]
+    'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND mode = $2 AND item_key = ANY($3)',
+    [userId, mode, legendaryKeys]
   );
   const mythicResult = await client.query(
-    'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND item_key = ANY($2)',
-    [userId, mythicKeys]
+    'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND mode = $2 AND item_key = ANY($3)',
+    [userId, mode, mythicKeys]
   );
   const legendaryCount = parseInt(legendaryResult.rows[0].total, 10);
   const mythicCount = parseInt(mythicResult.rows[0].total, 10);
@@ -148,8 +171,8 @@ async function collectPassiveIncome(client, userId) {
   const newTotal = parseInt(total_treasure, 10) + earned;
 
   await client.query(
-    'UPDATE box_claims SET total_treasure = $1, last_income_collected_at = $2 WHERE user_id = $3',
-    [newTotal, now, userId]
+    'UPDATE box_claims SET total_treasure = $1, last_income_collected_at = $2 WHERE user_id = $3 AND mode = $4',
+    [newTotal, now, userId, mode]
   );
 
   return {
@@ -164,28 +187,64 @@ async function collectPassiveIncome(client, userId) {
   };
 }
 
-// 아이템을 하나 "발견했다"는 사실을 영구 기록합니다 (환생해도 절대 지워지지 않음).
+// 아이템을 하나 "발견했다"는 사실을 기록합니다.
+// - 기록모드: 이번 판 한정 기록이라, 환생/초심으로 돌아가면 지워집니다.
+// - 수집모드: 절대 지워지지 않는 영구 기록입니다.
 // 같은 아이템을 또 발견해도 딱 한 번만 기록됩니다 (최초 발견일만 남김).
-async function recordDiscovery(client, userId, itemKey) {
+async function recordDiscovery(client, userId, mode, itemKey) {
   await client.query(
-    `INSERT INTO user_discoveries (user_id, item_key, first_discovered_at)
-     VALUES ($1, $2, NOW())
-     ON CONFLICT (user_id, item_key) DO NOTHING`,
-    [userId, itemKey]
+    `INSERT INTO user_discoveries (user_id, mode, item_key, first_discovered_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (user_id, mode, item_key) DO NOTHING`,
+    [userId, mode, itemKey]
   );
 }
 
-// 아이템을 얻을 때마다 "이번 판 보유 개수"(user_items)에 반영 + 영구 발견 기록도 함께 남김
-async function recordItemObtained(client, userId, itemKey) {
+// 아이템을 얻을 때마다 "보유 개수"(user_items)에 반영 + 발견 기록도 함께 남김 (모두 현재 모드 기준)
+async function recordItemObtained(client, userId, mode, itemKey) {
   await client.query(
-    `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
-     VALUES ($1, $2, 1, NOW())
-     ON CONFLICT (user_id, item_key)
+    `INSERT INTO user_items (user_id, mode, item_key, count, first_obtained_at)
+     VALUES ($1, $2, $3, 1, NOW())
+     ON CONFLICT (user_id, mode, item_key)
      DO UPDATE SET count = user_items.count + 1`,
-    [userId, itemKey]
+    [userId, mode, itemKey]
   );
-  await recordDiscovery(client, userId, itemKey);
+  await recordDiscovery(client, userId, mode, itemKey);
 }
+
+// -------------------------------
+// 모드 조회 / 전환: GET, POST /api/box/mode
+// -------------------------------
+router.get('/mode', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const mode = await getActiveMode(userId);
+    res.json({ mode });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+router.post('/mode', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { mode } = req.body;
+
+  if (!VALID_MODES.includes(mode)) {
+    return res.status(400).json({ message: '올바르지 않은 모드입니다.' });
+  }
+
+  try {
+    await db.query('UPDATE users SET active_mode = $1 WHERE id = $2', [mode, userId]);
+    res.json({
+      message: mode === 'record' ? '기록모드로 전환했습니다.' : '수집모드로 전환했습니다.',
+      mode,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류로 모드를 전환하지 못했습니다.' });
+  }
+});
 
 // -------------------------------
 // 상자 열기: POST /api/box/open (충전 1개 소모)
@@ -196,8 +255,9 @@ router.post('/open', verifyToken, async (req, res) => {
 
   try {
     await client.query('BEGIN');
+    const mode = await getActiveMode(userId, client);
 
-    const chargeInfo = await syncBoxCharges(client, userId);
+    const chargeInfo = await syncBoxCharges(client, userId, mode);
     if (!chargeInfo) {
       await client.query('ROLLBACK');
       return res.status(400).json({ message: '아직 게임을 시작하지 않았습니다.' });
@@ -212,17 +272,18 @@ router.post('/open', verifyToken, async (req, res) => {
       });
     }
 
-    await client.query('UPDATE box_claims SET box_charges = box_charges - 1 WHERE user_id = $1', [userId]);
+    await client.query('UPDATE box_claims SET box_charges = box_charges - 1 WHERE user_id = $1 AND mode = $2', [userId, mode]);
 
     const treasure = pickRandomTreasure();
-    await recordItemObtained(client, userId, treasure.key);
+    await recordItemObtained(client, userId, mode, treasure.key);
 
-    const goldResult = await client.query('SELECT total_treasure FROM box_claims WHERE user_id = $1', [userId]);
+    const goldResult = await client.query('SELECT total_treasure FROM box_claims WHERE user_id = $1 AND mode = $2', [userId, mode]);
 
     await client.query('COMMIT');
 
     res.json({
       message: '상자를 열었습니다!',
+      mode,
       treasure,
       totalTreasure: parseInt(goldResult.rows[0].total_treasure, 10),
       charges: chargeInfo.charges - 1,
@@ -256,8 +317,9 @@ router.post('/bulk-open', verifyToken, async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
+    const mode = await getActiveMode(userId, client);
 
-    const chargeInfo = await syncBoxCharges(client, userId);
+    const chargeInfo = await syncBoxCharges(client, userId, mode);
     if (!chargeInfo) {
       await client.query('ROLLBACK');
       return res.status(400).json({ message: '아직 게임을 시작하지 않았습니다.' });
@@ -270,9 +332,8 @@ router.post('/bulk-open', verifyToken, async (req, res) => {
       });
     }
 
-    await client.query('UPDATE box_claims SET box_charges = box_charges - $1 WHERE user_id = $2', [quantity, userId]);
+    await client.query('UPDATE box_claims SET box_charges = box_charges - $1 WHERE user_id = $2 AND mode = $3', [quantity, userId, mode]);
 
-    // quantity번 랜덤으로 뽑되, DB에는 아이템별로 합산해서 반영 (효율적으로)
     const obtainedCounts = {};
     for (let i = 0; i < quantity; i++) {
       const treasure = pickRandomTreasure();
@@ -281,16 +342,16 @@ router.post('/bulk-open', verifyToken, async (req, res) => {
 
     for (const [itemKey, count] of Object.entries(obtainedCounts)) {
       await client.query(
-        `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
-         VALUES ($1, $2, $3, NOW())
-         ON CONFLICT (user_id, item_key)
-         DO UPDATE SET count = user_items.count + $3`,
-        [userId, itemKey, count]
+        `INSERT INTO user_items (user_id, mode, item_key, count, first_obtained_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (user_id, mode, item_key)
+         DO UPDATE SET count = user_items.count + $4`,
+        [userId, mode, itemKey, count]
       );
-      await recordDiscovery(client, userId, itemKey);
+      await recordDiscovery(client, userId, mode, itemKey);
     }
 
-    const goldResult = await client.query('SELECT total_treasure FROM box_claims WHERE user_id = $1', [userId]);
+    const goldResult = await client.query('SELECT total_treasure FROM box_claims WHERE user_id = $1 AND mode = $2', [userId, mode]);
 
     await client.query('COMMIT');
 
@@ -301,6 +362,7 @@ router.post('/bulk-open', verifyToken, async (req, res) => {
 
     res.json({
       message: `상자 ${quantity}개를 열었습니다!`,
+      mode,
       quantity,
       totalTreasure: parseInt(goldResult.rows[0].total_treasure, 10),
       obtained: obtainedList,
@@ -335,10 +397,11 @@ router.post('/buy-boxes', verifyToken, async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
+    const mode = await getActiveMode(userId, client);
 
     const result = await client.query(
-      'SELECT total_treasure FROM box_claims WHERE user_id = $1 FOR UPDATE',
-      [userId]
+      'SELECT total_treasure FROM box_claims WHERE user_id = $1 AND mode = $2 FOR UPDATE',
+      [userId, mode]
     );
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -356,7 +419,6 @@ router.post('/buy-boxes', verifyToken, async (req, res) => {
       });
     }
 
-    // quantity번 랜덤으로 뽑되, DB에는 아이템별로 합산해서 반영 (효율적으로)
     const obtainedCounts = {};
     for (let i = 0; i < quantity; i++) {
       const treasure = pickRandomTreasure();
@@ -365,18 +427,17 @@ router.post('/buy-boxes', verifyToken, async (req, res) => {
 
     for (const [itemKey, count] of Object.entries(obtainedCounts)) {
       await client.query(
-        `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
-         VALUES ($1, $2, $3, NOW())
-         ON CONFLICT (user_id, item_key)
-         DO UPDATE SET count = user_items.count + $3`,
-        [userId, itemKey, count]
+        `INSERT INTO user_items (user_id, mode, item_key, count, first_obtained_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (user_id, mode, item_key)
+         DO UPDATE SET count = user_items.count + $4`,
+        [userId, mode, itemKey, count]
       );
-      await recordDiscovery(client, userId, itemKey);
+      await recordDiscovery(client, userId, mode, itemKey);
     }
 
     const remainingGold = currentGold - totalCost;
-    // 주의: 이건 충전(box_charges)과 완전히 무관합니다. 골드만 쓰고, 충전은 그대로 유지됩니다.
-    await client.query('UPDATE box_claims SET total_treasure = $1 WHERE user_id = $2', [remainingGold, userId]);
+    await client.query('UPDATE box_claims SET total_treasure = $1 WHERE user_id = $2 AND mode = $3', [remainingGold, userId, mode]);
 
     await client.query('COMMIT');
 
@@ -387,6 +448,7 @@ router.post('/buy-boxes', verifyToken, async (req, res) => {
 
     res.json({
       message: `골드로 상자 ${quantity}개를 구매해서 열었습니다!`,
+      mode,
       quantity,
       totalCost,
       totalTreasure: remainingGold,
@@ -410,28 +472,29 @@ router.get('/status', verifyToken, async (req, res) => {
 
   try {
     await client.query('BEGIN');
+    const mode = await getActiveMode(userId, client);
 
-    const chargeInfo = await syncBoxCharges(client, userId);
+    const chargeInfo = await syncBoxCharges(client, userId, mode);
     if (!chargeInfo) {
       await client.query('COMMIT');
-      return res.json({ charges: 0, maxCharges: MAX_BOX_CHARGES, totalTreasure: 0 });
+      return res.json({ mode, isRecordMode: mode === 'record', charges: 0, maxCharges: MAX_BOX_CHARGES, totalTreasure: 0 });
     }
 
     const row = await client.query(
       `SELECT total_treasure, last_income_collected_at, rebirth_count, run_started_at
-       FROM box_claims WHERE user_id = $1`,
-      [userId]
+       FROM box_claims WHERE user_id = $1 AND mode = $2`,
+      [userId, mode]
     );
 
     const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
     const mythicKeys = TREASURES.filter(t => t.rarity === 'mythic').map(t => t.key);
     const legendaryResult = await client.query(
-      'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND item_key = ANY($2)',
-      [userId, legendaryKeys]
+      'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND mode = $2 AND item_key = ANY($3)',
+      [userId, mode, legendaryKeys]
     );
     const mythicResult = await client.query(
-      'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND item_key = ANY($2)',
-      [userId, mythicKeys]
+      'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND mode = $2 AND item_key = ANY($3)',
+      [userId, mode, mythicKeys]
     );
     const legendaryCount = parseInt(legendaryResult.rows[0].total, 10);
     const mythicCount = parseInt(mythicResult.rows[0].total, 10);
@@ -442,6 +505,8 @@ router.get('/status', verifyToken, async (req, res) => {
     await client.query('COMMIT');
 
     res.json({
+      mode,
+      isRecordMode: mode === 'record',
       charges: chargeInfo.charges,
       maxCharges: chargeInfo.maxCharges,
       nextChargeInMs: chargeInfo.nextChargeInMs,
@@ -469,83 +534,6 @@ router.get('/status', verifyToken, async (req, res) => {
 });
 
 // -------------------------------
-// 도감 조회: GET /api/box/collection
-// -------------------------------
-router.get('/collection', verifyToken, async (req, res) => {
-  const userId = req.user.userId;
-
-  try {
-    // 수집모드: 영구 발견 기록 (환생해도 절대 안 지워짐)
-    const discoveryResult = await db.query(
-      'SELECT item_key, first_discovered_at FROM user_discoveries WHERE user_id = $1',
-      [userId]
-    );
-    const discoveryMap = {};
-    discoveryResult.rows.forEach(row => {
-      discoveryMap[row.item_key] = row.first_discovered_at;
-    });
-
-    // 기록모드: 이번 판 보유 개수 (환생하면 0으로 초기화됨)
-    const itemsResult = await db.query(
-      'SELECT item_key, count FROM user_items WHERE user_id = $1',
-      [userId]
-    );
-    const countMap = {};
-    itemsResult.rows.forEach(row => { countMap[row.item_key] = row.count; });
-
-    const collection = TREASURES.map(item => ({
-      key: item.key,
-      name: item.name,
-      rarity: item.rarity,
-      emoji: item.emoji,
-      flavor: item.flavor,
-      count: countMap[item.key] || 0,               // 이번 판 보유 개수
-      obtained: Boolean(discoveryMap[item.key]),      // 평생 한 번이라도 발견했는지 (영구)
-      firstDiscoveredAt: discoveryMap[item.key] || null,
-    }));
-
-    const treasureResult = await db.query(
-      'SELECT total_treasure, completion_bonus_claimed, last_income_collected_at FROM box_claims WHERE user_id = $1',
-      [userId]
-    );
-    const totalTreasure = parseInt(treasureResult.rows[0]?.total_treasure || 0, 10);
-    const bonusClaimed = treasureResult.rows[0]?.completion_bonus_claimed || false;
-
-    // 도감 완성 여부는 "평생 발견 기록" 기준입니다 (이번 판 보유량과 무관)
-    const obtainedCount = collection.filter(item => item.obtained).length;
-    const isComplete = obtainedCount === TREASURES.length;
-
-    const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
-    const mythicKeys = TREASURES.filter(t => t.rarity === 'mythic').map(t => t.key);
-    const legendaryCount = collection.filter(i => legendaryKeys.includes(i.key)).reduce((s, i) => s + i.count, 0);
-    const mythicCount = collection.filter(i => mythicKeys.includes(i.key)).reduce((s, i) => s + i.count, 0);
-    const perSecondIncome = BASE_INCOME_PER_SECOND
-      + legendaryCount * LEGENDARY_INCOME_PER_SECOND
-      + mythicCount * MYTHIC_INCOME_PER_SECOND;
-
-    res.json({
-      collection,
-      totalTreasure,
-      progress: { obtained: obtainedCount, total: TREASURES.length },
-      isComplete,
-      bonusClaimed,
-      passiveIncomePreview: {
-        legendaryCount,
-        mythicCount,
-        baseIncome: BASE_INCOME_PER_SECOND,
-        legendaryIncome: legendaryCount * LEGENDARY_INCOME_PER_SECOND,
-        mythicIncome: mythicCount * MYTHIC_INCOME_PER_SECOND,
-        perSecondIncome,
-        lastCollectedAt: treasureResult.rows[0]?.last_income_collected_at,
-      },
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: '서버 오류가 발생했습니다.' });
-  }
-});
-
-// -------------------------------
 // 패시브 골드 받기: POST /api/box/collect-income
 // -------------------------------
 router.post('/collect-income', verifyToken, async (req, res) => {
@@ -554,7 +542,8 @@ router.post('/collect-income', verifyToken, async (req, res) => {
 
   try {
     await client.query('BEGIN');
-    const income = await collectPassiveIncome(client, userId);
+    const mode = await getActiveMode(userId, client);
+    const income = await collectPassiveIncome(client, userId, mode);
     await client.query('COMMIT');
 
     if (!income) {
@@ -563,6 +552,7 @@ router.post('/collect-income', verifyToken, async (req, res) => {
 
     res.json({
       message: income.earned > 0 ? `${income.earned}G를 받았습니다!` : '아직 쌓인 골드가 없습니다.',
+      mode,
       earned: income.earned,
       totalTreasure: income.newTotal,
       perSecondIncome: income.perSecondIncome,
@@ -597,10 +587,11 @@ router.post('/craft', verifyToken, async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
+    const mode = await getActiveMode(userId, client);
 
     const ownedResult = await client.query(
-      'SELECT count FROM user_items WHERE user_id = $1 AND item_key = $2 FOR UPDATE',
-      [userId, itemKey]
+      'SELECT count FROM user_items WHERE user_id = $1 AND mode = $2 AND item_key = $3 FOR UPDATE',
+      [userId, mode, itemKey]
     );
     const ownedCount = ownedResult.rows[0]?.count || 0;
     if (ownedCount < CRAFT_COST) {
@@ -611,24 +602,25 @@ router.post('/craft', verifyToken, async (req, res) => {
     }
 
     await client.query(
-      'UPDATE user_items SET count = count - $1 WHERE user_id = $2 AND item_key = $3',
-      [CRAFT_COST, userId, itemKey]
+      'UPDATE user_items SET count = count - $1 WHERE user_id = $2 AND mode = $3 AND item_key = $4',
+      [CRAFT_COST, userId, mode, itemKey]
     );
 
     const resultItem = pickRandomFromRarity(nextRarity);
     await client.query(
-      `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
-       VALUES ($1, $2, 1, NOW())
-       ON CONFLICT (user_id, item_key)
+      `INSERT INTO user_items (user_id, mode, item_key, count, first_obtained_at)
+       VALUES ($1, $2, $3, 1, NOW())
+       ON CONFLICT (user_id, mode, item_key)
        DO UPDATE SET count = user_items.count + 1`,
-      [userId, resultItem.key]
+      [userId, mode, resultItem.key]
     );
-    await recordDiscovery(client, userId, resultItem.key);
+    await recordDiscovery(client, userId, mode, resultItem.key);
 
     await client.query('COMMIT');
 
     res.json({
       message: '합성 성공!',
+      mode,
       consumed: { key: sourceItem.key, name: sourceItem.name, amount: CRAFT_COST },
       result: resultItem,
     });
@@ -650,10 +642,11 @@ router.post('/craft-all', verifyToken, async (req, res) => {
 
   try {
     await client.query('BEGIN');
+    const mode = await getActiveMode(userId, client);
 
     const ownedResult = await client.query(
-      'SELECT item_key, count FROM user_items WHERE user_id = $1 AND count >= $2 FOR UPDATE',
-      [userId, CRAFT_COST]
+      'SELECT item_key, count FROM user_items WHERE user_id = $1 AND mode = $2 AND count >= $3 FOR UPDATE',
+      [userId, mode, CRAFT_COST]
     );
 
     const results = [];
@@ -671,12 +664,10 @@ router.post('/craft-all', verifyToken, async (req, res) => {
       if (craftCount === 0) continue;
 
       await client.query(
-        'UPDATE user_items SET count = count - $1 WHERE user_id = $2 AND item_key = $3',
-        [craftCount * CRAFT_COST, userId, row.item_key]
+        'UPDATE user_items SET count = count - $1 WHERE user_id = $2 AND mode = $3 AND item_key = $4',
+        [craftCount * CRAFT_COST, userId, mode, row.item_key]
       );
 
-      // 랜덤 뽑기는 메모리에서 먼저 다 끝내고(빠름), DB 반영은 "고유 아이템별로 딱 한 번씩만" 합니다.
-      // (예전엔 합성 1번마다 DB에 매번 썼어서, 세트 수가 많아지면 그만큼 느려졌습니다)
       const obtainedItems = {};
       for (let i = 0; i < craftCount; i++) {
         const resultItem = pickRandomFromRarity(nextRarity);
@@ -685,13 +676,13 @@ router.post('/craft-all', verifyToken, async (req, res) => {
 
       for (const [obtainedKey, obtainedQty] of Object.entries(obtainedItems)) {
         await client.query(
-          `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
-           VALUES ($1, $2, $3, NOW())
-           ON CONFLICT (user_id, item_key)
-           DO UPDATE SET count = user_items.count + $3`,
-          [userId, obtainedKey, obtainedQty]
+          `INSERT INTO user_items (user_id, mode, item_key, count, first_obtained_at)
+           VALUES ($1, $2, $3, $4, NOW())
+           ON CONFLICT (user_id, mode, item_key)
+           DO UPDATE SET count = user_items.count + $4`,
+          [userId, mode, obtainedKey, obtainedQty]
         );
-        await recordDiscovery(client, userId, obtainedKey);
+        await recordDiscovery(client, userId, mode, obtainedKey);
       }
 
       totalCrafts += craftCount;
@@ -709,16 +700,96 @@ router.post('/craft-all', verifyToken, async (req, res) => {
     await client.query('COMMIT');
 
     if (totalCrafts === 0) {
-      return res.json({ message: '합성 가능한 아이템이 없습니다.', totalCrafts: 0, results: [] });
+      return res.json({ message: '합성 가능한 아이템이 없습니다.', mode, totalCrafts: 0, results: [] });
     }
 
-    res.json({ message: `총 ${totalCrafts}번 합성했습니다!`, totalCrafts, results });
+    res.json({ message: `총 ${totalCrafts}번 합성했습니다!`, mode, totalCrafts, results });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ message: '서버 오류로 일괄 합성에 실패했습니다.' });
   } finally {
     client.release();
+  }
+});
+
+// -------------------------------
+// 도감 조회: GET /api/box/collection
+// -------------------------------
+router.get('/collection', verifyToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const mode = await getActiveMode(userId);
+
+    // 발견 기록: 기록모드에선 "이번 판" 한정, 수집모드에선 영구
+    const discoveryResult = await db.query(
+      'SELECT item_key, first_discovered_at FROM user_discoveries WHERE user_id = $1 AND mode = $2',
+      [userId, mode]
+    );
+    const discoveryMap = {};
+    discoveryResult.rows.forEach(row => {
+      discoveryMap[row.item_key] = row.first_discovered_at;
+    });
+
+    // 보유 개수 (현재 모드 기준)
+    const itemsResult = await db.query(
+      'SELECT item_key, count FROM user_items WHERE user_id = $1 AND mode = $2',
+      [userId, mode]
+    );
+    const countMap = {};
+    itemsResult.rows.forEach(row => { countMap[row.item_key] = row.count; });
+
+    const collection = TREASURES.map(item => ({
+      key: item.key,
+      name: item.name,
+      rarity: item.rarity,
+      emoji: item.emoji,
+      flavor: item.flavor,
+      count: countMap[item.key] || 0,
+      obtained: Boolean(discoveryMap[item.key]),
+      firstDiscoveredAt: discoveryMap[item.key] || null,
+    }));
+
+    const treasureResult = await db.query(
+      'SELECT total_treasure, completion_bonus_claimed, last_income_collected_at FROM box_claims WHERE user_id = $1 AND mode = $2',
+      [userId, mode]
+    );
+    const totalTreasure = parseInt(treasureResult.rows[0]?.total_treasure || 0, 10);
+    const bonusClaimed = treasureResult.rows[0]?.completion_bonus_claimed || false;
+
+    const obtainedCount = collection.filter(item => item.obtained).length;
+    const isComplete = obtainedCount === TREASURES.length;
+
+    const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
+    const mythicKeys = TREASURES.filter(t => t.rarity === 'mythic').map(t => t.key);
+    const legendaryCount = collection.filter(i => legendaryKeys.includes(i.key)).reduce((s, i) => s + i.count, 0);
+    const mythicCount = collection.filter(i => mythicKeys.includes(i.key)).reduce((s, i) => s + i.count, 0);
+    const perSecondIncome = BASE_INCOME_PER_SECOND
+      + legendaryCount * LEGENDARY_INCOME_PER_SECOND
+      + mythicCount * MYTHIC_INCOME_PER_SECOND;
+
+    res.json({
+      mode,
+      isRecordMode: mode === 'record',
+      collection,
+      totalTreasure,
+      progress: { obtained: obtainedCount, total: TREASURES.length },
+      isComplete,
+      bonusClaimed,
+      passiveIncomePreview: {
+        legendaryCount,
+        mythicCount,
+        baseIncome: BASE_INCOME_PER_SECOND,
+        legendaryIncome: legendaryCount * LEGENDARY_INCOME_PER_SECOND,
+        mythicIncome: mythicCount * MYTHIC_INCOME_PER_SECOND,
+        perSecondIncome,
+        lastCollectedAt: treasureResult.rows[0]?.last_income_collected_at,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류가 발생했습니다.' });
   }
 });
 
@@ -731,10 +802,11 @@ router.post('/collection/claim-bonus', verifyToken, async (req, res) => {
 
   try {
     await client.query('BEGIN');
+    const mode = await getActiveMode(userId, client);
 
     const claimResult = await client.query(
-      'SELECT total_treasure, completion_bonus_claimed FROM box_claims WHERE user_id = $1 FOR UPDATE',
-      [userId]
+      'SELECT total_treasure, completion_bonus_claimed FROM box_claims WHERE user_id = $1 AND mode = $2 FOR UPDATE',
+      [userId, mode]
     );
     if (claimResult.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -745,10 +817,9 @@ router.post('/collection/claim-bonus', verifyToken, async (req, res) => {
       return res.status(400).json({ message: '이미 완성 보상을 받으셨습니다.' });
     }
 
-    // 평생 한 번이라도 발견한 적 있으면 인정 (환생해서 이번 판엔 없어도 상관없음)
     const itemsResult = await client.query(
-      'SELECT item_key FROM user_discoveries WHERE user_id = $1',
-      [userId]
+      'SELECT item_key FROM user_discoveries WHERE user_id = $1 AND mode = $2',
+      [userId, mode]
     );
     const obtainedKeys = new Set(itemsResult.rows.map(r => r.item_key));
     const isComplete = TREASURES.every(t => obtainedKeys.has(t.key));
@@ -760,14 +831,15 @@ router.post('/collection/claim-bonus', verifyToken, async (req, res) => {
 
     const currentGold = parseInt(claimResult.rows[0].total_treasure, 10);
     await client.query(
-      `UPDATE box_claims SET total_treasure = $1, completion_bonus_claimed = TRUE WHERE user_id = $2`,
-      [currentGold + COMPLETION_BONUS_GOLD, userId]
+      `UPDATE box_claims SET total_treasure = $1, completion_bonus_claimed = TRUE WHERE user_id = $2 AND mode = $3`,
+      [currentGold + COMPLETION_BONUS_GOLD, userId, mode]
     );
 
     await client.query('COMMIT');
 
     res.json({
       message: '도감 완성 보상을 받았습니다!',
+      mode,
       bonusGold: COMPLETION_BONUS_GOLD,
       totalTreasure: currentGold + COMPLETION_BONUS_GOLD,
     });
@@ -783,16 +855,26 @@ router.post('/collection/claim-bonus', verifyToken, async (req, res) => {
 // -------------------------------
 // 초심으로 돌아가기: POST /api/box/reset-run
 // -------------------------------
-// 10만 골드를 못 모았어도, 언제든 지금 판을 포기하고 처음부터 다시 시작할 수 있습니다.
-// 환생과 달리 "성공한 기록"이 아니라서 rebirth_count나 기록에는 남기지 않습니다.
+// 언제든 지금 세이브(현재 모드)를 포기하고 처음부터 다시 시작할 수 있습니다.
+// - 기록모드: 골드·아이템·도감을 전부 초기화합니다 ("이번 판" 자체를 새로 시작하는 것이므로).
+// - 수집모드: 골드·아이템만 초기화되고, 도감(영구 발견기록)은 절대 지워지지 않습니다.
+// 환생과 달리 "성공한 기록"이 아니라서 rebirth_count나 랭킹에는 남지 않습니다.
 router.post('/reset-run', verifyToken, async (req, res) => {
   const userId = req.user.userId;
-  const RESET_GOLD = 2000;
+  const client = await db.getClient();
 
   try {
-    await db.query('DELETE FROM user_items WHERE user_id = $1', [userId]);
+    await client.query('BEGIN');
+    const mode = await getActiveMode(userId, client);
+
+    await client.query('DELETE FROM user_items WHERE user_id = $1 AND mode = $2', [userId, mode]);
+    if (mode === 'record') {
+      // 기록모드는 도감도 "이번 판" 한정이라 같이 초기화합니다.
+      await client.query('DELETE FROM user_discoveries WHERE user_id = $1 AND mode = $2', [userId, mode]);
+    }
+
     const now = new Date();
-    await db.query(
+    await client.query(
       `UPDATE box_claims
        SET total_treasure = $1,
            completion_bonus_claimed = FALSE,
@@ -800,19 +882,31 @@ router.post('/reset-run', verifyToken, async (req, res) => {
            run_started_at = $2,
            box_charges = 1,
            last_charge_calculated_at = $2
-       WHERE user_id = $3`,
-      [RESET_GOLD, now, userId]
+       WHERE user_id = $3 AND mode = $4`,
+      [RESET_GOLD, now, userId, mode]
     );
 
-    res.json({ message: '초심으로 돌아갔습니다. 다시 도전해보세요!', totalTreasure: RESET_GOLD, runStartedAt: now });
+    await client.query('COMMIT');
+
+    res.json({
+      message: mode === 'record'
+        ? '초심으로 돌아갔습니다. 도감도 함께 초기화됐어요. 다시 도전해보세요!'
+        : '초심으로 돌아갔습니다. 도감은 그대로 남아있어요. 다시 모아보세요!',
+      mode,
+      totalTreasure: RESET_GOLD,
+      runStartedAt: now,
+    });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  } finally {
+    client.release();
   }
 });
 
 // -------------------------------
-// 환생: POST /api/box/rebirth
+// 환생: POST /api/box/rebirth (기록모드 전용)
 // -------------------------------
 router.post('/rebirth', verifyToken, async (req, res) => {
   const userId = req.user.userId;
@@ -820,10 +914,16 @@ router.post('/rebirth', verifyToken, async (req, res) => {
 
   try {
     await client.query('BEGIN');
+    const mode = await getActiveMode(userId, client);
+
+    if (mode !== 'record') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: '수집모드에서는 환생할 수 없습니다. 기록모드로 전환해주세요.' });
+    }
 
     const result = await client.query(
-      'SELECT total_treasure, rebirth_count, run_started_at FROM box_claims WHERE user_id = $1 FOR UPDATE',
-      [userId]
+      'SELECT total_treasure, rebirth_count, run_started_at FROM box_claims WHERE user_id = $1 AND mode = $2 FOR UPDATE',
+      [userId, mode]
     );
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -842,13 +942,15 @@ router.post('/rebirth', verifyToken, async (req, res) => {
     const newRebirthNumber = result.rows[0].rebirth_count + 1;
 
     await client.query(
-      `INSERT INTO rebirth_history (user_id, rebirth_number, duration_ms, completed_at)
-       VALUES ($1, $2, $3, $4)`,
-      [userId, newRebirthNumber, durationMs, now]
+      `INSERT INTO rebirth_history (user_id, mode, rebirth_number, duration_ms, completed_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [userId, mode, newRebirthNumber, durationMs, now]
     );
 
-    const RESET_GOLD = 2000;
-    await client.query('DELETE FROM user_items WHERE user_id = $1', [userId]);
+    // 환생은 "이번 판"을 완전히 새로 시작하는 것이므로, 보유 아이템뿐 아니라
+    // 도감(발견기록)도 함께 초기화합니다.
+    await client.query('DELETE FROM user_items WHERE user_id = $1 AND mode = $2', [userId, mode]);
+    await client.query('DELETE FROM user_discoveries WHERE user_id = $1 AND mode = $2', [userId, mode]);
     await client.query(
       `UPDATE box_claims
        SET total_treasure = $1,
@@ -858,14 +960,15 @@ router.post('/rebirth', verifyToken, async (req, res) => {
            run_started_at = $2,
            box_charges = 1,
            last_charge_calculated_at = $2
-       WHERE user_id = $4`,
-      [RESET_GOLD, now, newRebirthNumber, userId]
+       WHERE user_id = $4 AND mode = $5`,
+      [RESET_GOLD, now, newRebirthNumber, userId, mode]
     );
 
     await client.query('COMMIT');
 
     res.json({
       message: `${newRebirthNumber}번째 환생을 달성했습니다! 처음부터 다시 시작합니다.`,
+      mode,
       rebirthNumber: newRebirthNumber,
       durationMs,
       totalTreasure: RESET_GOLD,
@@ -881,14 +984,15 @@ router.post('/rebirth', verifyToken, async (req, res) => {
 });
 
 // -------------------------------
-// 환생 기록 조회: GET /api/box/rebirth/history
+// 환생 기록 조회: GET /api/box/rebirth/history (기록모드 전용 개념)
 // -------------------------------
 router.get('/rebirth/history', verifyToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
     const historyResult = await db.query(
-      'SELECT rebirth_number, duration_ms, completed_at FROM rebirth_history WHERE user_id = $1 ORDER BY rebirth_number ASC',
+      `SELECT rebirth_number, duration_ms, completed_at FROM rebirth_history
+       WHERE user_id = $1 AND mode = 'record' ORDER BY rebirth_number ASC`,
       [userId]
     );
 
@@ -907,7 +1011,7 @@ router.get('/rebirth/history', verifyToken, async (req, res) => {
 });
 
 // -------------------------------
-// 랭킹 조회: GET /api/box/leaderboard (페이지네이션)
+// 랭킹 조회: GET /api/box/leaderboard (페이지네이션, 기록모드 전용)
 // -------------------------------
 router.get('/leaderboard', verifyToken, async (req, res) => {
   const userId = req.user.userId;
@@ -917,7 +1021,9 @@ router.get('/leaderboard', verifyToken, async (req, res) => {
 
   try {
     const totalResult = await db.query(
-      `SELECT COUNT(*) AS total FROM (SELECT user_id FROM rebirth_history GROUP BY user_id) t`
+      `SELECT COUNT(*) AS total FROM (
+         SELECT user_id FROM rebirth_history WHERE mode = 'record' GROUP BY user_id
+       ) t`
     );
     const totalPlayers = parseInt(totalResult.rows[0].total, 10);
     const totalPages = Math.max(1, Math.ceil(totalPlayers / pageSize));
@@ -926,6 +1032,7 @@ router.get('/leaderboard', verifyToken, async (req, res) => {
       `SELECT u.id AS user_id, u.nickname, MIN(rh.duration_ms) AS best_duration_ms
        FROM rebirth_history rh
        JOIN users u ON u.id = rh.user_id
+       WHERE rh.mode = 'record'
        GROUP BY u.id, u.nickname
        ORDER BY best_duration_ms ASC
        LIMIT $1 OFFSET $2`,
@@ -940,18 +1047,17 @@ router.get('/leaderboard', verifyToken, async (req, res) => {
       isMe: row.user_id === userId,
     }));
 
-    // 이 페이지 안에 내가 없으면, 내 순위를 별도로 계산해서 같이 내려줌
     let myRank = leaderboard.find(r => r.isMe) || null;
     if (!myRank) {
       const myBestResult = await db.query(
-        'SELECT MIN(duration_ms) AS best_duration_ms FROM rebirth_history WHERE user_id = $1',
+        `SELECT MIN(duration_ms) AS best_duration_ms FROM rebirth_history WHERE user_id = $1 AND mode = 'record'`,
         [userId]
       );
       const myBest = myBestResult.rows[0]?.best_duration_ms;
       if (myBest) {
         const rankResult = await db.query(
           `SELECT COUNT(*) + 1 AS rank FROM (
-             SELECT user_id, MIN(duration_ms) AS best FROM rebirth_history GROUP BY user_id
+             SELECT user_id, MIN(duration_ms) AS best FROM rebirth_history WHERE mode = 'record' GROUP BY user_id
            ) t WHERE t.best < $1`,
           [myBest]
         );

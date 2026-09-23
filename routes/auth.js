@@ -66,10 +66,12 @@ router.post('/signup', async (req, res) => {
 
     // 5. 시작할 때 바로 체험해볼 수 있도록 초기 골드를 지급하고,
     //    last_opened_at을 아주 예전으로 넣어서 가입 직후 바로 상자를 열 수 있게 합니다.
+    // 기록모드/수집모드는 완전히 독립된 세이브라, 가입 시점에 둘 다 만들어둡니다.
+    // (기본 활성 모드는 users.active_mode 컬럼의 DEFAULT 'record'를 따릅니다.)
     const INITIAL_GOLD = 2000;
     await db.query(
-      `INSERT INTO box_claims (user_id, last_opened_at, total_treasure)
-       VALUES ($1, $2, $3)`,
+      `INSERT INTO box_claims (user_id, mode, last_opened_at, total_treasure)
+       VALUES ($1, 'record', $2, $3), ($1, 'collection', $2, $3)`,
       [newUser.id, new Date(0), INITIAL_GOLD]
     );
 
@@ -149,7 +151,7 @@ const verifyToken = require('../middleware/auth');
 router.get('/me', verifyToken, async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT id, email, nickname FROM users WHERE id = $1',
+      'SELECT id, email, nickname, active_mode FROM users WHERE id = $1',
       [req.user.userId]
     );
 
