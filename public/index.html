@@ -973,10 +973,11 @@
   }
 
   const GOLD_PER_BOX_PURCHASE = 75; // 서버의 GOLD_PER_BOX_PURCHASE와 반드시 일치시켜야 함
+  const MAX_GOLD_BOX_PURCHASE = 2000; // 서버의 MAX_GOLD_BOX_PURCHASE와 반드시 일치시켜야 함
 
   function getMaxBuyableQty(){
     const gold = parseInt(document.getElementById('totalTreasure').textContent.replace(/,/g, ''), 10) || 0;
-    return Math.max(0, Math.floor(gold / GOLD_PER_BOX_PURCHASE));
+    return Math.min(MAX_GOLD_BOX_PURCHASE, Math.max(0, Math.floor(gold / GOLD_PER_BOX_PURCHASE)));
   }
 
   function clampBuyBoxQty(){

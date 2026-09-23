@@ -27,7 +27,10 @@ const COMPLETION_BONUS_GOLD = 2000;   // 도감 완성 보상
 const REBIRTH_GOLD_REQUIRED = 100000; // 환생에 필요한 골드
 const MAX_BULK_OPEN_QUANTITY = MAX_BOX_CHARGES; // 한 번에 열 수 있는 최대 개수 (충전 최대치와 동일)
 const GOLD_PER_BOX_PURCHASE = 75; // 충전과 별개로, 골드를 내고 상자를 즉시 구매할 때의 개당 가격
-const MAX_GOLD_BOX_PURCHASE = 500; // 한 번에 골드로 구매할 수 있는 최대 개수 (서버 보호용 상한선)
+// 환생 목표(10만 골드)를 다 써도 75G씩 최대 약 1,333개까지밖에 못 사므로,
+// 그보다 넉넉하게 잡아서 "골드만 있으면 사실상 제한 없이" 느껴지도록 합니다.
+// (완전히 무제한으로 두면 악의적인 요청으로 서버가 과도한 반복 작업을 하게 될 수 있어 안전장치로만 남겨둠)
+const MAX_GOLD_BOX_PURCHASE = 2000;
 
 // 수집 가능한 아이템 목록입니다. weight가 클수록 자주 나옵니다.
 // key는 DB(user_items 테이블)에 저장될 고유 식별자라 나중에 함부로 바꾸면 안 됩니다.
@@ -672,18 +675,23 @@ router.post('/craft-all', verifyToken, async (req, res) => {
         [craftCount * CRAFT_COST, userId, row.item_key]
       );
 
+      // 랜덤 뽑기는 메모리에서 먼저 다 끝내고(빠름), DB 반영은 "고유 아이템별로 딱 한 번씩만" 합니다.
+      // (예전엔 합성 1번마다 DB에 매번 썼어서, 세트 수가 많아지면 그만큼 느려졌습니다)
       const obtainedItems = {};
       for (let i = 0; i < craftCount; i++) {
         const resultItem = pickRandomFromRarity(nextRarity);
         obtainedItems[resultItem.key] = (obtainedItems[resultItem.key] || 0) + 1;
+      }
+
+      for (const [obtainedKey, obtainedQty] of Object.entries(obtainedItems)) {
         await client.query(
           `INSERT INTO user_items (user_id, item_key, count, first_obtained_at)
-           VALUES ($1, $2, 1, NOW())
+           VALUES ($1, $2, $3, NOW())
            ON CONFLICT (user_id, item_key)
-           DO UPDATE SET count = user_items.count + 1`,
-          [userId, resultItem.key]
+           DO UPDATE SET count = user_items.count + $3`,
+          [userId, obtainedKey, obtainedQty]
         );
-        await recordDiscovery(client, userId, resultItem.key);
+        await recordDiscovery(client, userId, obtainedKey);
       }
 
       totalCrafts += craftCount;
