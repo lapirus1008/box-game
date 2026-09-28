@@ -296,6 +296,105 @@
     100%{ opacity:0; transform:translateY(-60px) scale(1.2); }
   }
 
+  /* 신화 아이템 전용 풀스크린 이벤트 화면 (합성으로는 절대 못 얻고, 상자에서만 나옴) */
+  #mythicEventOverlay{
+    position:fixed;
+    inset:0;
+    z-index:1200;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:radial-gradient(circle at 50% 35%, rgba(240,98,146,0.35), rgba(6,9,18,0.94) 70%);
+    backdrop-filter:blur(2px);
+  }
+  #mythicEventOverlay.show{ display:flex; animation:mythicOverlayIn 0.35s ease-out; }
+  @keyframes mythicOverlayIn{
+    0%{ opacity:0; }
+    100%{ opacity:1; }
+  }
+  .mythic-rays{
+    position:absolute;
+    inset:0;
+    background:conic-gradient(from 0deg, rgba(240,98,146,0.18), transparent 20%, rgba(240,98,146,0.18) 40%, transparent 60%, rgba(240,98,146,0.18) 80%, transparent 100%);
+    animation:mythicRayRotate 6s linear infinite;
+    pointer-events:none;
+  }
+  @keyframes mythicRayRotate{
+    0%{ transform:rotate(0deg); }
+    100%{ transform:rotate(360deg); }
+  }
+  .mythic-card{
+    position:relative;
+    background:linear-gradient(160deg, #1A0F1E, #100916);
+    border:2px solid var(--rarity-mythic);
+    border-radius:20px;
+    padding:36px 28px 28px;
+    text-align:center;
+    max-width:340px;
+    width:100%;
+    box-shadow:0 0 50px rgba(240,98,146,0.55), 0 0 120px rgba(240,98,146,0.25);
+    animation:mythicCardIn 0.6s cubic-bezier(0.2,1.4,0.4,1);
+  }
+  @keyframes mythicCardIn{
+    0%{ opacity:0; transform:scale(0.6) translateY(20px); }
+    100%{ opacity:1; transform:scale(1) translateY(0); }
+  }
+  .mythic-eyebrow{
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:2px;
+    color:var(--rarity-mythic);
+    margin-bottom:10px;
+    animation:mythicEyebrowFlicker 1.6s ease-in-out infinite;
+  }
+  @keyframes mythicEyebrowFlicker{
+    0%,100%{ opacity:1; }
+    50%{ opacity:0.55; }
+  }
+  .mythic-emoji{
+    font-size:64px;
+    display:block;
+    margin-bottom:14px;
+    animation:mythicEmojiFloat 2.2s ease-in-out infinite;
+    filter:drop-shadow(0 0 18px rgba(240,98,146,0.8));
+  }
+  @keyframes mythicEmojiFloat{
+    0%,100%{ transform:translateY(0) rotate(0deg); }
+    50%{ transform:translateY(-8px) rotate(-4deg); }
+  }
+  .mythic-name{
+    font-family:'Fraunces', serif;
+    font-size:24px;
+    color:#fff;
+    margin-bottom:6px;
+  }
+  .mythic-flavor{
+    font-size:13px;
+    color:var(--ink-dim);
+    line-height:1.5;
+    margin-bottom:22px;
+  }
+  #mythicEventCloseBtn{
+    width:100%;
+    padding:12px;
+    background:var(--rarity-mythic);
+    color:#1A0F1E;
+    font-weight:700;
+    border-radius:10px;
+  }
+  .mythic-particle{
+    position:absolute;
+    font-size:18px;
+    pointer-events:none;
+    animation:mythicParticleFloat 1.8s ease-out forwards;
+  }
+  @keyframes mythicParticleFloat{
+    0%{ opacity:0; transform:translateY(0) scale(0.4); }
+    25%{ opacity:1; }
+    100%{ opacity:0; transform:translateY(-90px) scale(1.1); }
+  }
+
   .status-text{
     text-align:center;
     font-size:14px;
@@ -592,6 +691,17 @@
 
 <div id="legendaryFlash"></div>
 
+<div id="mythicEventOverlay">
+  <div class="mythic-rays"></div>
+  <div class="mythic-card">
+    <p class="mythic-eyebrow">✦ 신화 등급 발견 ✦</p>
+    <span class="mythic-emoji" id="mythicEventEmoji">🧭</span>
+    <div class="mythic-name" id="mythicEventName">천체의 나침반</div>
+    <p class="mythic-flavor" id="mythicEventFlavor"></p>
+    <button id="mythicEventCloseBtn">✨ 확인</button>
+  </div>
+</div>
+
   <!-- 로그인 / 회원가입 화면 -->
   <div class="card" id="authScreen">
     <h1>시간의 상자</h1>
@@ -744,7 +854,7 @@
 
     <!-- 기록모드: 이번 판에 실제로 들고 있는 아이템 (환생하면 비워짐) -->
     <div id="runModeView" class="hidden">
-      <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:8px;" id="runModeHint">같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요</p>
+      <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:8px;" id="runModeHint">같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (전설까지만, 신화는 상자에서만!)</p>
       <button class="collection-link" id="craftAllBtn" style="margin-bottom:16px; background:var(--surface-2); border:1px solid var(--gold-dim); border-radius:10px; padding:10px; color:var(--gold); text-decoration:none;">⚡ 전체 합성 (가능한 만큼 한번에)</button>
       <div class="collection-grid" id="runInventoryGrid"></div>
     </div>
@@ -935,8 +1045,8 @@
 
     document.getElementById('modeTabRun').textContent = isRecord ? '🎒 이번 판 보유' : '🎒 보유 아이템';
     document.getElementById('runModeHint').textContent = isRecord
-      ? '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (환생하면 비워져요)'
-      : '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요';
+      ? '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (전설까지만, 신화는 상자에서만!) · 환생하면 비워져요'
+      : '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (전설까지만, 신화는 상자에서만!)';
   }
 
   async function switchMode(targetMode){
@@ -1230,10 +1340,56 @@
     }
   }
 
+  // -------------------------------
+  // 신화 이벤트 화면 (상자에서 신화가 나왔을 때만 풀스크린으로 등장)
+  // -------------------------------
+  const mythicQueue = [];
+  let mythicShowing = false;
+
+  function showNextMythicEvent(){
+    if (mythicShowing || mythicQueue.length === 0) return;
+    const item = mythicQueue.shift();
+    mythicShowing = true;
+
+    document.getElementById('mythicEventEmoji').textContent = item.emoji;
+    document.getElementById('mythicEventName').textContent =
+      item.count > 1 ? `${item.name} x${item.count}` : item.name;
+    document.getElementById('mythicEventFlavor').textContent = item.flavor || '';
+
+    const overlay = document.getElementById('mythicEventOverlay');
+    overlay.classList.add('show');
+
+    // 카드 주변에 반짝이 파티클
+    const card = overlay.querySelector('.mythic-card');
+    for (let i = 0; i < 14; i++) {
+      const p = document.createElement('span');
+      p.className = 'mythic-particle';
+      p.textContent = ['✨', '💫', '🌸'][i % 3];
+      p.style.left = `${Math.random() * 100}%`;
+      p.style.top = `${40 + Math.random() * 60}%`;
+      p.style.animationDelay = `${Math.random() * 0.8}s`;
+      card.appendChild(p);
+      setTimeout(() => p.remove(), 2800);
+    }
+    if (navigator.vibrate) navigator.vibrate([80, 60, 160]);
+  }
+
+  document.getElementById('mythicEventCloseBtn').addEventListener('click', () => {
+    document.getElementById('mythicEventOverlay').classList.remove('show');
+    mythicShowing = false;
+    showNextMythicEvent(); // 한 번에 여러 종류가 나온 경우 이어서 보여줌
+  });
+
   function checkAndTriggerLegendary(items){
     // items: 단일 아이템 객체 또는 아이템 배열 둘 다 받을 수 있게
     const list = Array.isArray(items) ? items : [items];
-    if (list.some(item => item && (item.rarity === 'legendary' || item.rarity === 'mythic'))) {
+    const mythics = list.filter(item => item && item.rarity === 'mythic');
+
+    if (mythics.length > 0) {
+      // 신화는 전설 이펙트 대신 전용 이벤트 화면으로 보여줌
+      mythics.forEach(m => mythicQueue.push(m));
+      showNextMythicEvent();
+    } else if (list.some(item => item && item.rarity === 'legendary')) {
       triggerLegendaryEffect();
     }
   }
@@ -1519,14 +1675,16 @@
           card.className = `item-card ${item.rarity}`;
           card.title = item.flavor;
 
-          const isMaxRarity = item.rarity === 'mythic'; // 신화가 최고 등급 (전설은 이제 신화로 합성 가능)
-          const canCraft = item.count >= CRAFT_COST && !isMaxRarity;
+          // 신화는 상자에서만 나오므로 전설도 합성 재료가 될 수 없음 (일반/희귀/영웅만 합성 가능)
+          const isMaxRarity = item.rarity === 'mythic';
+          const isCraftLocked = item.rarity === 'legendary' || isMaxRarity;
+          const canCraft = item.count >= CRAFT_COST && !isCraftLocked;
 
           card.innerHTML = `
             <span class="item-emoji">${item.emoji}</span>
             <div class="item-name">${item.name}</div>
             <div class="item-count">x${item.count}</div>
-            <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${isMaxRarity ? '최고 등급' : `합성(-${CRAFT_COST})`}</button>
+            <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${isMaxRarity ? '최고 등급' : (isCraftLocked ? '합성 불가' : `합성(-${CRAFT_COST})`)}</button>
           `;
           runGrid.appendChild(card);
         });

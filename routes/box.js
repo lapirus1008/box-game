@@ -37,6 +37,9 @@ const BASE_INCOME_PER_SECOND = 1;     // 누구나 기본으로 받는 초당 �
 const LEGENDARY_INCOME_PER_SECOND = 1; // 전설 아이템 1개당 추가되는 초당 골드
 const MYTHIC_INCOME_PER_SECOND = 5;    // 신화 아이템 1개당 추가되는 초당 골드 (훨씬 희귀해서 더 많이 줌)
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic'];
+// 합성으로 올라갈 수 있는 등급은 일반→희귀→영웅→전설까지입니다.
+// 신화는 합성으로 절대 얻을 수 없고, 오직 상자에서만 나옵니다. (전설은 더 이상 합성 재료가 될 수 없음)
+const CRAFTABLE_RARITIES = ['common', 'rare', 'epic'];
 const CRAFT_COST = 3;                 // 합성에 필요한 같은 아이템 개수
 const COMPLETION_BONUS_GOLD = 2000;   // 도감 완성 보상
 const REBIRTH_GOLD_REQUIRED = 100000; // 환생에 필요한 골드 (기록모드 전용)
@@ -357,7 +360,7 @@ router.post('/bulk-open', verifyToken, async (req, res) => {
 
     const obtainedList = Object.entries(obtainedCounts).map(([key, count]) => {
       const item = TREASURES.find(t => t.key === key);
-      return { key, name: item.name, emoji: item.emoji, rarity: item.rarity, count };
+      return { key, name: item.name, emoji: item.emoji, rarity: item.rarity, flavor: item.flavor, count };
     });
 
     res.json({
@@ -443,7 +446,7 @@ router.post('/buy-boxes', verifyToken, async (req, res) => {
 
     const obtainedList = Object.entries(obtainedCounts).map(([key, count]) => {
       const item = TREASURES.find(t => t.key === key);
-      return { key, name: item.name, emoji: item.emoji, rarity: item.rarity, count };
+      return { key, name: item.name, emoji: item.emoji, rarity: item.rarity, flavor: item.flavor, count };
     });
 
     res.json({
@@ -578,10 +581,14 @@ router.post('/craft', verifyToken, async (req, res) => {
     return res.status(400).json({ message: '존재하지 않는 아이템입니다.' });
   }
 
-  const rarityIndex = RARITY_ORDER.indexOf(sourceItem.rarity);
-  if (rarityIndex === RARITY_ORDER.length - 1) {
-    return res.status(400).json({ message: '이미 최고 등급이라 더 합성할 수 없습니다.' });
+  if (!CRAFTABLE_RARITIES.includes(sourceItem.rarity)) {
+    return res.status(400).json({
+      message: sourceItem.rarity === 'legendary'
+        ? '신화 아이템은 합성으로 얻을 수 없어요. 오직 상자에서만 나옵니다!'
+        : '이미 최고 등급이라 더 합성할 수 없습니다.',
+    });
   }
+  const rarityIndex = RARITY_ORDER.indexOf(sourceItem.rarity);
   const nextRarity = RARITY_ORDER[rarityIndex + 1];
 
   const client = await db.getClient();
@@ -656,8 +663,9 @@ router.post('/craft-all', verifyToken, async (req, res) => {
       const sourceItem = TREASURES.find(t => t.key === row.item_key);
       if (!sourceItem) continue;
 
+      if (!CRAFTABLE_RARITIES.includes(sourceItem.rarity)) continue; // 전설/신화는 합성 불가
+
       const rarityIndex = RARITY_ORDER.indexOf(sourceItem.rarity);
-      if (rarityIndex === RARITY_ORDER.length - 1) continue;
 
       const nextRarity = RARITY_ORDER[rarityIndex + 1];
       const craftCount = Math.floor(row.count / CRAFT_COST);
