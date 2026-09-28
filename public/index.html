@@ -167,7 +167,6 @@
   body.mode-collection .mode-bar{ border-color:var(--teal); background:rgba(58,145,136,0.08); }
   body.mode-collection #switchModeBtn{ color:var(--rarity-legendary); border-color:var(--rarity-legendary); }
 
-  .record-only{ }
   body.mode-collection .record-only{ display:none !important; }
 
   .collection-mode-notice{
@@ -202,6 +201,40 @@
     cursor:pointer;
     text-decoration:underline;
   }
+  /* 신화 천장 표시 */
+  .pity-box{
+    background:var(--surface-2);
+    border:1px solid #2C3F6B;
+    border-radius:12px;
+    padding:10px 12px;
+    margin:0 0 14px;
+    transition:border-color 0.3s, box-shadow 0.3s;
+  }
+  .pity-top{
+    display:flex;
+    justify-content:space-between;
+    font-size:12px;
+    color:var(--ink-dim);
+    margin-bottom:6px;
+  }
+  .pity-top .pity-count{ color:var(--rarity-mythic); font-weight:700; }
+  .pity-bar-wrap{ height:6px; background:#0F1830; border-radius:3px; overflow:hidden; }
+  .pity-bar-fill{
+    height:100%;
+    width:0%;
+    background:linear-gradient(90deg, #9C4A6B, var(--rarity-mythic));
+    border-radius:3px;
+    transition:width 0.4s;
+  }
+  .pity-hint{ font-size:11px; color:var(--ink-dim); margin:6px 0 0; text-align:center; line-height:1.5; }
+  .pity-box.imminent{
+    border-color:var(--rarity-mythic);
+    box-shadow:0 0 16px rgba(240,98,146,0.45);
+    animation:pityPulse 1.2s ease-in-out infinite;
+  }
+  .pity-box.imminent .pity-hint{ color:var(--rarity-mythic); font-weight:700; }
+  @keyframes pityPulse{ 0%,100%{ box-shadow:0 0 10px rgba(240,98,146,0.3); } 50%{ box-shadow:0 0 22px rgba(240,98,146,0.7); } }
+
   .chest-wrap{
     display:flex;
     justify-content:center;
@@ -763,6 +796,12 @@
     <div class="charge-bar-wrap"><div class="charge-bar-fill" id="chargeBarFill"></div></div>
     <p id="nextChargeText" style="font-size:12px; color:var(--ink-dim); text-align:center; margin:4px 0 12px;"></p>
 
+    <div class="pity-box" id="pityBox">
+      <div class="pity-top"><span>🌸 신화 천장</span><span class="pity-count" id="pityText">0 / 3,000</span></div>
+      <div class="pity-bar-wrap"><div class="pity-bar-fill" id="pityBarFill"></div></div>
+      <p class="pity-hint" id="pityHint">신화가 나오면 초기화돼요</p>
+    </div>
+
     <div class="result-box" id="resultBox">
       <div class="rarity-badge" id="rarityBadge"></div>
       <div class="treasure-name" id="treasureName"></div>
@@ -1121,6 +1160,7 @@
       cachedCharges = data.charges;
       cachedMaxCharges = data.maxCharges;
       cachedNextChargeAt = data.nextChargeInMs != null ? new Date(adjustedNow().getTime() + data.nextChargeInMs) : null;
+      updatePityUI(data.mythicPity, data.mythicPityLimit);
 
       if (data.passiveIncomePreview) {
         cachedLegendaryCount = data.passiveIncomePreview.legendaryCount;
@@ -1275,7 +1315,8 @@
         data.obtained.map(o => `${o.emoji}${o.name} x${o.count}`).join(', ');
       document.getElementById('resultBox').style.display = 'block';
 
-      checkAndTriggerLegendary(data.obtained);
+      updatePityUI(data.mythicPity, data.mythicPityLimit);
+      checkAndTriggerLegendary(data.obtained, data.mythicPityTriggered);
       clampBuyBoxQty();
       refreshStatus();
     } catch (err) {
@@ -1343,14 +1384,32 @@
   // -------------------------------
   // 신화 이벤트 화면 (상자에서 신화가 나왔을 때만 풀스크린으로 등장)
   // -------------------------------
+  // 신화 천장 표시 갱신: 남은 개수, 진행바, 확정 임박 시 강조
+  function updatePityUI(pity, limit){
+    if (typeof pity !== 'number' || !limit) return;
+    const remaining = limit - pity; // 이 개수만큼 더 열면(=마지막 상자가) 신화 확정
+    document.getElementById('pityText').textContent = `${pity.toLocaleString()} / ${limit.toLocaleString()}`;
+    document.getElementById('pityBarFill').style.width = `${Math.min(100, (pity / limit) * 100)}%`;
+    const box = document.getElementById('pityBox');
+    const hint = document.getElementById('pityHint');
+    const imminent = remaining <= 1;
+    box.classList.toggle('imminent', imminent);
+    hint.textContent = imminent
+      ? '🔥 다음 상자는 신화 확정!'
+      : `${remaining.toLocaleString()}번째 상자까지 신화가 안 나오면 확정 · 신화가 나오면 초기화`;
+  }
+
   const mythicQueue = [];
   let mythicShowing = false;
+
+  const overlayEyebrow = () => document.querySelector('#mythicEventOverlay .mythic-eyebrow');
 
   function showNextMythicEvent(){
     if (mythicShowing || mythicQueue.length === 0) return;
     const item = mythicQueue.shift();
     mythicShowing = true;
 
+    overlayEyebrow().textContent = item.pityTriggered ? '✦ 천장 달성 · 신화 확정 ✦' : '✦ 신화 등급 발견 ✦';
     document.getElementById('mythicEventEmoji').textContent = item.emoji;
     document.getElementById('mythicEventName').textContent =
       item.count > 1 ? `${item.name} x${item.count}` : item.name;
@@ -1380,14 +1439,14 @@
     showNextMythicEvent(); // 한 번에 여러 종류가 나온 경우 이어서 보여줌
   });
 
-  function checkAndTriggerLegendary(items){
+  function checkAndTriggerLegendary(items, pityTriggered){
     // items: 단일 아이템 객체 또는 아이템 배열 둘 다 받을 수 있게
     const list = Array.isArray(items) ? items : [items];
     const mythics = list.filter(item => item && item.rarity === 'mythic');
 
     if (mythics.length > 0) {
       // 신화는 전설 이펙트 대신 전용 이벤트 화면으로 보여줌
-      mythics.forEach(m => mythicQueue.push(m));
+      mythics.forEach((m, i) => mythicQueue.push({ ...m, pityTriggered: Boolean(pityTriggered) && i === 0 }));
       showNextMythicEvent();
     } else if (list.some(item => item && item.rarity === 'legendary')) {
       triggerLegendaryEffect();
@@ -1412,7 +1471,8 @@
     document.getElementById('resultBox').style.display = 'block';
     document.getElementById('totalTreasure').textContent = data.totalTreasure;
 
-    checkAndTriggerLegendary(data.treasure);
+    updatePityUI(data.mythicPity, data.mythicPityLimit);
+    checkAndTriggerLegendary(data.treasure, data.mythicPityTriggered);
 
     setTimeout(() => { chest.classList.remove('open'); }, 1500);
     refreshStatus();
@@ -1468,7 +1528,8 @@
         data.obtained.map(o => `${o.emoji}${o.name} x${o.count}`).join(', ');
       document.getElementById('resultBox').style.display = 'block';
 
-      checkAndTriggerLegendary(data.obtained);
+      updatePityUI(data.mythicPity, data.mythicPityLimit);
+      checkAndTriggerLegendary(data.obtained, data.mythicPityTriggered);
 
       renderTick();
       refreshStatus();

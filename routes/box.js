@@ -48,6 +48,12 @@ const GOLD_PER_BOX_PURCHASE = 75; // 충전과 별개로, 골드를 내고 상�
 const MAX_GOLD_BOX_PURCHASE = 2000;
 const RESET_GOLD = 2000; // 초심으로 돌아가기 / 새 세이브 시작 골드
 
+// 신화 천장(피티): 마지막 신화 이후 이만큼 상자를 열면 그 상자는 신화가 100% 확정입니다.
+// 신화 자연 확률은 전체 가중치 대비 약 1/5,400 입니다. 3,000개는 자연 확률만으로
+// 이 안에 신화를 얻을 확률이 약 42%인 지점이라, "운이 없어도 하루 이틀 열심히 하면 반드시 본다"는
+// 느낌을 주면서도 신화의 희소성은 유지합니다. (충전+골드 구매를 병행하면 대략 10시간 안팎)
+const MYTHIC_PITY_LIMIT = 3000;
+
 const VALID_MODES = ['record', 'collection'];
 const DEFAULT_MODE = 'record';
 
@@ -98,6 +104,16 @@ function pickRandomFromRarity(rarity) {
     rand -= treasure.weight;
   }
   return pool[0];
+}
+
+// 상자 하나를 뽑되, 천장 카운터를 반영합니다.
+// pity = 지금까지 신화 없이 연 상자 수. 이번이 천장 번째 상자면 신화 확정.
+function rollWithPity(pity) {
+  if (pity + 1 >= MYTHIC_PITY_LIMIT) {
+    return { treasure: pickRandomFromRarity('mythic'), pity: 0, guaranteed: true };
+  }
+  const treasure = pickRandomTreasure();
+  return { treasure, pity: treasure.rarity === 'mythic' ? 0 : pity + 1, guaranteed: false };
 }
 
 // 이 요청 시점에 유저가 어떤 모드(기록/수집)를 쓰고 있는지 확인합니다.
@@ -275,9 +291,14 @@ router.post('/open', verifyToken, async (req, res) => {
       });
     }
 
-    await client.query('UPDATE box_claims SET box_charges = box_charges - 1 WHERE user_id = $1 AND mode = $2', [userId, mode]);
+    const pityRow = await client.query('SELECT mythic_pity FROM box_claims WHERE user_id = $1 AND mode = $2', [userId, mode]);
+    const roll = rollWithPity(pityRow.rows[0].mythic_pity);
+    const treasure = roll.treasure;
 
-    const treasure = pickRandomTreasure();
+    await client.query(
+      'UPDATE box_claims SET box_charges = box_charges - 1, mythic_pity = $3 WHERE user_id = $1 AND mode = $2',
+      [userId, mode, roll.pity]
+    );
     await recordItemObtained(client, userId, mode, treasure.key);
 
     const goldResult = await client.query('SELECT total_treasure FROM box_claims WHERE user_id = $1 AND mode = $2', [userId, mode]);
@@ -288,6 +309,9 @@ router.post('/open', verifyToken, async (req, res) => {
       message: '상자를 열었습니다!',
       mode,
       treasure,
+      mythicPity: roll.pity,
+      mythicPityLimit: MYTHIC_PITY_LIMIT,
+      mythicPityTriggered: roll.guaranteed,
       totalTreasure: parseInt(goldResult.rows[0].total_treasure, 10),
       charges: chargeInfo.charges - 1,
       maxCharges: chargeInfo.maxCharges,
@@ -335,13 +359,22 @@ router.post('/bulk-open', verifyToken, async (req, res) => {
       });
     }
 
-    await client.query('UPDATE box_claims SET box_charges = box_charges - $1 WHERE user_id = $2 AND mode = $3', [quantity, userId, mode]);
+    const pityRow = await client.query('SELECT mythic_pity FROM box_claims WHERE user_id = $1 AND mode = $2', [userId, mode]);
+    let pity = pityRow.rows[0].mythic_pity;
+    let pityTriggered = false;
 
     const obtainedCounts = {};
     for (let i = 0; i < quantity; i++) {
-      const treasure = pickRandomTreasure();
-      obtainedCounts[treasure.key] = (obtainedCounts[treasure.key] || 0) + 1;
+      const roll = rollWithPity(pity);
+      pity = roll.pity;
+      if (roll.guaranteed) pityTriggered = true;
+      obtainedCounts[roll.treasure.key] = (obtainedCounts[roll.treasure.key] || 0) + 1;
     }
+
+    await client.query(
+      'UPDATE box_claims SET box_charges = box_charges - $1, mythic_pity = $4 WHERE user_id = $2 AND mode = $3',
+      [quantity, userId, mode, pity]
+    );
 
     for (const [itemKey, count] of Object.entries(obtainedCounts)) {
       await client.query(
@@ -367,6 +400,9 @@ router.post('/bulk-open', verifyToken, async (req, res) => {
       message: `상자 ${quantity}개를 열었습니다!`,
       mode,
       quantity,
+      mythicPity: pity,
+      mythicPityLimit: MYTHIC_PITY_LIMIT,
+      mythicPityTriggered: pityTriggered,
       totalTreasure: parseInt(goldResult.rows[0].total_treasure, 10),
       obtained: obtainedList,
       charges: chargeInfo.charges - quantity,
@@ -403,7 +439,7 @@ router.post('/buy-boxes', verifyToken, async (req, res) => {
     const mode = await getActiveMode(userId, client);
 
     const result = await client.query(
-      'SELECT total_treasure FROM box_claims WHERE user_id = $1 AND mode = $2 FOR UPDATE',
+      'SELECT total_treasure, mythic_pity FROM box_claims WHERE user_id = $1 AND mode = $2 FOR UPDATE',
       [userId, mode]
     );
     if (result.rows.length === 0) {
@@ -422,10 +458,15 @@ router.post('/buy-boxes', verifyToken, async (req, res) => {
       });
     }
 
+    let pity = result.rows[0].mythic_pity;
+    let pityTriggered = false;
+
     const obtainedCounts = {};
     for (let i = 0; i < quantity; i++) {
-      const treasure = pickRandomTreasure();
-      obtainedCounts[treasure.key] = (obtainedCounts[treasure.key] || 0) + 1;
+      const roll = rollWithPity(pity);
+      pity = roll.pity;
+      if (roll.guaranteed) pityTriggered = true;
+      obtainedCounts[roll.treasure.key] = (obtainedCounts[roll.treasure.key] || 0) + 1;
     }
 
     for (const [itemKey, count] of Object.entries(obtainedCounts)) {
@@ -440,7 +481,7 @@ router.post('/buy-boxes', verifyToken, async (req, res) => {
     }
 
     const remainingGold = currentGold - totalCost;
-    await client.query('UPDATE box_claims SET total_treasure = $1 WHERE user_id = $2 AND mode = $3', [remainingGold, userId, mode]);
+    await client.query('UPDATE box_claims SET total_treasure = $1, mythic_pity = $4 WHERE user_id = $2 AND mode = $3', [remainingGold, userId, mode, pity]);
 
     await client.query('COMMIT');
 
@@ -454,6 +495,9 @@ router.post('/buy-boxes', verifyToken, async (req, res) => {
       mode,
       quantity,
       totalCost,
+      mythicPity: pity,
+      mythicPityLimit: MYTHIC_PITY_LIMIT,
+      mythicPityTriggered: pityTriggered,
       totalTreasure: remainingGold,
       obtained: obtainedList,
     });
@@ -484,7 +528,7 @@ router.get('/status', verifyToken, async (req, res) => {
     }
 
     const row = await client.query(
-      `SELECT total_treasure, last_income_collected_at, rebirth_count, run_started_at
+      `SELECT total_treasure, last_income_collected_at, rebirth_count, run_started_at, mythic_pity
        FROM box_claims WHERE user_id = $1 AND mode = $2`,
       [userId, mode]
     );
@@ -514,6 +558,8 @@ router.get('/status', verifyToken, async (req, res) => {
       maxCharges: chargeInfo.maxCharges,
       nextChargeInMs: chargeInfo.nextChargeInMs,
       totalTreasure: parseInt(row.rows[0].total_treasure, 10),
+      mythicPity: row.rows[0].mythic_pity,
+      mythicPityLimit: MYTHIC_PITY_LIMIT,
       serverTime: chargeInfo.serverTime,
       passiveIncomePreview: {
         legendaryCount,
@@ -889,7 +935,8 @@ router.post('/reset-run', verifyToken, async (req, res) => {
            last_income_collected_at = $2,
            run_started_at = $2,
            box_charges = 1,
-           last_charge_calculated_at = $2
+           last_charge_calculated_at = $2,
+           mythic_pity = CASE WHEN mode = 'record' THEN 0 ELSE mythic_pity END
        WHERE user_id = $3 AND mode = $4`,
       [RESET_GOLD, now, userId, mode]
     );
@@ -967,7 +1014,8 @@ router.post('/rebirth', verifyToken, async (req, res) => {
            rebirth_count = $3,
            run_started_at = $2,
            box_charges = 1,
-           last_charge_calculated_at = $2
+           last_charge_calculated_at = $2,
+           mythic_pity = 0
        WHERE user_id = $4 AND mode = $5`,
       [RESET_GOLD, now, newRebirthNumber, userId, mode]
     );
