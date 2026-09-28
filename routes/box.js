@@ -528,7 +528,7 @@ router.get('/status', verifyToken, async (req, res) => {
     }
 
     const row = await client.query(
-      `SELECT total_treasure, last_income_collected_at, rebirth_count, run_started_at, mythic_pity
+      `SELECT total_treasure, last_income_collected_at, rebirth_count, run_started_at, mythic_pity, completion_bonus_claimed
        FROM box_claims WHERE user_id = $1 AND mode = $2`,
       [userId, mode]
     );
@@ -549,11 +549,20 @@ router.get('/status', verifyToken, async (req, res) => {
       + legendaryCount * LEGENDARY_INCOME_PER_SECOND
       + mythicCount * MYTHIC_INCOME_PER_SECOND;
 
+    // 도감을 다 채웠는지 (메인 화면의 "도감 완료" 버튼 표시용)
+    const discoveredResult = await client.query(
+      'SELECT COUNT(*) AS total FROM user_discoveries WHERE user_id = $1 AND mode = $2',
+      [userId, mode]
+    );
+    const collectionComplete = parseInt(discoveredResult.rows[0].total, 10) >= TREASURES.length;
+
     await client.query('COMMIT');
 
     res.json({
       mode,
       isRecordMode: mode === 'record',
+      collectionComplete,
+      bonusClaimed: row.rows[0].completion_bonus_claimed,
       charges: chargeInfo.charges,
       maxCharges: chargeInfo.maxCharges,
       nextChargeInMs: chargeInfo.nextChargeInMs,

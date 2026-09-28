@@ -167,6 +167,7 @@
   body.mode-collection .mode-bar{ border-color:var(--teal); background:rgba(58,145,136,0.08); }
   body.mode-collection #switchModeBtn{ color:var(--rarity-legendary); border-color:var(--rarity-legendary); }
 
+
   body.mode-collection .record-only{ display:none !important; }
 
   .collection-mode-notice{
@@ -607,6 +608,87 @@
     text-align:center;
   }
 
+  /* 도감 완료 알림 pill (메인 화면, 작게) */
+  .claim-pill{
+    display:block;
+    margin:0 auto 14px;
+    padding:6px 14px;
+    font-size:12px;
+    font-weight:700;
+    color:#1A1305;
+    background:var(--gold);
+    border-radius:999px;
+    animation:pityPulse 1.4s ease-in-out infinite;
+  }
+
+  /* 상자 열기 패널 (충전 / 골드 구매 탭) */
+  .open-tabs{
+    display:flex;
+    gap:4px;
+    margin-bottom:10px;
+    background:var(--bg);
+    padding:3px;
+    border-radius:10px;
+  }
+  .open-tab{
+    flex:1;
+    padding:8px 6px;
+    font-size:12px;
+    font-weight:600;
+    background:transparent;
+    color:var(--ink-dim);
+    border-radius:8px;
+  }
+  .open-tab.active{ background:var(--surface); color:var(--gold); }
+
+  /* 골드/플레이타임 요약 */
+  .summary-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+    margin-bottom:12px;
+  }
+  .summary-cell{
+    background:var(--surface-2);
+    border-radius:10px;
+    padding:8px 12px;
+  }
+  .summary-cell .label{ display:block; font-size:11px; color:var(--ink-dim); margin-bottom:2px; }
+  .summary-cell .value{ font-family:'Fraunces', serif; color:var(--gold); font-size:16px; }
+
+  /* 하단 메뉴 타일 */
+  .nav-grid{
+    display:flex;
+    gap:8px;
+    margin-top:12px;
+  }
+  .nav-tile{
+    flex:1;
+    padding:12px 8px;
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink);
+    background:var(--surface-2);
+    border:1px solid #2C3F6B;
+    border-radius:10px;
+    text-align:center;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .nav-tile:hover{ border-color:var(--gold-dim); }
+  .reset-link{
+    display:block;
+    margin:14px auto 0;
+    font-size:11px;
+    color:var(--danger);
+    opacity:0.75;
+    background:none;
+    border:none;
+    text-decoration:underline;
+    cursor:pointer;
+    font-family:inherit;
+  }
+
   .collection-link{
     display:block;
     text-align:center;
@@ -781,7 +863,7 @@
       <button id="switchModeBtn">📖 수집모드로</button>
     </div>
 
-    <p class="collection-mode-notice">📖 수집모드에서는 환생이 없어요. 상자를 열어 도감을 영구히 채워보세요!</p>
+    <button class="claim-pill hidden" id="mainClaimBonusBtn">🎉 도감 완료! 보상 받기</button>
 
     <div class="chest-wrap">
       <div class="chest" id="chest">
@@ -808,33 +890,40 @@
       <div id="treasureDetail" style="font-size:13px; color:var(--ink-dim);"></div>
     </div>
 
+    <!-- 상자 열기: 충전(무료) / 골드 구매를 탭으로 묶어 한 덩어리로 -->
     <div class="bulk-open-box">
-      <div class="bulk-open-row">
-        <input type="number" id="bulkOpenQty" value="1" min="1" step="1">
-        <button id="maxQtyBtn">최대로</button>
-        <button id="bulkOpenBtn">한번에 열기</button>
+      <div class="open-tabs">
+        <button class="open-tab active" id="openTabCharge">📦 충전으로 열기</button>
+        <button class="open-tab" id="openTabGold">💰 골드로 구매</button>
       </div>
-      <p id="bulkOpenCostText">충전 0/100 · 무료로 소모</p>
-    </div>
-
-    <!-- 충전과는 완전히 별개: 골드만 내면 충전 여부와 상관없이 상자를 바로 구매해서 엽니다 -->
-    <div class="bulk-open-box" style="border:1px solid var(--gold-dim);">
-      <div class="bulk-open-row">
-        <input type="number" id="buyBoxQty" value="1" min="1" step="1">
-        <button id="maxBuyQtyBtn">최대로</button>
-        <button id="buyBoxBtn" style="background:var(--gold); color:#1A1305;">골드로 구매해서 열기</button>
+      <div id="chargeOpenPanel">
+        <div class="bulk-open-row">
+          <input type="number" id="bulkOpenQty" value="1" min="1" step="1">
+          <button id="maxQtyBtn">최대로</button>
+          <button id="bulkOpenBtn">한번에 열기</button>
+        </div>
+        <p id="bulkOpenCostText">충전 0/100 · 무료로 소모</p>
       </div>
-      <p id="buyBoxCostText" style="font-size:11px; color:var(--ink-dim); margin:0; text-align:center;">개당 75G · 충전과 무관하게 구매</p>
+      <!-- 충전과는 완전히 별개: 골드만 내면 충전 여부와 상관없이 상자를 바로 구매해서 엽니다 -->
+      <div id="goldOpenPanel" class="hidden">
+        <div class="bulk-open-row">
+          <input type="number" id="buyBoxQty" value="1" min="1" step="1">
+          <button id="maxBuyQtyBtn">최대로</button>
+          <button id="buyBoxBtn" style="background:var(--gold); color:#1A1305;">구매해서 열기</button>
+        </div>
+        <p id="buyBoxCostText" style="font-size:11px; color:var(--ink-dim); margin:0; text-align:center;">개당 75G · 충전과 무관하게 구매</p>
+      </div>
     </div>
 
-    <div class="stats-row">
-      <span class="label">보유 골드</span>
-      <span class="value" id="totalTreasure">0</span>
-    </div>
-
-    <div class="stats-row" style="border-top:none; padding-top:8px;">
-      <span class="label">플레이타임<span class="record-only"> (환생 <span id="rebirthCount">0</span>회)</span></span>
-      <span class="value" id="playtimeDisplay" style="font-size:14px;">00:00:00</span>
+    <div class="summary-grid">
+      <div class="summary-cell">
+        <span class="label">💰 보유 골드</span>
+        <span class="value" id="totalTreasure">0</span>
+      </div>
+      <div class="summary-cell">
+        <span class="label">⏱ 플레이타임<span class="record-only"> · 환생 <span id="rebirthCount">0</span>회</span></span>
+        <span class="value" id="playtimeDisplay">00:00:00</span>
+      </div>
     </div>
 
     <div class="goal-box record-only" id="rebirthGoalBox">
@@ -842,17 +931,19 @@
       <div class="goal-bar-wrap"><div class="goal-bar-fill" id="rebirthGoalBar"></div></div>
     </div>
 
-    <button class="btn-primary record-only" id="mainRebirthBtn" disabled style="margin:12px 0;">✨ 환생하기! (100,000G)</button>
+    <button class="btn-primary record-only" id="mainRebirthBtn" disabled style="margin:10px 0 12px;">✨ 환생하기! (100,000G)</button>
 
     <div class="income-box" id="mainIncomeBox">
       <span id="pendingIncomeNearBtn"></span>
       <button id="collectIncomeBtnMain">받기</button>
     </div>
-    <p class="income-hint">💡 기본 초당 1G + 전설 아이템 1개당 초당 1G 추가로 쌓여요</p>
+    <p class="income-hint">💡 기본 초당 1G + 전설 1개당 +1G · 신화 1개당 +5G</p>
 
-    <button class="collection-link" id="openCollectionBtn">📖 도감 보기</button>
-    <button class="collection-link record-only" id="openRankingBtn">🏆 랭킹 보기</button>
-    <button class="collection-link" id="resetRunBtn" style="color:var(--danger);">🔄 초심으로 돌아가기</button>
+    <div class="nav-grid">
+      <button class="nav-tile" id="openCollectionBtn">🎒 가방 · 도감</button>
+      <button class="nav-tile record-only" id="openRankingBtn">🏆 랭킹</button>
+    </div>
+    <button class="reset-link" id="resetRunBtn">🔄 초심으로 돌아가기</button>
   </div>
 
   <!-- 도감 화면 -->
@@ -876,23 +967,23 @@
       <button id="collectIncomeBtnCollection">받기</button>
     </div>
 
-    <!-- 모드 탭: 수집(영구) / 이번 판 보유(기록) -->
+    <!-- 탭: 가방(지금 들고 있는 아이템, 기본) / 도감(발견 기록) -->
     <div class="mode-tabs">
-      <button class="mode-tab active" id="modeTabCollection">📖 수집 도감</button>
-      <button class="mode-tab" id="modeTabRun">🎒 이번 판 보유</button>
+      <button class="mode-tab active" id="modeTabRun">🎒 가방</button>
+      <button class="mode-tab" id="modeTabCollection">📖 도감</button>
     </div>
 
     <div class="craft-result" id="craftResult"></div>
 
-    <!-- 수집모드: 평생 발견 기록, 환생해도 절대 안 지워짐 -->
-    <div id="collectionModeView">
+    <!-- 도감: 발견 기록 (기록모드는 이번 판 한정, 수집모드는 영구) -->
+    <div id="collectionModeView" class="hidden">
       <p style="font-size:13px; color:var(--ink-dim); margin:0 0 12px;">수집 진행도: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong></p>
       <button class="btn-primary hidden" id="claimBonusBtn" style="margin-bottom:16px;">🎉 도감 완성 보상 받기</button>
       <div class="collection-grid" id="collectionGrid"></div>
     </div>
 
-    <!-- 기록모드: 이번 판에 실제로 들고 있는 아이템 (환생하면 비워짐) -->
-    <div id="runModeView" class="hidden">
+    <!-- 가방: 지금 실제로 들고 있는 아이템 (합성 가능) -->
+    <div id="runModeView">
       <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:8px;" id="runModeHint">같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (전설까지만, 신화는 상자에서만!)</p>
       <button class="collection-link" id="craftAllBtn" style="margin-bottom:16px; background:var(--surface-2); border:1px solid var(--gold-dim); border-radius:10px; padding:10px; color:var(--gold); text-decoration:none;">⚡ 전체 합성 (가능한 만큼 한번에)</button>
       <div class="collection-grid" id="runInventoryGrid"></div>
@@ -1082,7 +1173,7 @@
       ? '기록모드: 도감은 이번 판 한정이에요. 환생하면 함께 초기화돼요.'
       : '수집모드: 도감은 영구 보존돼요. 초심으로 돌아가도 지워지지 않아요.';
 
-    document.getElementById('modeTabRun').textContent = isRecord ? '🎒 이번 판 보유' : '🎒 보유 아이템';
+    document.getElementById('modeTabRun').textContent = '🎒 가방';
     document.getElementById('runModeHint').textContent = isRecord
       ? '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (전설까지만, 신화는 상자에서만!) · 환생하면 비워져요'
       : '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (전설까지만, 신화는 상자에서만!)';
@@ -1161,6 +1252,8 @@
       cachedMaxCharges = data.maxCharges;
       cachedNextChargeAt = data.nextChargeInMs != null ? new Date(adjustedNow().getTime() + data.nextChargeInMs) : null;
       updatePityUI(data.mythicPity, data.mythicPityLimit);
+      document.getElementById('mainClaimBonusBtn')
+        .classList.toggle('hidden', !(data.collectionComplete && !data.bonusClaimed));
 
       if (data.passiveIncomePreview) {
         cachedLegendaryCount = data.passiveIncomePreview.legendaryCount;
@@ -1665,6 +1758,7 @@
     gameScreen.classList.add('hidden');
     collectionScreen.classList.remove('hidden');
     document.getElementById('craftResult').style.display = 'none';
+    showBagTab(); // 열 때마다 기본 화면은 가방
     await loadCollection();
   });
 
@@ -1759,6 +1853,43 @@
     }
   }
 
+  // 가방/도감 탭 전환 (기본은 가방)
+  function showBagTab(){
+    document.getElementById('modeTabRun').classList.add('active');
+    document.getElementById('modeTabCollection').classList.remove('active');
+    document.getElementById('runModeView').classList.remove('hidden');
+    document.getElementById('collectionModeView').classList.add('hidden');
+  }
+
+  // 상자 열기 패널 탭 (충전 / 골드 구매)
+  function showOpenTab(which){
+    const isCharge = which === 'charge';
+    document.getElementById('openTabCharge').classList.toggle('active', isCharge);
+    document.getElementById('openTabGold').classList.toggle('active', !isCharge);
+    document.getElementById('chargeOpenPanel').classList.toggle('hidden', !isCharge);
+    document.getElementById('goldOpenPanel').classList.toggle('hidden', isCharge);
+  }
+  document.getElementById('openTabCharge').addEventListener('click', () => showOpenTab('charge'));
+  document.getElementById('openTabGold').addEventListener('click', () => showOpenTab('gold'));
+
+  // 메인 화면의 "도감 완료" 버튼: 도감을 다 채웠고 보상을 아직 안 받았을 때만 나타남
+  document.getElementById('mainClaimBonusBtn').addEventListener('click', async function(){
+    this.disabled = true;
+    try {
+      const res = await authFetch('/api/box/collection/claim-bonus', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { alert(data.message); return; }
+      document.getElementById('rarityBadge').textContent = '';
+      document.getElementById('treasureName').textContent = `🎉 도감 완성! +${data.bonusGold}G`;
+      document.getElementById('treasureDetail').textContent = '도감 완성 보상을 받았습니다';
+      document.getElementById('resultBox').style.display = 'block';
+      this.classList.add('hidden');
+    } finally {
+      this.disabled = false;
+      refreshStatus();
+    }
+  });
+
   // 모드 탭 전환
   document.getElementById('modeTabCollection').addEventListener('click', () => {
     document.getElementById('modeTabCollection').classList.add('active');
@@ -1788,6 +1919,7 @@
         craftResult.textContent = `🎉 도감 완성! +${data.bonusGold}G 획득!`;
       }
       await loadCollection(false);
+      refreshStatus();
     } finally {
       this.disabled = false;
     }
