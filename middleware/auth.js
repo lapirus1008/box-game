@@ -16,7 +16,8 @@ function verifyToken(req, res, next) {
   const token = authHeader.split(' ')[1]; // "Bearer 토큰값" 에서 토큰값만 추출
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // 허용할 서명 알고리즘을 명시적으로 고정합니다. (alg 변조/none 공격 방어)
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     req.user = decoded; // { userId, email } 형태로 다음 라우트에서 사용 가능
     next(); // 검증 통과 → 다음 로직(실제 라우트 핸들러)으로 진행
   } catch (err) {

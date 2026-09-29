@@ -943,7 +943,7 @@
       <button class="nav-tile" id="openCollectionBtn">🎒 가방 · 도감</button>
       <button class="nav-tile record-only" id="openRankingBtn">🏆 랭킹</button>
     </div>
-    <button class="reset-link" id="resetRunBtn">🔄 초심으로 돌아가기</button>
+    <button class="reset-link record-only" id="resetRunBtn">🔄 초심으로 돌아가기</button>
   </div>
 
   <!-- 도감 화면 -->
@@ -1171,7 +1171,7 @@
 
     document.getElementById('collectionModeSubtext').textContent = isRecord
       ? '기록모드: 도감은 이번 판 한정이에요. 환생하면 함께 초기화돼요.'
-      : '수집모드: 도감은 영구 보존돼요. 초심으로 돌아가도 지워지지 않아요.';
+      : '수집모드: 도감은 영구 보존돼요. 환생도, 초기화도 없어요.';
 
     document.getElementById('modeTabRun').textContent = '🎒 가방';
     document.getElementById('runModeHint').textContent = isRecord
@@ -2023,11 +2023,16 @@
     await loadRanking();
   });
 
+  // 서버에서 받은 문자열(닉네임 등)을 innerHTML에 넣을 때는 반드시 이스케이프합니다. (저장형 XSS 방지)
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  }
+
   function renderRankRow(rank, nickname, ms, isMe){
     return `
       <div class="rank-row ${isMe ? 'me' : ''}">
         <span class="rank-num">#${rank}</span>
-        <span class="rank-name">${nickname}${isMe ? ' (나)' : ''}</span>
+        <span class="rank-name">${escapeHtml(nickname)}${isMe ? ' (나)' : ''}</span>
         <span class="rank-time">${formatDuration(Math.floor(ms / 1000))}</span>
       </div>
     `;

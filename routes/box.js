@@ -920,7 +920,7 @@ router.post('/collection/claim-bonus', verifyToken, async (req, res) => {
 // -------------------------------
 // 언제든 지금 세이브(현재 모드)를 포기하고 처음부터 다시 시작할 수 있습니다.
 // - 기록모드: 골드·아이템·도감을 전부 초기화합니다 ("이번 판" 자체를 새로 시작하는 것이므로).
-// - 수집모드: 골드·아이템만 초기화되고, 도감(영구 발견기록)은 절대 지워지지 않습니다.
+// - 수집모드: 사용할 수 없습니다. (도감/천장이 영구라서 초기화가 무한 파밍 통로가 됨)
 // 환생과 달리 "성공한 기록"이 아니라서 rebirth_count나 랭킹에는 남지 않습니다.
 router.post('/reset-run', verifyToken, async (req, res) => {
   const userId = req.user.userId;
@@ -930,11 +930,18 @@ router.post('/reset-run', verifyToken, async (req, res) => {
     await client.query('BEGIN');
     const mode = await getActiveMode(userId, client);
 
-    await client.query('DELETE FROM user_items WHERE user_id = $1 AND mode = $2', [userId, mode]);
-    if (mode === 'record') {
-      // 기록모드는 도감도 "이번 판" 한정이라 같이 초기화합니다.
-      await client.query('DELETE FROM user_discoveries WHERE user_id = $1 AND mode = $2', [userId, mode]);
+    // [보안/밸런스] 수집모드에서는 초심으로 돌아가기를 막습니다.
+    // 수집모드는 도감과 신화 천장이 영구 보존되는데, 초기화가 골드를 2000G로 되돌려주면
+    // "초기화 → 2000G로 상자 구매 → 초기화"를 스크립트로 반복해서 무한히 공짜 상자를 열고
+    // 도감/천장을 순식간에 채울 수 있습니다.
+    if (mode !== 'record') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: '수집모드에서는 초심으로 돌아갈 수 없습니다.' });
     }
+
+    // 기록모드는 도감도 "이번 판" 한정이라 아이템과 함께 초기화합니다.
+    await client.query('DELETE FROM user_items WHERE user_id = $1 AND mode = $2', [userId, mode]);
+    await client.query('DELETE FROM user_discoveries WHERE user_id = $1 AND mode = $2', [userId, mode]);
 
     const now = new Date();
     await client.query(
@@ -945,7 +952,7 @@ router.post('/reset-run', verifyToken, async (req, res) => {
            run_started_at = $2,
            box_charges = 1,
            last_charge_calculated_at = $2,
-           mythic_pity = CASE WHEN mode = 'record' THEN 0 ELSE mythic_pity END
+           mythic_pity = 0
        WHERE user_id = $3 AND mode = $4`,
       [RESET_GOLD, now, userId, mode]
     );
@@ -953,9 +960,7 @@ router.post('/reset-run', verifyToken, async (req, res) => {
     await client.query('COMMIT');
 
     res.json({
-      message: mode === 'record'
-        ? '초심으로 돌아갔습니다. 도감도 함께 초기화됐어요. 다시 도전해보세요!'
-        : '초심으로 돌아갔습니다. 도감은 그대로 남아있어요. 다시 모아보세요!',
+      message: '초심으로 돌아갔습니다. 도감도 함께 초기화됐어요. 다시 도전해보세요!',
       mode,
       totalTreasure: RESET_GOLD,
       runStartedAt: now,
@@ -1106,7 +1111,6 @@ router.get('/leaderboard', verifyToken, async (req, res) => {
 
     const leaderboard = result.rows.map((row, index) => ({
       rank: offset + index + 1,
-      userId: row.user_id,
       nickname: row.nickname,
       bestDurationMs: parseInt(row.best_duration_ms, 10),
       isMe: row.user_id === userId,

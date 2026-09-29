@@ -10,6 +10,8 @@ const router = express.Router();
 
 // 이메일 형식이 올바른지 확인하는 정규식
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// 닉네임 허용 문자: 한글, 영문, 숫자, 공백, 밑줄, 하이픈, 점
+const NICKNAME_REGEX = /^[가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9 _.\-]+$/;
 
 // 회원가입/로그인 입력값을 검증하는 함수
 function validateSignupInput({ email, password, nickname }) {
@@ -22,8 +24,19 @@ function validateSignupInput({ email, password, nickname }) {
   if (password.length < 8) {
     return '비밀번호는 8자 이상이어야 합니다.';
   }
+  if (typeof nickname !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
+    return '입력 형식이 올바르지 않습니다.';
+  }
   if (nickname.trim().length < 2 || nickname.trim().length > 20) {
     return '닉네임은 2자 이상 20자 이하로 입력해주세요.';
+  }
+  // 닉네임은 랭킹 등 다른 사람 화면에 노출되므로, HTML 특수문자(< > & 따옴표 등)는 아예 막습니다.
+  if (!NICKNAME_REGEX.test(nickname.trim())) {
+    return '닉네임은 한글, 영문, 숫자, 공백, _ - . 만 사용할 수 있습니다.';
+  }
+  // bcrypt는 72바이트까지만 사용하고, 지나치게 긴 입력은 서버 자원만 낭비합니다.
+  if (Buffer.byteLength(password, 'utf8') > 72) {
+    return '비밀번호는 72바이트(영문 기준 72자) 이하로 입력해주세요.';
   }
   return null; // 문제 없음
 }
@@ -42,6 +55,7 @@ router.post('/signup', async (req, res) => {
     return res.status(400).json({ message: validationError });
   }
 
+  let client = null;
   try {
     // 2. 이미 가입된 이메일인지 확인
     const existing = await db.query('SELECT id FROM users WHERE email = $1', [email]);
@@ -55,11 +69,16 @@ router.post('/signup', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
 
     // 4. DB에 새 사용자 저장
-    const result = await db.query(
+    // users와 box_claims는 함께 만들어져야 하므로 하나의 트랜잭션으로 묶습니다.
+    // (중간에 실패해서 세이브 없는 계정이 남는 것을 방지)
+    client = await db.getClient();
+    await client.query('BEGIN');
+
+    const result = await client.query(
       `INSERT INTO users (email, password_hash, nickname, created_at)
        VALUES ($1, $2, $3, NOW())
        RETURNING id, email, nickname`,
-      [email, passwordHash, nickname]
+      [email, passwordHash, nickname.trim()]
     );
 
     const newUser = result.rows[0];
@@ -69,11 +88,13 @@ router.post('/signup', async (req, res) => {
     // 기록모드/수집모드는 완전히 독립된 세이브라, 가입 시점에 둘 다 만들어둡니다.
     // (기본 활성 모드는 users.active_mode 컬럼의 DEFAULT 'record'를 따릅니다.)
     const INITIAL_GOLD = 2000;
-    await db.query(
+    await client.query(
       `INSERT INTO box_claims (user_id, mode, last_opened_at, total_treasure)
        VALUES ($1, 'record', $2, $3), ($1, 'collection', $2, $3)`,
       [newUser.id, new Date(0), INITIAL_GOLD]
     );
+
+    await client.query('COMMIT');
 
     // 6. 회원가입과 동시에 로그인 토큰도 바로 발급 (선택사항이지만 편리함)
     const token = jwt.sign(
@@ -88,8 +109,15 @@ router.post('/signup', async (req, res) => {
       token,
     });
   } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    // 동시에 같은 이메일로 가입이 들어온 경우(UNIQUE 위반)도 중복 가입으로 안내
+    if (err.code === '23505') {
+      return res.status(409).json({ message: '이미 가입된 이메일입니다.' });
+    }
     console.error(err);
     res.status(500).json({ message: '서버 오류로 회원가입에 실패했습니다.' });
+  } finally {
+    if (client) client.release();
   }
 });
 
