@@ -80,6 +80,53 @@ const TREASURES = [
 ];
 
 // -------------------------------
+// 수집모드 전용: 아이템 숙련도(★) / 수집가 등급
+// -------------------------------
+// 같은 아이템을 이 개수만큼 모을 때마다 별이 하나씩 붙습니다. (도감 카드에 표시용)
+// 전설/신화 아이템은 별이 붙을 때마다 해당 아이템의 패시브 골드 수입도 함께 늘어나서,
+// 도감을 채운 뒤에도 "같은 아이템을 더 모을 이유"가 생깁니다.
+const MASTERY_THRESHOLDS = [10, 30, 100, 300]; // 이 개수를 넘길 때마다 ★ +1 (최대 4개)
+const MASTERY_INCOME_BONUS_PER_STAR = 0.1;     // ★ 1개당 그 아이템의 수입 +10%
+
+function getItemStars(count) {
+  let stars = 0;
+  for (const threshold of MASTERY_THRESHOLDS) {
+    if (count >= threshold) stars++;
+    else break;
+  }
+  return stars;
+}
+
+// 도감 발견 개수를 기준으로 한 수집가 등급입니다. 기록모드는 환생/초기화 때마다
+// 도감이 비워지므로 사실상 수집모드에서 의미가 있는 시스템입니다.
+const COLLECTOR_RANKS = [
+  { key: 'novice', name: '초보 수집가',   emoji: '🌱', minObtained: 0 },
+  { key: 'bronze', name: '브론즈 수집가', emoji: '🥉', minObtained: Math.ceil(TREASURES.length * 0.25) },
+  { key: 'silver', name: '실버 수집가',   emoji: '🥈', minObtained: Math.ceil(TREASURES.length * 0.5) },
+  { key: 'gold',   name: '골드 수집가',   emoji: '🥇', minObtained: Math.ceil(TREASURES.length * 0.75) },
+  { key: 'master', name: '신화 마스터',   emoji: '👑', minObtained: TREASURES.length },
+];
+
+function getCollectorRank(obtainedCount) {
+  let current = COLLECTOR_RANKS[0];
+  let next = COLLECTOR_RANKS[1] || null;
+  for (let i = 0; i < COLLECTOR_RANKS.length; i++) {
+    if (obtainedCount >= COLLECTOR_RANKS[i].minObtained) {
+      current = COLLECTOR_RANKS[i];
+      next = COLLECTOR_RANKS[i + 1] || null;
+    }
+  }
+  return {
+    key: current.key,
+    name: current.name,
+    emoji: current.emoji,
+    obtainedCount,
+    total: TREASURES.length,
+    next: next ? { key: next.key, name: next.name, emoji: next.emoji, remaining: next.minObtained - obtainedCount } : null,
+  };
+}
+
+// -------------------------------
 // 공용 헬퍼 함수들
 // -------------------------------
 
@@ -156,7 +203,67 @@ async function syncBoxCharges(client, userId, mode) {
   return { charges: newCharges, maxCharges: MAX_BOX_CHARGES, nextChargeInMs, serverTime: now };
 }
 
-// 마지막 정산 이후 쌓인 패시브 골드(기본 + 전설 아이템 보너스)를 계산해서 반영합니다.
+// 전설/신화 아이템 각각의 숙련도(★)를 반영해서 초당 패시브 골드 수입을 계산합니다.
+// client가 주어지면 그 트랜잭션 커넥션으로, 아니면 그냥 db.query로 조회합니다 (getActiveMode와 동일한 패턴).
+// 아이템 종류별로 개수가 다르기 때문에, "전설 전체 개수 × 고정 배율"이 아니라
+// 아이템 하나하나마다 자기 보유 개수에 맞는 ★를 계산해서 그만큼 배율을 얹습니다.
+async function computeIncomeBreakdown(client, userId, mode) {
+  const runner = client || db;
+  const incomeItems = TREASURES.filter(t => t.rarity === 'legendary' || t.rarity === 'mythic');
+  const keys = incomeItems.map(t => t.key);
+
+  const result = await runner.query(
+    'SELECT item_key, count FROM user_items WHERE user_id = $1 AND mode = $2 AND item_key = ANY($3)',
+    [userId, mode, keys]
+  );
+  const countMap = {};
+  result.rows.forEach(row => { countMap[row.item_key] = parseInt(row.count, 10); });
+
+  let legendaryCount = 0;
+  let mythicCount = 0;
+  let legendaryIncome = 0;
+  let mythicIncome = 0;
+  const items = [];
+
+  for (const treasure of incomeItems) {
+    const count = countMap[treasure.key] || 0;
+    if (count === 0) continue;
+
+    const baseRate = treasure.rarity === 'mythic' ? MYTHIC_INCOME_PER_SECOND : LEGENDARY_INCOME_PER_SECOND;
+    const stars = getItemStars(count);
+    const itemIncome = count * baseRate * (1 + stars * MASTERY_INCOME_BONUS_PER_STAR);
+
+    if (treasure.rarity === 'mythic') {
+      mythicCount += count;
+      mythicIncome += itemIncome;
+    } else {
+      legendaryCount += count;
+      legendaryIncome += itemIncome;
+    }
+    items.push({
+      key: treasure.key,
+      name: treasure.name,
+      emoji: treasure.emoji,
+      rarity: treasure.rarity,
+      count,
+      stars,
+      maxStars: MASTERY_THRESHOLDS.length,
+      incomePerSecond: itemIncome,
+    });
+  }
+
+  return {
+    perSecondIncome: BASE_INCOME_PER_SECOND + legendaryIncome + mythicIncome,
+    baseIncome: BASE_INCOME_PER_SECOND,
+    legendaryCount,
+    mythicCount,
+    legendaryIncome,
+    mythicIncome,
+    items, // 아이템별 개수/★/수입 상세 (도감 화면의 숙련도 표시용)
+  };
+}
+
+// 마지막 정산 이후 쌓인 패시브 골드(기본 + 전설·신화 숙련도 보너스)를 계산해서 반영합니다.
 async function collectPassiveIncome(client, userId, mode) {
   const claimResult = await client.query(
     'SELECT total_treasure, last_income_collected_at FROM box_claims WHERE user_id = $1 AND mode = $2 FOR UPDATE',
@@ -169,24 +276,8 @@ async function collectPassiveIncome(client, userId, mode) {
   const lastCollected = new Date(last_income_collected_at);
   const elapsedSeconds = (now - lastCollected) / 1000;
 
-  const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
-  const mythicKeys = TREASURES.filter(t => t.rarity === 'mythic').map(t => t.key);
-
-  const legendaryResult = await client.query(
-    'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND mode = $2 AND item_key = ANY($3)',
-    [userId, mode, legendaryKeys]
-  );
-  const mythicResult = await client.query(
-    'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND mode = $2 AND item_key = ANY($3)',
-    [userId, mode, mythicKeys]
-  );
-  const legendaryCount = parseInt(legendaryResult.rows[0].total, 10);
-  const mythicCount = parseInt(mythicResult.rows[0].total, 10);
-  const perSecondIncome = BASE_INCOME_PER_SECOND
-    + legendaryCount * LEGENDARY_INCOME_PER_SECOND
-    + mythicCount * MYTHIC_INCOME_PER_SECOND;
-
-  const earned = Math.floor(elapsedSeconds * perSecondIncome);
+  const breakdown = await computeIncomeBreakdown(client, userId, mode);
+  const earned = Math.floor(elapsedSeconds * breakdown.perSecondIncome);
   const newTotal = parseInt(total_treasure, 10) + earned;
 
   await client.query(
@@ -194,16 +285,7 @@ async function collectPassiveIncome(client, userId, mode) {
     [newTotal, now, userId, mode]
   );
 
-  return {
-    earned,
-    newTotal,
-    legendaryCount,
-    mythicCount,
-    baseIncome: BASE_INCOME_PER_SECOND,
-    legendaryIncome: legendaryCount * LEGENDARY_INCOME_PER_SECOND,
-    mythicIncome: mythicCount * MYTHIC_INCOME_PER_SECOND,
-    perSecondIncome,
-  };
+  return { earned, newTotal, ...breakdown };
 }
 
 // 아이템을 하나 "발견했다"는 사실을 기록합니다.
@@ -533,28 +615,16 @@ router.get('/status', verifyToken, async (req, res) => {
       [userId, mode]
     );
 
-    const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
-    const mythicKeys = TREASURES.filter(t => t.rarity === 'mythic').map(t => t.key);
-    const legendaryResult = await client.query(
-      'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND mode = $2 AND item_key = ANY($3)',
-      [userId, mode, legendaryKeys]
-    );
-    const mythicResult = await client.query(
-      'SELECT COALESCE(SUM(count), 0) AS total FROM user_items WHERE user_id = $1 AND mode = $2 AND item_key = ANY($3)',
-      [userId, mode, mythicKeys]
-    );
-    const legendaryCount = parseInt(legendaryResult.rows[0].total, 10);
-    const mythicCount = parseInt(mythicResult.rows[0].total, 10);
-    const perSecondIncome = BASE_INCOME_PER_SECOND
-      + legendaryCount * LEGENDARY_INCOME_PER_SECOND
-      + mythicCount * MYTHIC_INCOME_PER_SECOND;
+    const breakdown = await computeIncomeBreakdown(client, userId, mode);
 
-    // 도감을 다 채웠는지 (메인 화면의 "도감 완료" 버튼 표시용)
+    // 도감을 다 채웠는지 (메인 화면의 "도감 완료" 버튼 표시용) + 수집가 등급 계산
     const discoveredResult = await client.query(
       'SELECT COUNT(*) AS total FROM user_discoveries WHERE user_id = $1 AND mode = $2',
       [userId, mode]
     );
-    const collectionComplete = parseInt(discoveredResult.rows[0].total, 10) >= TREASURES.length;
+    const obtainedCount = parseInt(discoveredResult.rows[0].total, 10);
+    const collectionComplete = obtainedCount >= TREASURES.length;
+    const collectorRank = getCollectorRank(obtainedCount);
 
     await client.query('COMMIT');
 
@@ -571,14 +641,10 @@ router.get('/status', verifyToken, async (req, res) => {
       mythicPityLimit: MYTHIC_PITY_LIMIT,
       serverTime: chargeInfo.serverTime,
       passiveIncomePreview: {
-        legendaryCount,
-        mythicCount,
-        baseIncome: BASE_INCOME_PER_SECOND,
-        legendaryIncome: legendaryCount * LEGENDARY_INCOME_PER_SECOND,
-        mythicIncome: mythicCount * MYTHIC_INCOME_PER_SECOND,
-        perSecondIncome,
+        ...breakdown,
         lastCollectedAt: row.rows[0].last_income_collected_at,
       },
+      collectorRank,
       rebirthCount: row.rows[0].rebirth_count,
       runStartedAt: row.rows[0].run_started_at,
     });
@@ -803,16 +869,23 @@ router.get('/collection', verifyToken, async (req, res) => {
     const countMap = {};
     itemsResult.rows.forEach(row => { countMap[row.item_key] = row.count; });
 
-    const collection = TREASURES.map(item => ({
-      key: item.key,
-      name: item.name,
-      rarity: item.rarity,
-      emoji: item.emoji,
-      flavor: item.flavor,
-      count: countMap[item.key] || 0,
-      obtained: Boolean(discoveryMap[item.key]),
-      firstDiscoveredAt: discoveryMap[item.key] || null,
-    }));
+    // 아이템 숙련도(★): 같은 아이템을 많이 모을수록 붙는 표시용 등급입니다.
+    const collection = TREASURES.map(item => {
+      const count = countMap[item.key] || 0;
+      return {
+        key: item.key,
+        name: item.name,
+        rarity: item.rarity,
+        emoji: item.emoji,
+        flavor: item.flavor,
+        count,
+        obtained: Boolean(discoveryMap[item.key]),
+        firstDiscoveredAt: discoveryMap[item.key] || null,
+        stars: getItemStars(count),
+        maxStars: MASTERY_THRESHOLDS.length,
+        nextStarAt: MASTERY_THRESHOLDS.find(t => t > count) || null,
+      };
+    });
 
     const treasureResult = await db.query(
       'SELECT total_treasure, completion_bonus_claimed, last_income_collected_at FROM box_claims WHERE user_id = $1 AND mode = $2',
@@ -823,14 +896,9 @@ router.get('/collection', verifyToken, async (req, res) => {
 
     const obtainedCount = collection.filter(item => item.obtained).length;
     const isComplete = obtainedCount === TREASURES.length;
+    const collectorRank = getCollectorRank(obtainedCount);
 
-    const legendaryKeys = TREASURES.filter(t => t.rarity === 'legendary').map(t => t.key);
-    const mythicKeys = TREASURES.filter(t => t.rarity === 'mythic').map(t => t.key);
-    const legendaryCount = collection.filter(i => legendaryKeys.includes(i.key)).reduce((s, i) => s + i.count, 0);
-    const mythicCount = collection.filter(i => mythicKeys.includes(i.key)).reduce((s, i) => s + i.count, 0);
-    const perSecondIncome = BASE_INCOME_PER_SECOND
-      + legendaryCount * LEGENDARY_INCOME_PER_SECOND
-      + mythicCount * MYTHIC_INCOME_PER_SECOND;
+    const breakdown = await computeIncomeBreakdown(db, userId, mode);
 
     res.json({
       mode,
@@ -840,13 +908,9 @@ router.get('/collection', verifyToken, async (req, res) => {
       progress: { obtained: obtainedCount, total: TREASURES.length },
       isComplete,
       bonusClaimed,
+      collectorRank,
       passiveIncomePreview: {
-        legendaryCount,
-        mythicCount,
-        baseIncome: BASE_INCOME_PER_SECOND,
-        legendaryIncome: legendaryCount * LEGENDARY_INCOME_PER_SECOND,
-        mythicIncome: mythicCount * MYTHIC_INCOME_PER_SECOND,
-        perSecondIncome,
+        ...breakdown,
         lastCollectedAt: treasureResult.rows[0]?.last_income_collected_at,
       },
     });

@@ -4,9 +4,37 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const db = require('../db');
 
 const router = express.Router();
+
+// 로그인 타이밍 공격 방지용 더미 해시. (가입 시 만들어지는 실제 해시와 같은 형태의, 아무도 알 수 없는 값)
+// 실제 값이 무엇인지는 중요하지 않고, "매번 bcrypt.compare를 한 번은 돌린다"는 점만 중요합니다.
+const DUMMY_PASSWORD_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8n0J8n0J8n0J8n0J8n0J8n0J8n0J8n';
+
+// -------------------------------
+// 무차별 대입/계정 대량 생성 방지 (rate limiting)
+// -------------------------------
+// 둘 다 "같은 IP 기준"으로 셉니다. 사무실/공용 와이파이처럼 IP를 공유하는 경우
+// 여러 명이 겹치면 조금 빡빡할 수 있는데, 그럴 땐 max 값을 올리면 됩니다.
+// Render 등 프록시 뒤에서 실제 클라이언트 IP를 인식하려면 server.js에 app.set('trust proxy', 1)이 필요합니다.
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1시간
+  max: 5,                   // 같은 IP에서 1시간에 5번까지만 회원가입 시도 가능
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: '회원가입 시도가 너무 많습니다. 1시간 후 다시 시도해주세요.' },
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15분
+  max: 10,                  // 같은 IP에서 15분에 10번까지만 로그인 시도 가능
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.' },
+  skipSuccessfulRequests: true, // 성공한 로그인은 카운트에서 빼서, 정상 유저가 실수로 막히는 걸 줄임
+});
 
 // 이메일 형식이 올바른지 확인하는 정규식
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -18,14 +46,16 @@ function validateSignupInput({ email, password, nickname }) {
   if (!email || !password || !nickname) {
     return '이메일, 비밀번호, 닉네임을 모두 입력해주세요.';
   }
+  // 길이(.length)를 확인하기 전에 타입부터 검사합니다.
+  // (숫자나 배열처럼 문자열이 아닌 값이 오면 .length가 엉뚱하게 동작하거나 에러가 날 수 있어서)
+  if (typeof nickname !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
+    return '입력 형식이 올바르지 않습니다.';
+  }
   if (!EMAIL_REGEX.test(email)) {
     return '올바른 이메일 형식이 아닙니다.';
   }
-  if (password.length < 8) {
-    return '비밀번호는 8자 이상이어야 합니다.';
-  }
-  if (typeof nickname !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
-    return '입력 형식이 올바르지 않습니다.';
+  if (password.length < 4) {
+    return '비밀번호는 4자 이상이어야 합니다.';
   }
   if (nickname.trim().length < 2 || nickname.trim().length > 20) {
     return '닉네임은 2자 이상 20자 이하로 입력해주세요.';
@@ -46,7 +76,7 @@ function validateSignupInput({ email, password, nickname }) {
 // -------------------------------
 // 프론트엔드에서 이렇게 요청을 보낼 겁니다:
 // { "email": "test@test.com", "password": "1234", "nickname": "홍길동" }
-router.post('/signup', async (req, res) => {
+router.post('/signup', signupLimiter, async (req, res) => {
   const { email, password, nickname } = req.body;
 
   // 1. 입력값 검증 (형식, 길이까지 확인)
@@ -125,7 +155,7 @@ router.post('/signup', async (req, res) => {
 // 로그인: POST /api/auth/login
 // -------------------------------
 // 요청 형태: { "email": "test@test.com", "password": "1234" }
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -140,14 +170,16 @@ router.post('/login', async (req, res) => {
     const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
     const user = result.rows[0];
 
-    if (!user) {
-      // 보안을 위해 "이메일이 없다"와 "비밀번호가 틀렸다"를 구분해서 알려주지 않습니다.
-      return res.status(401).json({ message: '이메일 또는 비밀번호가 올바르지 않습니다.' });
-    }
-
     // 2. 입력한 비밀번호와 저장된 해시를 비교
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) {
+    // 존재하지 않는 이메일이면 즉시 401을 반환하지 않고, 가짜 해시로라도 bcrypt.compare를 실행합니다.
+    // bcrypt는 일부러 느리게 동작하도록 설계돼 있어서, "가입 안 된 이메일 → 곧바로 실패"와
+    // "가입은 됐지만 비번 틀림 → bcrypt 비교 후 실패"의 응답 시간 차이로 이메일 존재 여부를
+    // 추측(타이밍 공격)할 수 있기 때문입니다.
+    const passwordHashToCheck = user ? user.password_hash : DUMMY_PASSWORD_HASH;
+    const isMatch = await bcrypt.compare(password, passwordHashToCheck);
+
+    if (!user || !isMatch) {
+      // 보안을 위해 "이메일이 없다"와 "비밀번호가 틀렸다"를 구분해서 알려주지 않습니다.
       return res.status(401).json({ message: '이메일 또는 비밀번호가 올바르지 않습니다.' });
     }
 
