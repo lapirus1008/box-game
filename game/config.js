@@ -5,15 +5,18 @@
 // -------------------------------
 // 충전 / 골드 / 합성 / 환생
 // -------------------------------
-const CHARGE_INTERVAL_MS = 15 * 1000; // 충전 1개가 쌓이는 데 걸리는 시간
-const MAX_BOX_CHARGES = 100;          // 충전은 최대 이만큼만 쌓입니다
-const BASE_INCOME_PER_SECOND = 1;     // 누구나 기본으로 받는 초당 골드
+const CHARGE_INTERVAL_MS = 15 * 1000; // 충전 1개가 쌓이는 데 걸리는 시간 (업그레이드 전 기본값)
+const MAX_BOX_CHARGES = 100;          // 충전은 최대 이만큼만 쌓입니다 (업그레이드 전 기본값)
+const BASE_INCOME_PER_MINUTE = 60;    // 누구나 기본으로 받는 분당 골드
 
-// 등급별로 아이템 1개당 추가되는 초당 골드 (전설/신화만 패시브 수입이 있습니다)
-// 신화는 훨씬 희귀해서 더 많이 줍니다.
-const INCOME_PER_SECOND_BY_RARITY = {
-  legendary: 1,
-  mythic: 5,
+// 아이템 1개당 분당 골드. 모든 아이템이 골드를 벌어서, 상자를 열수록 수입이 오릅니다.
+// 합성하면 항상 수입이 오르도록 맞춰져 있습니다. (예: 일반 3개 = 3G → 희귀 1개 = 5G)
+const INCOME_PER_MINUTE_BY_RARITY = {
+  common: 1,
+  rare: 5,
+  epic: 20,
+  legendary: 80,
+  mythic: 300,
 };
 
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic'];
@@ -24,7 +27,6 @@ const CRAFT_COST = 3;                 // 합성에 필요한 같은 아이템 �
 
 const COMPLETION_BONUS_GOLD = 2000;   // 도감 완성 보상
 const REBIRTH_GOLD_REQUIRED = 100000; // 환생에 필요한 골드 (기록모드 전용)
-const MAX_BULK_OPEN_QUANTITY = MAX_BOX_CHARGES; // 한 번에 열 수 있는 최대 개수 (충전 최대치와 동일)
 const GOLD_PER_BOX_PURCHASE = 75;     // 충전과 별개로, 골드를 내고 상자를 즉시 구매할 때의 개당 가격
 const MAX_GOLD_BOX_PURCHASE = 2000;
 const INITIAL_GOLD = 2000;            // 회원가입 시 지급하는 시작 골드
@@ -80,6 +82,47 @@ const TREASURE_BY_KEY = new Map(TREASURES.map(t => [t.key, t]));
 const MASTERY_THRESHOLDS = [10, 30, 100, 300]; // 이 개수를 넘길 때마다 ★ +1 (최대 4개)
 const MASTERY_INCOME_BONUS_PERCENT_PER_STAR = 10; // ★ 1개당 그 아이템의 수입 +10%
 
+// -------------------------------
+// 골드 업그레이드 (모드별로 따로, 기록모드는 환생/초기화 때 0으로 돌아갑니다)
+// -------------------------------
+// 가격 = baseCost × 1.5^현재레벨 (내림)
+const UPGRADE_COST_GROWTH = 1.5;
+const INCOME_BONUS_PERCENT_PER_LEVEL = 10;  // 수입 증가: 레벨당 전체 수입 +10%
+const CHARGE_SPEED_MS_PER_LEVEL = 1000;     // 충전 가속: 레벨당 충전 시간 -1초
+const MIN_CHARGE_INTERVAL_MS = 5 * 1000;    // 충전 시간은 5초보다 빨라지지 않습니다
+const CAPACITY_PER_LEVEL = 50;              // 창고 확장: 레벨당 최대 충전 +50개
+const LUCK_PERCENT_PER_LEVEL = 5;           // 행운: 레벨당 희귀 이상 등장률 +5%
+
+// key는 API와 화면에서, column은 box_claims 테이블에서 쓰입니다.
+const UPGRADES = [
+  { key: 'income',      column: 'upgrade_income',       name: '수입 증가', emoji: '💰', baseCost: 500,  maxLevel: 30 },
+  { key: 'chargeSpeed', column: 'upgrade_charge_speed', name: '충전 가속', emoji: '⚡', baseCost: 1000,
+    maxLevel: (CHARGE_INTERVAL_MS - MIN_CHARGE_INTERVAL_MS) / CHARGE_SPEED_MS_PER_LEVEL },
+  { key: 'capacity',    column: 'upgrade_capacity',     name: '창고 확장', emoji: '📦', baseCost: 800,  maxLevel: 20 },
+  { key: 'luck',        column: 'upgrade_luck',         name: '행운',      emoji: '🍀', baseCost: 2000, maxLevel: 10 },
+];
+
+// -------------------------------
+// 자동화 (한 번 사면 켜고 끌 수 있습니다. 기록모드는 환생/초기화 때 다시 잠깁니다)
+// -------------------------------
+const AUTOMATIONS = [
+  { key: 'autoOpen',  unlockedColumn: 'auto_open_unlocked',  enabledColumn: 'auto_open_enabled',
+    name: '자동 개봉', emoji: '🤖', cost: 20000, desc: '충전된 상자를 접속하지 않아도 알아서 열어요' },
+  { key: 'autoCraft', unlockedColumn: 'auto_craft_unlocked', enabledColumn: 'auto_craft_enabled',
+    name: '자동 합성', emoji: '⚙️', cost: 10000, desc: '같은 아이템 3개가 모이면 알아서 합성해요' },
+];
+// 자동 개봉이 한 번에 처리하는 최대 상자 수 (아주 오래 비웠을 때 서버 부하 방지)
+const MAX_AUTO_OPEN_PER_SYNC = 20000;
+
+// -------------------------------
+// 환생 포인트 (기록모드 전용, 환생해도 사라지지 않는 영구 보너스)
+// -------------------------------
+const PRESTIGE_GOLD_PER_POINT = 50000;          // 이번 판에 번 골드 5만 G당 1포인트
+const PRESTIGE_INCOME_PERCENT_PER_POINT = 5;    // 포인트 1개당 영구 수입 +5%
+
+// 이 시간 이상 접속하지 않았다가 돌아오면 "자리 비운 동안" 요약을 보여줍니다.
+const AWAY_SUMMARY_MIN_MS = 5 * 60 * 1000;
+
 // 도감 발견 개수를 기준으로 한 수집가 등급입니다. 기록모드는 환생/초기화 때마다
 // 도감이 비워지므로 사실상 수집모드에서 의미가 있는 시스템입니다.
 const COLLECTOR_RANKS = [
@@ -93,14 +136,13 @@ const COLLECTOR_RANKS = [
 module.exports = {
   CHARGE_INTERVAL_MS,
   MAX_BOX_CHARGES,
-  BASE_INCOME_PER_SECOND,
-  INCOME_PER_SECOND_BY_RARITY,
+  BASE_INCOME_PER_MINUTE,
+  INCOME_PER_MINUTE_BY_RARITY,
   RARITY_ORDER,
   CRAFTABLE_RARITIES,
   CRAFT_COST,
   COMPLETION_BONUS_GOLD,
   REBIRTH_GOLD_REQUIRED,
-  MAX_BULK_OPEN_QUANTITY,
   GOLD_PER_BOX_PURCHASE,
   MAX_GOLD_BOX_PURCHASE,
   INITIAL_GOLD,
@@ -114,4 +156,16 @@ module.exports = {
   MASTERY_THRESHOLDS,
   MASTERY_INCOME_BONUS_PERCENT_PER_STAR,
   COLLECTOR_RANKS,
+  UPGRADE_COST_GROWTH,
+  INCOME_BONUS_PERCENT_PER_LEVEL,
+  CHARGE_SPEED_MS_PER_LEVEL,
+  MIN_CHARGE_INTERVAL_MS,
+  CAPACITY_PER_LEVEL,
+  LUCK_PERCENT_PER_LEVEL,
+  UPGRADES,
+  AUTOMATIONS,
+  MAX_AUTO_OPEN_PER_SYNC,
+  PRESTIGE_GOLD_PER_POINT,
+  PRESTIGE_INCOME_PERCENT_PER_POINT,
+  AWAY_SUMMARY_MIN_MS,
 };

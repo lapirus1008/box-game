@@ -2,23 +2,33 @@
 // 게임 데이터(box_claims, user_items, user_discoveries)를 읽고 쓰는 DB 함수 모음입니다.
 // 모든 함수는 첫 인자로 runner를 받습니다. 트랜잭션 안이라면 client를, 아니라면 db를 넘기면 됩니다.
 // (FOR UPDATE를 쓰는 함수는 반드시 BEGIN된 트랜잭션의 client를 넘겨야 합니다.)
+//
+// [정산(settle) 방식]
+// 이 게임은 서버가 계속 돌면서 골드를 넣어주는 게 아니라, 요청이 올 때마다
+// "마지막 정산 이후 흐른 시간"만큼 골드·충전·자동 개봉·자동 합성을 한 번에 계산해서 반영합니다.
+// 그래서 모든 API는 일을 하기 전에 settle()을 먼저 호출해서 세이브를 "지금 시각" 기준으로 맞춥니다.
 
 const {
   DEFAULT_MODE,
-  CHARGE_INTERVAL_MS,
-  MAX_BOX_CHARGES,
-  BASE_INCOME_PER_SECOND,
-  INCOME_PER_SECOND_BY_RARITY,
+  MODES,
+  BASE_INCOME_PER_MINUTE,
+  INCOME_PER_MINUTE_BY_RARITY,
   MASTERY_THRESHOLDS,
   MASTERY_INCOME_BONUS_PERCENT_PER_STAR,
+  MAX_AUTO_OPEN_PER_SYNC,
   RESET_GOLD,
   TREASURES,
 } = require('./config');
-const { getItemStars } = require('./logic');
+const { getItemStars, getClaimStats, rollBoxes, craftCascade } = require('./logic');
 
-// 패시브 수입이 있는 아이템(전설/신화) 목록
-const INCOME_ITEMS = TREASURES.filter(t => INCOME_PER_SECOND_BY_RARITY[t.rarity]);
-const INCOME_ITEM_KEYS = INCOME_ITEMS.map(t => t.key);
+// box_claims에서 게임 진행에 필요한 컬럼 전체
+const CLAIM_COLUMNS = [
+  'total_treasure', 'box_charges', 'last_charge_calculated_at', 'last_income_collected_at',
+  'mythic_pity', 'completion_bonus_claimed', 'rebirth_count', 'run_started_at',
+  'upgrade_income', 'upgrade_charge_speed', 'upgrade_capacity', 'upgrade_luck',
+  'auto_open_unlocked', 'auto_open_enabled', 'auto_craft_unlocked', 'auto_craft_enabled',
+  'prestige_points', 'run_gold_earned', 'last_active_at',
+];
 
 // 이 요청 시점에 유저가 어떤 모드(기록/수집)를 쓰고 있는지 확인합니다.
 async function getActiveMode(runner, userId) {
@@ -28,7 +38,7 @@ async function getActiveMode(runner, userId) {
 
 // 현재 모드의 box_claims 한 줄을 읽어옵니다. 없으면 null.
 // columns는 코드 안에서 고정된 컬럼 목록만 넘겨야 합니다 (사용자 입력 금지).
-async function getClaim(runner, userId, mode, columns, { forUpdate = false } = {}) {
+async function getClaim(runner, userId, mode, columns = CLAIM_COLUMNS, { forUpdate = false } = {}) {
   const result = await runner.query(
     `SELECT ${columns.join(', ')} FROM box_claims WHERE user_id = $1 AND mode = $2${forUpdate ? ' FOR UPDATE' : ''}`,
     [userId, mode]
@@ -36,62 +46,45 @@ async function getClaim(runner, userId, mode, columns, { forUpdate = false } = {
   return result.rows[0] || null;
 }
 
-// 충전 개수를 최신 상태로 계산해서 필요하면 DB에 반영합니다. (동시 요청 안전성을 위해 FOR UPDATE 사용)
-async function syncBoxCharges(client, userId, mode) {
-  const claim = await getClaim(client, userId, mode, ['box_charges', 'last_charge_calculated_at'], { forUpdate: true });
-  if (!claim) return null;
-
-  const now = new Date();
-  const lastCalc = new Date(claim.last_charge_calculated_at);
-  const gained = Math.floor((now - lastCalc) / CHARGE_INTERVAL_MS);
-
-  let charges = claim.box_charges;
-  let newLastCalc = lastCalc;
-
-  if (gained > 0) {
-    charges = Math.min(MAX_BOX_CHARGES, charges + gained);
-    newLastCalc = charges >= MAX_BOX_CHARGES ? now : new Date(lastCalc.getTime() + gained * CHARGE_INTERVAL_MS);
-
-    await client.query(
-      'UPDATE box_claims SET box_charges = $1, last_charge_calculated_at = $2 WHERE user_id = $3 AND mode = $4',
-      [charges, newLastCalc, userId, mode]
-    );
-  }
-
-  const nextChargeInMs = charges >= MAX_BOX_CHARGES ? null : CHARGE_INTERVAL_MS - (now - newLastCalc);
-
-  return { charges, maxCharges: MAX_BOX_CHARGES, nextChargeInMs, serverTime: now };
+// box_claims의 여러 컬럼을 한 번에 업데이트합니다. fields의 key는 코드에서 정한 컬럼명만 사용합니다.
+async function updateClaim(runner, userId, mode, fields) {
+  const columns = Object.keys(fields);
+  if (columns.length === 0) return;
+  const sets = columns.map((col, i) => `${col} = $${i + 3}`).join(', ');
+  await runner.query(
+    `UPDATE box_claims SET ${sets} WHERE user_id = $1 AND mode = $2`,
+    [userId, mode, ...columns.map(col => fields[col])]
+  );
 }
 
-// 전설/신화 아이템 각각의 숙련도(★)를 반영해서 초당 패시브 골드 수입을 계산합니다.
-// 아이템 종류별로 개수가 다르기 때문에, "전설 전체 개수 × 고정 배율"이 아니라
-// 아이템 하나하나마다 자기 보유 개수에 맞는 ★를 계산해서 그만큼 배율을 얹습니다.
-async function computeIncomeBreakdown(runner, userId, mode) {
+// 보유 아이템 개수를 { itemKey: 개수 } 형태로 읽어옵니다.
+async function getOwnedCounts(runner, userId, mode, { forUpdate = false } = {}) {
   const result = await runner.query(
-    'SELECT item_key, count FROM user_items WHERE user_id = $1 AND mode = $2 AND item_key = ANY($3)',
-    [userId, mode, INCOME_ITEM_KEYS]
+    `SELECT item_key, count FROM user_items WHERE user_id = $1 AND mode = $2${forUpdate ? ' FOR UPDATE' : ''}`,
+    [userId, mode]
   );
-  const countMap = {};
-  result.rows.forEach(row => { countMap[row.item_key] = parseInt(row.count, 10); });
+  const counts = {};
+  result.rows.forEach(row => { counts[row.item_key] = parseInt(row.count, 10); });
+  return counts;
+}
 
-  const totals = {
-    legendary: { count: 0, income: 0 },
-    mythic: { count: 0, income: 0 },
-  };
+// 보유 아이템과 업그레이드/환생 포인트를 반영해서 분당 골드 수입을 계산합니다.
+// - 아이템마다 자기 보유 개수에 맞는 ★ 보너스를 받고 (★당 +10%)
+// - 전체 합계에 수입 업그레이드와 환생 포인트 배율이 곱해집니다.
+// 모든 값은 정수로 내림합니다.
+function computeIncome(ownedCounts, claim) {
+  const stats = getClaimStats(claim);
   const items = [];
+  let itemIncome = 0;
 
-  for (const treasure of INCOME_ITEMS) {
-    const count = countMap[treasure.key] || 0;
+  for (const treasure of TREASURES) {
+    const count = ownedCounts[treasure.key] || 0;
     if (count === 0) continue;
 
     const stars = getItemStars(count);
-    // 초당 수입은 항상 정수로 맞춥니다 (★ 보너스로 생기는 소수점은 내림).
-    // 0.1 같은 소수를 곱하면 부동소수점 오차가 생기므로 정수 퍼센트로 계산합니다.
     const bonusPercent = 100 + stars * MASTERY_INCOME_BONUS_PERCENT_PER_STAR;
-    const itemIncome = Math.floor(count * INCOME_PER_SECOND_BY_RARITY[treasure.rarity] * bonusPercent / 100);
-
-    totals[treasure.rarity].count += count;
-    totals[treasure.rarity].income += itemIncome;
+    const income = Math.floor(count * INCOME_PER_MINUTE_BY_RARITY[treasure.rarity] * bonusPercent / 100);
+    itemIncome += income;
     items.push({
       key: treasure.key,
       name: treasure.name,
@@ -100,51 +93,32 @@ async function computeIncomeBreakdown(runner, userId, mode) {
       count,
       stars,
       maxStars: MASTERY_THRESHOLDS.length,
-      incomePerSecond: itemIncome,
+      incomePerMinute: income,
     });
   }
 
+  const baseTotal = BASE_INCOME_PER_MINUTE + itemIncome;
+  const perMinuteIncome = Math.floor(baseTotal * stats.upgradeIncomePercent * stats.prestigeIncomePercent / 10000);
+
   return {
-    perSecondIncome: BASE_INCOME_PER_SECOND + totals.legendary.income + totals.mythic.income,
-    baseIncome: BASE_INCOME_PER_SECOND,
-    legendaryCount: totals.legendary.count,
-    mythicCount: totals.mythic.count,
-    legendaryIncome: totals.legendary.income,
-    mythicIncome: totals.mythic.income,
-    items, // 아이템별 개수/★/수입 상세 (도감 화면의 숙련도 표시용)
+    perMinuteIncome,
+    baseIncome: BASE_INCOME_PER_MINUTE,
+    itemIncome,
+    upgradeBonusPercent: stats.upgradeIncomePercent - 100,
+    prestigeBonusPercent: stats.prestigeIncomePercent - 100,
+    items, // 아이템별 개수/★/수입 상세 (가방·도감 화면 표시용)
   };
 }
 
-// 마지막 정산 이후 쌓인 패시브 골드(기본 + 전설·신화 숙련도 보너스)를 계산해서 반영합니다.
-async function collectPassiveIncome(client, userId, mode) {
-  const claim = await getClaim(client, userId, mode, ['total_treasure', 'last_income_collected_at'], { forUpdate: true });
-  if (!claim) return null;
-
-  const now = new Date();
-  const elapsedSeconds = (now - new Date(claim.last_income_collected_at)) / 1000;
-
-  const breakdown = await computeIncomeBreakdown(client, userId, mode);
-  const earned = Math.floor(elapsedSeconds * breakdown.perSecondIncome);
-  const newTotal = parseInt(claim.total_treasure, 10) + earned;
-
-  await client.query(
-    'UPDATE box_claims SET total_treasure = $1, last_income_collected_at = $2 WHERE user_id = $3 AND mode = $4',
-    [newTotal, now, userId, mode]
-  );
-
-  return { earned, newTotal, ...breakdown };
-}
-
-// 얻은 아이템들을 "보유 개수"(user_items)에 반영하고 발견 기록(user_discoveries)도 함께 남깁니다.
-// counts는 { itemKey: 개수 } 형태입니다. 아이템 종류가 많아도 쿼리는 두 번만 실행됩니다.
+// 얻은(또는 합성으로 소모한) 아이템을 user_items에 반영하고, 새로 얻은 아이템은 발견 기록도 남깁니다.
+// deltas는 { itemKey: 증감 } 형태입니다 (음수 = 소모). 아이템 종류가 많아도 쿼리는 두 번만 실행됩니다.
 // 발견 기록은
 // - 기록모드: 이번 판 한정이라, 환생/초심으로 돌아가면 지워집니다.
 // - 수집모드: 절대 지워지지 않는 영구 기록입니다.
 // 같은 아이템을 또 발견해도 딱 한 번만 기록됩니다 (최초 발견일만 남김).
-async function addItems(client, userId, mode, counts) {
-  const keys = Object.keys(counts);
+async function addItems(client, userId, mode, deltas) {
+  const keys = Object.keys(deltas).filter(key => deltas[key] !== 0);
   if (keys.length === 0) return;
-  const amounts = keys.map(key => counts[key]);
 
   await client.query(
     `INSERT INTO user_items (user_id, mode, item_key, count, first_obtained_at)
@@ -152,20 +126,127 @@ async function addItems(client, userId, mode, counts) {
      FROM unnest($3::text[], $4::int[]) AS t(item_key, amount)
      ON CONFLICT (user_id, mode, item_key)
      DO UPDATE SET count = user_items.count + EXCLUDED.count`,
-    [userId, mode, keys, amounts]
+    [userId, mode, keys, keys.map(key => deltas[key])]
   );
+
+  const gainedKeys = keys.filter(key => deltas[key] > 0);
+  if (gainedKeys.length === 0) return;
   await client.query(
     `INSERT INTO user_discoveries (user_id, mode, item_key, first_discovered_at)
      SELECT $1, $2, t.item_key, NOW()
      FROM unnest($3::text[]) AS t(item_key)
      ON CONFLICT (user_id, mode, item_key) DO NOTHING`,
-    [userId, mode, keys]
+    [userId, mode, gainedKeys]
   );
 }
 
+// 세이브를 "지금 시각" 기준으로 정산합니다. (동시 요청 안전성을 위해 FOR UPDATE 사용)
+// 1. 마지막 정산 이후 쌓인 골드를 지급
+// 2. 흐른 시간만큼 충전을 채우고, 자동 개봉이 켜져 있으면 충전된 상자를 전부 열기
+// 3. 자동 합성이 켜져 있으면 가능한 만큼 합성
+// 세이브가 없으면 null을 돌려줍니다.
+async function settle(client, userId, mode) {
+  const claim = await getClaim(client, userId, mode, CLAIM_COLUMNS, { forUpdate: true });
+  if (!claim) return null;
+
+  const now = new Date();
+  const stats = getClaimStats(claim);
+  let owned = await getOwnedCounts(client, userId, mode, { forUpdate: true });
+  const itemDeltas = {};
+  const applyDeltas = (deltas) => {
+    for (const [key, amount] of Object.entries(deltas)) {
+      itemDeltas[key] = (itemDeltas[key] || 0) + amount;
+      owned[key] = (owned[key] || 0) + amount;
+    }
+  };
+
+  // 1. 골드: 지금까지 들고 있던 아이템 기준으로 계산 (이번 정산에서 새로 얻은 아이템은 다음 정산부터 반영)
+  const income = computeIncome(owned, claim);
+  const elapsedSeconds = Math.max(0, (now - new Date(claim.last_income_collected_at)) / 1000);
+  const earned = Math.floor(elapsedSeconds * income.perMinuteIncome / 60);
+  const gold = parseInt(claim.total_treasure, 10) + earned;
+  const runGoldEarned = parseInt(claim.run_gold_earned, 10) + earned;
+
+  // 2. 충전 (+ 자동 개봉)
+  const lastCalc = new Date(claim.last_charge_calculated_at);
+  const gained = Math.max(0, Math.floor((now - lastCalc) / stats.chargeIntervalMs));
+  let charges = claim.box_charges;
+  let newLastCalc = lastCalc;
+  let pity = claim.mythic_pity;
+  let autoOpened = null;
+
+  if (claim.auto_open_enabled) {
+    // 자동 개봉은 창고 한도와 상관없이 그동안 쌓였을 상자를 전부 엽니다 (너무 많으면 상한까지만)
+    const toOpen = Math.min(MAX_AUTO_OPEN_PER_SYNC, charges + gained);
+    newLastCalc = new Date(lastCalc.getTime() + gained * stats.chargeIntervalMs);
+    charges = 0;
+    if (toOpen > 0) {
+      const rolled = rollBoxes(pity, toOpen, stats.luckLevel);
+      pity = rolled.pity;
+      applyDeltas(rolled.counts);
+      autoOpened = { count: toOpen, counts: rolled.counts, pityTriggered: rolled.pityTriggered };
+    }
+  } else if (gained > 0) {
+    charges = Math.min(stats.maxCharges, charges + gained);
+    newLastCalc = charges >= stats.maxCharges ? now : new Date(lastCalc.getTime() + gained * stats.chargeIntervalMs);
+  } else if (charges >= stats.maxCharges) {
+    newLastCalc = now; // 꽉 찬 상태에서는 타이머를 멈춰둡니다
+  }
+
+  // 3. 자동 합성
+  let autoCrafted = null;
+  if (claim.auto_craft_enabled) {
+    const crafted = craftCascade(owned);
+    if (crafted.totalCrafts > 0) {
+      applyDeltas(crafted.deltas);
+      autoCrafted = { count: crafted.totalCrafts };
+    }
+  }
+
+  await addItems(client, userId, mode, itemDeltas);
+  await updateClaim(client, userId, mode, {
+    total_treasure: gold,
+    run_gold_earned: runGoldEarned,
+    last_income_collected_at: now,
+    box_charges: charges,
+    last_charge_calculated_at: newLastCalc,
+    mythic_pity: pity,
+    last_active_at: now,
+  });
+
+  const updatedClaim = {
+    ...claim,
+    total_treasure: gold,
+    run_gold_earned: runGoldEarned,
+    last_income_collected_at: now,
+    box_charges: charges,
+    last_charge_calculated_at: newLastCalc,
+    mythic_pity: pity,
+    last_active_at: now,
+  };
+  const nextChargeInMs = (claim.auto_open_enabled || charges < stats.maxCharges)
+    ? stats.chargeIntervalMs - (now - newLastCalc)
+    : null;
+
+  return {
+    claim: updatedClaim,
+    stats,
+    owned,
+    now,
+    earned,
+    previousActiveAt: claim.last_active_at ? new Date(claim.last_active_at) : null,
+    autoOpened,
+    autoCrafted,
+    // 아이템이 바뀌었을 수 있으니 수입은 정산 후 보유 기준으로 다시 계산해서 돌려줍니다.
+    income: computeIncome(owned, updatedClaim),
+    chargeInfo: { charges, maxCharges: stats.maxCharges, nextChargeInMs, serverTime: now },
+  };
+}
+
 // 현재 모드의 세이브를 "이번 판" 처음 상태로 되돌립니다. (초심으로 돌아가기 / 환생 공용)
-// 보유 아이템과 도감(발견기록)을 지우고, 골드·충전·천장·타이머를 초기화합니다.
-async function resetSave(client, userId, mode, now, { rebirthCount } = {}) {
+// 보유 아이템과 도감(발견기록)을 지우고, 골드·충전·천장·업그레이드·자동화를 초기화합니다.
+// 환생 포인트는 남겨두고, 환생이라면 이번 판에서 얻은 포인트를 더합니다.
+async function resetSave(client, userId, mode, now, { rebirthCount = null, prestigeGain = 0 } = {}) {
   await client.query('DELETE FROM user_items WHERE user_id = $1 AND mode = $2', [userId, mode]);
   await client.query('DELETE FROM user_discoveries WHERE user_id = $1 AND mode = $2', [userId, mode]);
   await client.query(
@@ -177,18 +258,36 @@ async function resetSave(client, userId, mode, now, { rebirthCount } = {}) {
          box_charges = 1,
          last_charge_calculated_at = $2,
          mythic_pity = 0,
-         rebirth_count = COALESCE($5, rebirth_count)
+         rebirth_count = COALESCE($5, rebirth_count),
+         upgrade_income = 0,
+         upgrade_charge_speed = 0,
+         upgrade_capacity = 0,
+         upgrade_luck = 0,
+         auto_open_unlocked = FALSE,
+         auto_open_enabled = FALSE,
+         auto_craft_unlocked = FALSE,
+         auto_craft_enabled = FALSE,
+         run_gold_earned = 0,
+         prestige_points = prestige_points + $6,
+         last_active_at = $2
      WHERE user_id = $3 AND mode = $4`,
-    [RESET_GOLD, now, userId, mode, rebirthCount ?? null]
+    [RESET_GOLD, now, userId, mode, rebirthCount, prestigeGain]
   );
+}
+
+// 환생 포인트는 기록모드에서만 의미가 있습니다.
+function isPrestigeMode(mode) {
+  return mode === MODES.RECORD;
 }
 
 module.exports = {
   getActiveMode,
   getClaim,
-  syncBoxCharges,
-  computeIncomeBreakdown,
-  collectPassiveIncome,
+  updateClaim,
+  getOwnedCounts,
+  computeIncome,
   addItems,
+  settle,
   resetSave,
+  isPrestigeMode,
 };

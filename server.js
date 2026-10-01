@@ -62,8 +62,15 @@ const boxLimiter = createLimiter({
 const boxRoutes = require('./routes/box');
 app.use('/api/box', boxLimiter, boxRoutes);
 
-// 6. 서버 실행
+// 6. DB 구조를 최신으로 맞춘 뒤 서버 실행
+// 마이그레이션이 실패하면 새 기능이 동작하지 않으므로 로그를 크게 남깁니다.
+// (그래도 서버는 켜서, 기존 기능과 /health 확인은 가능하게 둡니다)
+const { runMigrations } = require('./lib/migrate');
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`[SERVER] 서버가 포트 ${PORT} 에서 실행 중입니다`);
-});
+runMigrations()
+  .catch(err => console.error('[MIGRATE] 마이그레이션 실패! migrations 폴더의 SQL을 Neon 콘솔에서 직접 실행해주세요.', err))
+  .finally(() => {
+    app.listen(PORT, () => {
+      console.log(`[SERVER] 서버가 포트 ${PORT} 에서 실행 중입니다`);
+    });
+  });

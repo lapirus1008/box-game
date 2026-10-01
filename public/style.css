@@ -654,6 +654,7 @@ body.mode-collection .collection-mode-notice{ display:block; }
 }
 .nav-tile{
   flex:1;
+  white-space:nowrap;
   padding:12px 8px;
   font-size:13px;
   font-weight:600;
@@ -694,13 +695,13 @@ body.mode-collection .collection-mode-notice{ display:block; }
 }
 
 /* 도감 화면 */
-#collectionScreen .top-row, #rankingScreen .top-row{
+#collectionScreen .top-row, #rankingScreen .top-row, #upgradeScreen .top-row{
   display:flex;
   justify-content:space-between;
   align-items:center;
   margin-bottom:20px;
 }
-#backToGameBtn, #backFromRankingBtn{
+#backToGameBtn, #backFromRankingBtn, #backFromUpgradeBtn{
   all:unset;
   color:var(--ink-dim);
   font-size:13px;
@@ -835,3 +836,76 @@ body.mode-collection .collection-mode-notice{ display:block; }
 
 .rebirth-box{ padding:12px 14px; }
 .rebirth-box .collection-link{ margin-top:4px; }
+
+/* 환생 포인트 안내 (메인 환생 목표 칸) */
+.prestige-hint{ font-size:11px; color:var(--ink-dim); margin:6px 0 0; }
+
+/* 강화 화면 */
+.shop-heading{ font-size:14px; margin:16px 0 8px; color:var(--ink); }
+.shop-list{ display:flex; flex-direction:column; gap:8px; }
+.shop-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:12px;
+  background:var(--surface-2);
+}
+.shop-info{ flex:1; min-width:0; }
+.shop-title{ font-size:13px; font-weight:600; color:var(--ink); }
+.shop-level{ font-size:11px; font-weight:400; color:var(--ink-dim); margin-left:4px; }
+.shop-desc{ font-size:11px; color:var(--ink-dim); margin-top:2px; }
+.shop-desc strong{ color:var(--teal); font-weight:600; }
+.shop-btn{
+  width:auto;
+  flex-shrink:0;
+  min-width:84px;
+  padding:8px 10px;
+  font-size:12px;
+  font-weight:700;
+  white-space:nowrap;
+  background:var(--gold);
+  color:#1A1305;
+  border-radius:8px;
+}
+.shop-btn:disabled{ background:#2C3F6B; color:var(--ink-dim); cursor:not-allowed; }
+.shop-btn.on{ background:var(--teal); color:#0B1220; }
+.shop-btn.off{ background:transparent; border:1px solid var(--ink-dim); color:var(--ink-dim); }
+.prestige-box{
+  margin-top:16px;
+  padding:12px 14px;
+  border-radius:12px;
+  background:var(--surface-2);
+  border:1px solid var(--gold-dim);
+}
+.prestige-info{ font-size:13px; font-weight:600; color:var(--gold); margin:0 0 4px; }
+.prestige-next{ font-size:12px; color:var(--ink); margin:0 0 6px; }
+.prestige-rule{ font-size:11px; color:var(--ink-dim); margin:0; }
+
+/* 자리 비운 동안 요약 팝업 */
+#awayOverlay{
+  position:fixed;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  background:rgba(5,9,18,0.75);
+  z-index:900;
+}
+#awayOverlay.show{ display:flex; }
+.away-card{
+  width:100%;
+  max-width:340px;
+  padding:22px 20px;
+  border-radius:var(--radius);
+  background:var(--surface);
+  border:1px solid var(--gold-dim);
+  text-align:center;
+}
+.away-eyebrow{ font-size:13px; color:var(--ink-dim); margin:0 0 4px; }
+.away-time{ font-size:14px; color:var(--ink); margin:0 0 10px; }
+.away-gold{ font-family:'Fraunces', serif; font-size:30px; color:var(--gold); margin-bottom:12px; }
+.away-details{ list-style:none; padding:0; margin:0 0 16px; font-size:13px; color:var(--ink); text-align:left; }
+.away-details li{ padding:6px 0; border-top:1px solid #22335C; }
+#awayCloseBtn{ background:var(--gold); color:#1A1305; }

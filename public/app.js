@@ -1,6 +1,6 @@
 const API_BASE = 'https://box-game-6y1g.onrender.com';
 
-const CHARGE_INTERVAL_MS = 15 * 1000; // 서버의 CHARGE_INTERVAL_MS와 반드시 일치
+const DEFAULT_CHARGE_INTERVAL_MS = 15 * 1000; // 서버에서 실제 값(업그레이드 반영)을 받기 전까지 쓰는 기본값
 const MAX_BOX_CHARGES = 100;
 const REBIRTH_GOLD_REQUIRED = 100000;
 const CRAFT_COST = 3;
@@ -17,13 +17,14 @@ let isOpening = false;
 let cachedCharges = 0;
 let cachedMaxCharges = MAX_BOX_CHARGES;
 let cachedNextChargeAt = null;
-let cachedLegendaryCount = 0;
-let cachedMythicCount = 0;
-let cachedBaseIncome = 1;
-let cachedLegendaryIncome = 0;
-let cachedMythicIncome = 0;
-let cachedPerSecondIncome = 1;
+let cachedChargeIntervalMs = DEFAULT_CHARGE_INTERVAL_MS;
+let cachedAutoOpen = false;
+// 골드는 서버가 마지막으로 정산한 값(cachedGold, 정산 시각) + 그 뒤로 흐른 시간 × 분당 수입으로 실시간 표시합니다.
+let cachedGold = 0;
 let cachedLastIncomeCollectedAt = null;
+let cachedPerMinuteIncome = 60;
+let cachedIncome = null;
+let lastStatus = null; // 강화 화면 등에서 쓰는 마지막 상태 응답
 let cachedRunStartedAt = null;
 let cachedRebirthCount = 0;
 let serverTimeOffset = 0;
@@ -33,6 +34,7 @@ const authScreen = document.getElementById('authScreen');
 const gameScreen = document.getElementById('gameScreen');
 const collectionScreen = document.getElementById('collectionScreen');
 const rankingScreen = document.getElementById('rankingScreen');
+const upgradeScreen = document.getElementById('upgradeScreen');
 const authError = document.getElementById('authError');
 
 // 골드는 항상 소수점 없이, 천 단위 쉼표를 붙여 표시합니다.
@@ -40,19 +42,34 @@ function formatGold(value){
   return Math.floor(Number(value) || 0).toLocaleString();
 }
 
-// 아이템별 초당 수입 (도감/가방 카드 표시용, key → 초당 골드)
-let cachedItemIncome = {};
+// 지금 이 순간의 골드 (서버 정산값 + 정산 이후 쌓인 골드). 서버와 같은 방식으로 내림 계산합니다.
+function liveGold(){
+  if (!cachedLastIncomeCollectedAt) return cachedGold;
+  const elapsedSeconds = Math.max(0, (adjustedNow() - cachedLastIncomeCollectedAt) / 1000);
+  return cachedGold + Math.floor(elapsedSeconds * cachedPerMinuteIncome / 60);
+}
 
-function applyIncomePreview(preview){
-  cachedLegendaryCount = preview.legendaryCount;
-  cachedMythicCount = preview.mythicCount || 0;
-  cachedBaseIncome = preview.baseIncome;
-  cachedLegendaryIncome = preview.legendaryIncome;
-  cachedMythicIncome = preview.mythicIncome || 0;
-  cachedPerSecondIncome = preview.perSecondIncome;
-  cachedLastIncomeCollectedAt = preview.lastCollectedAt ? new Date(preview.lastCollectedAt) : null;
-  cachedItemIncome = {};
-  (preview.items || []).forEach(item => { cachedItemIncome[item.key] = item.incomePerSecond; });
+// 서버 응답의 골드로 기준값을 맞춥니다. (서버는 응답 직전에 정산하므로 기본 정산 시각은 "지금")
+function setGold(total, collectedAt){
+  cachedGold = Number(total) || 0;
+  cachedLastIncomeCollectedAt = collectedAt ? new Date(collectedAt) : adjustedNow();
+  renderGold();
+}
+
+function renderGold(){
+  const text = formatGold(liveGold());
+  document.getElementById('totalTreasure').textContent = text;
+  document.getElementById('shopGold').textContent = text;
+  document.getElementById('upgradeGold').textContent = text;
+}
+
+function applyIncome(income){
+  if (!income) return;
+  cachedIncome = income;
+  cachedPerMinuteIncome = income.perMinuteIncome;
+  if (income.lastCollectedAt) {
+    cachedLastIncomeCollectedAt = new Date(income.lastCollectedAt);
+  }
 }
 
 // 칭호(수집가 등급)를 메인 화면과 가방·도감 화면에 표시합니다.
@@ -237,12 +254,8 @@ async function switchMode(targetMode){
     resetGameResultUI();
     document.getElementById('craftResult').style.display = 'none';
 
-    // 화면에 남아있던 이전 모드의 잔상(패시브 수입, 환생 진행도 등)을 지우고 새로 불러옴
-    cachedLegendaryCount = 0;
-    cachedMythicCount = 0;
-    cachedLegendaryIncome = 0;
-    cachedMythicIncome = 0;
-
+    // 화면에 남아있던 이전 모드의 잔상(수입, 환생 진행도 등)을 지우고 새로 불러옴
+    cachedIncome = null;
     await refreshStatus();
     if (!collectionScreen.classList.contains('hidden')) await loadCollection(true);
   } catch (err) {
@@ -289,16 +302,21 @@ async function refreshStatus(){
 
     syncServerTime(data.serverTime);
     if (data.mode && data.mode !== currentMode) applyModeUI(data.mode);
-    document.getElementById('totalTreasure').textContent = data.totalTreasure;
-    cachedCharges = data.charges;
-    cachedMaxCharges = data.maxCharges;
-    cachedNextChargeAt = data.nextChargeInMs != null ? new Date(adjustedNow().getTime() + data.nextChargeInMs) : null;
+    lastStatus = data;
+    applyIncome(data.income);
+    setGold(data.totalTreasure, data.income && data.income.lastCollectedAt);
+    if (data.chargeIntervalMs) cachedChargeIntervalMs = data.chargeIntervalMs;
+    cachedAutoOpen = Boolean((data.automation || []).find(a => a.key === 'autoOpen' && a.enabled));
+    applyChargeInfo(data);
     updatePityUI(data.mythicPity, data.mythicPityLimit);
     document.getElementById('mainClaimBonusBtn')
       .classList.toggle('hidden', !(data.collectionComplete && !data.bonusClaimed));
 
-    if (data.passiveIncomePreview) applyIncomePreview(data.passiveIncomePreview);
     if (data.collectorRank) renderCollectorRank(data.collectorRank);
+    renderPrestigeHint(data.prestige);
+    if (data.awaySummary) showAwaySummary(data.awaySummary, data.autoOpened);
+    else handleAutoEvents(data);
+    if (!upgradeScreen.classList.contains('hidden')) renderUpgradeScreen();
     if (data.runStartedAt) cachedRunStartedAt = new Date(data.runStartedAt);
     if (typeof data.rebirthCount === 'number') {
       cachedRebirthCount = data.rebirthCount;
@@ -311,25 +329,102 @@ async function refreshStatus(){
   }
 }
 
+function applyChargeInfo(data){
+  if (typeof data.charges !== 'number') return;
+  cachedCharges = data.charges;
+  cachedMaxCharges = data.maxCharges;
+  cachedNextChargeAt = data.nextChargeInMs != null ? new Date(adjustedNow().getTime() + data.nextChargeInMs) : null;
+}
+
+// 정산 중에 자동 개봉/자동 합성이 일어났으면 결과 칸에 짧게 알려줍니다.
+function handleAutoEvents(data){
+  const lines = [];
+  if (data.autoOpened && data.autoOpened.count > 0) {
+    const highlights = data.autoOpened.obtained
+      .filter(o => o.rarity !== 'common')
+      .map(o => `${o.emoji}${o.name} x${o.count}`);
+    lines.push(`🤖 자동 개봉 ${data.autoOpened.count}개${highlights.length ? ` · ${highlights.join(', ')}` : ''}`);
+    checkAndTriggerLegendary(data.autoOpened.obtained, data.autoOpened.pityTriggered);
+  }
+  if (data.autoCrafted && data.autoCrafted.count > 0) {
+    lines.push(`⚙️ 자동 합성 ${data.autoCrafted.count}번`);
+  }
+  if (lines.length === 0 || gameScreen.classList.contains('hidden')) return;
+  document.getElementById('rarityBadge').textContent = '';
+  document.getElementById('treasureName').textContent = lines[0];
+  document.getElementById('treasureDetail').textContent = lines.slice(1).join(' · ');
+  document.getElementById('resultBox').style.display = 'block';
+}
+
+// 자리 비운 동안 일어난 일을 팝업으로 보여줍니다.
+function showAwaySummary(summary, autoOpened){
+  const minutes = Math.floor(summary.awayMs / 60000);
+  const awayText = minutes >= 60 ? `${Math.floor(minutes / 60)}시간 ${minutes % 60}분` : `${minutes}분`;
+  document.getElementById('awayTime').textContent = `${awayText} 동안 자리를 비웠어요`;
+  document.getElementById('awayGold').textContent = `+${formatGold(summary.goldEarned)}G`;
+
+  const details = [];
+  if (summary.autoOpenedCount > 0) details.push(`🤖 상자 ${formatGold(summary.autoOpenedCount)}개 자동 개봉`);
+  if (summary.autoCraftCount > 0) details.push(`⚙️ ${formatGold(summary.autoCraftCount)}번 자동 합성`);
+  summary.notable.forEach(item => details.push(`${item.emoji} ${item.name} x${item.count}`));
+  if (details.length === 0) details.push('💡 강화 화면에서 자동 개봉을 사면 자리 비운 동안에도 상자가 열려요');
+
+  const list = document.getElementById('awayDetails');
+  list.innerHTML = '';
+  details.forEach(text => {
+    const li = document.createElement('li');
+    li.textContent = text;
+    list.appendChild(li);
+  });
+  document.getElementById('awayOverlay').classList.add('show');
+  pendingAwayAutoOpened = autoOpened;
+}
+let pendingAwayAutoOpened = null;
+document.getElementById('awayCloseBtn').addEventListener('click', () => {
+  document.getElementById('awayOverlay').classList.remove('show');
+  // 자리 비운 동안 신화가 나왔다면 팝업을 닫은 뒤 신화 연출을 보여줍니다.
+  if (pendingAwayAutoOpened) checkAndTriggerLegendary(pendingAwayAutoOpened.obtained, pendingAwayAutoOpened.pityTriggered);
+  pendingAwayAutoOpened = null;
+});
+
+// 환생 목표 칸 아래: 환생 포인트 안내 (기록모드 전용)
+function renderPrestigeHint(prestige){
+  const el = document.getElementById('prestigeHint');
+  if (!prestige || !prestige.enabled) { el.textContent = ''; return; }
+  const owned = prestige.points > 0 ? `✨ 환생 포인트 ${prestige.points}개 (수입 +${prestige.incomeBonusPercent}%)` : '✨ 환생 포인트 없음';
+  const gain = prestige.pointsOnRebirth > 0
+    ? `지금 환생하면 +${prestige.pointsOnRebirth}개`
+    : `이번 판 ${formatGold(prestige.runGoldEarned)} / ${formatGold(prestige.nextPointAt)}G 벌면 +1개`;
+  el.textContent = `${owned} · ${gain}`;
+}
+
 // 0.2초마다 호출: 네트워크 없이 로컬 계산만으로 화면을 그림
 function renderTick(){
   const statusText = document.getElementById('statusText');
   const chest = document.getElementById('chest');
 
   // 충전 로컬 시뮬레이션: 다음 충전 시각이 지났으면 1개씩 늘려줌
-  if (cachedCharges < cachedMaxCharges && cachedNextChargeAt) {
+  if (cachedAutoOpen) {
+    // 자동 개봉 중에는 충전되는 즉시 서버가 열어주므로, 다음 상자까지의 타이머만 돌립니다.
+    while (cachedNextChargeAt && adjustedNow() >= cachedNextChargeAt) {
+      cachedNextChargeAt = new Date(cachedNextChargeAt.getTime() + cachedChargeIntervalMs);
+    }
+  } else if (cachedCharges < cachedMaxCharges && cachedNextChargeAt) {
     while (cachedNextChargeAt && adjustedNow() >= cachedNextChargeAt && cachedCharges < cachedMaxCharges) {
       cachedCharges++;
-      cachedNextChargeAt = new Date(cachedNextChargeAt.getTime() + CHARGE_INTERVAL_MS);
+      cachedNextChargeAt = new Date(cachedNextChargeAt.getTime() + cachedChargeIntervalMs);
     }
     if (cachedCharges >= cachedMaxCharges) cachedNextChargeAt = null;
   }
 
-  const canOpen = cachedCharges >= 1;
+  const canOpen = cachedCharges >= 1 && !cachedAutoOpen;
   chest.style.opacity = canOpen ? '1' : '0.6';
   chest.style.pointerEvents = (canOpen && !isOpening) ? 'auto' : 'none';
 
-  if (canOpen) {
+  if (cachedAutoOpen) {
+    statusText.textContent = '🤖 자동 개봉 중 · 상자가 충전되는 대로 열려요';
+    statusText.classList.add('ready');
+  } else if (canOpen) {
     statusText.textContent = `충전된 상자 ${cachedCharges}개 · 열 수 있습니다`;
     statusText.classList.add('ready');
   } else {
@@ -341,8 +436,8 @@ function renderTick(){
 
   // 다음 충전까지 몇 초 남았는지 표시 (꽉 찼으면 안내 문구로 대체)
   const nextChargeText = document.getElementById('nextChargeText');
-  if (cachedCharges >= cachedMaxCharges) {
-    nextChargeText.textContent = '충전이 꽉 찼습니다 (최대 100개)';
+  if (!cachedAutoOpen && cachedCharges >= cachedMaxCharges) {
+    nextChargeText.textContent = `충전이 꽉 찼습니다 (최대 ${cachedMaxCharges}개)`;
   } else if (cachedNextChargeAt) {
     const secondsLeft = Math.max(0, Math.ceil((cachedNextChargeAt - adjustedNow()) / 1000));
     nextChargeText.textContent = `다음 충전까지 ${secondsLeft}초`;
@@ -354,24 +449,22 @@ function renderTick(){
     document.getElementById('playtimeDisplay').textContent = formatDuration(Math.max(0, playSeconds));
   }
 
-  // 패시브 골드 미리보기 (항상 표시: 기본 수입은 누구나 있음)
-  let pendingGold = 0;
-  if (cachedLastIncomeCollectedAt) {
-    const pendingSeconds = Math.floor((adjustedNow() - cachedLastIncomeCollectedAt) / 1000);
-    pendingGold = Math.floor(Math.max(0, pendingSeconds) * cachedPerSecondIncome);
+  // 골드는 실시간으로 쌓입니다 (받기 버튼 없이 자동 정산)
+  renderGold();
+  const rateText = `💰 분당 +${formatGold(cachedPerMinuteIncome)}G 자동으로 쌓이는 중`;
+  let breakdownText = '';
+  if (cachedIncome) {
+    const parts = [`기본 ${formatGold(cachedIncome.baseIncome)}`, `아이템 ${formatGold(cachedIncome.itemIncome)}`];
+    const bonuses = [];
+    if (cachedIncome.upgradeBonusPercent > 0) bonuses.push(`강화 +${cachedIncome.upgradeBonusPercent}%`);
+    if (cachedIncome.prestigeBonusPercent > 0) bonuses.push(`환생 +${cachedIncome.prestigeBonusPercent}%`);
+    breakdownText = `${parts.join(' + ')}${bonuses.length ? ` · ${bonuses.join(' · ')}` : ''}`;
   }
-  const breakdown = [`기본 ${formatGold(cachedBaseIncome)}`];
-  if (cachedLegendaryCount > 0) breakdown.push(`전설 ${formatGold(cachedLegendaryIncome)}`);
-  if (cachedMythicCount > 0) breakdown.push(`신화 ${formatGold(cachedMythicIncome)}`);
-  const pendingText = `⏳ +${formatGold(pendingGold)}G 쌓임`;
-  const rateText = breakdown.length > 1
-    ? `초당 ${formatGold(cachedPerSecondIncome)}G (${breakdown.join(' + ')})`
-    : `초당 ${formatGold(cachedPerSecondIncome)}G`;
-  document.querySelectorAll('[data-income="pending"]').forEach(el => { el.textContent = pendingText; });
-  document.querySelectorAll('[data-income="rate"]').forEach(el => { el.textContent = rateText; });
+  document.querySelectorAll('[data-income="pending"]').forEach(el => { el.textContent = rateText; });
+  document.querySelectorAll('[data-income="rate"]').forEach(el => { el.textContent = breakdownText; });
 
   // 환생 목표 진행바
-  const goldNow = parseInt(document.getElementById('totalTreasure').textContent.replace(/,/g, ''), 10) || 0;
+  const goldNow = liveGold();
   const pct = Math.min(100, (goldNow / REBIRTH_GOLD_REQUIRED) * 100);
   document.getElementById('rebirthGoalText').textContent = `${goldNow.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
   document.getElementById('rebirthGoalBar').style.width = `${pct}%`;
@@ -384,15 +477,22 @@ function renderTick(){
   mainRebirthBtn.disabled = !goalReady;
   mainRebirthBtn.classList.toggle('hidden', !goalReady); // 환생 가능할 때만 버튼 노출
 
+  const rebirthProgressText = document.getElementById('rebirthProgressText');
+  rebirthProgressText.textContent = `${goldNow.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
+  const rebirthBtn = document.getElementById('rebirthBtn');
+  rebirthBtn.disabled = !goalReady;
+  rebirthBtn.classList.toggle('hidden', !goalReady);
+
   clampBulkOpenQty();
   clampBuyBoxQty();
+  if (!upgradeScreen.classList.contains('hidden')) updateUpgradeAffordability();
 }
 
 const GOLD_PER_BOX_PURCHASE = 75; // 서버의 GOLD_PER_BOX_PURCHASE와 반드시 일치시켜야 함
 const MAX_GOLD_BOX_PURCHASE = 2000; // 서버의 MAX_GOLD_BOX_PURCHASE와 반드시 일치시켜야 함
 
 function getMaxBuyableQty(){
-  const gold = parseInt(document.getElementById('totalTreasure').textContent.replace(/,/g, ''), 10) || 0;
+  const gold = liveGold();
   return Math.min(MAX_GOLD_BOX_PURCHASE, Math.max(0, Math.floor(gold / GOLD_PER_BOX_PURCHASE)));
 }
 
@@ -442,7 +542,7 @@ document.getElementById('buyBoxBtn').addEventListener('click', async function(){
       return;
     }
 
-    document.getElementById('totalTreasure').textContent = data.totalTreasure;
+    setGold(data.totalTreasure);
     document.getElementById('rarityBadge').textContent = '';
     document.getElementById('treasureName').textContent = `💰 ${data.quantity}개 구매 오픈`;
     document.getElementById('treasureDetail').textContent =
@@ -451,6 +551,7 @@ document.getElementById('buyBoxBtn').addEventListener('click', async function(){
 
     updatePityUI(data.mythicPity, data.mythicPityLimit);
     checkAndTriggerLegendary(data.obtained, data.mythicPityTriggered);
+    if (data.autoOpened) checkAndTriggerLegendary(data.autoOpened.obtained, data.autoOpened.pityTriggered);
     clampBuyBoxQty();
     refreshStatus();
   } catch (err) {
@@ -463,7 +564,7 @@ document.getElementById('buyBoxBtn').addEventListener('click', async function(){
 });
 
 function getMaxOpenableQty(){
-  return Math.max(0, cachedCharges);
+  return cachedAutoOpen ? 0 : Math.max(0, cachedCharges);
 }
 
 function clampBulkOpenQty(){
@@ -474,11 +575,12 @@ function clampBulkOpenQty(){
   if (value > max) value = max;
   input.value = max === 0 ? 0 : value;
 
-  document.getElementById('bulkOpenCostText').textContent =
-    `충전 ${cachedCharges}/${cachedMaxCharges} · 최대 ${max}개까지 무료로 열 수 있어요`;
+  document.getElementById('bulkOpenCostText').textContent = cachedAutoOpen
+    ? '🤖 자동 개봉이 켜져 있어서 충전된 상자는 자동으로 열려요'
+    : `충전 ${cachedCharges}/${cachedMaxCharges} · 최대 ${max}개까지 무료로 열 수 있어요`;
 
-  document.getElementById('bulkOpenBtn').disabled = max === 0 || value < 1 || isOpening;
-  document.getElementById('maxQtyBtn').disabled = max === 0;
+  document.getElementById('bulkOpenBtn').disabled = cachedAutoOpen || max === 0 || value < 1 || isOpening;
+  document.getElementById('maxQtyBtn').disabled = cachedAutoOpen || max === 0;
 }
 
 document.getElementById('bulkOpenQty').addEventListener('input', clampBulkOpenQty);
@@ -590,9 +692,7 @@ function checkAndTriggerLegendary(items, pityTriggered){
 // 상자 열기가 성공했을 때 화면을 갱신하는 공통 함수
 function handleOpenSuccess(data){
   syncServerTime(data.serverTime);
-  cachedCharges = data.charges;
-  cachedMaxCharges = data.maxCharges;
-  cachedNextChargeAt = data.nextChargeInMs != null ? new Date(adjustedNow().getTime() + data.nextChargeInMs) : null;
+  applyChargeInfo(data);
   renderTick();
 
   const chest = document.getElementById('chest');
@@ -603,7 +703,7 @@ function handleOpenSuccess(data){
   document.getElementById('treasureName').textContent = `${data.treasure.emoji} ${data.treasure.name}`;
   document.getElementById('treasureDetail').textContent = data.treasure.flavor || '';
   document.getElementById('resultBox').style.display = 'block';
-  document.getElementById('totalTreasure').textContent = data.totalTreasure;
+  setGold(data.totalTreasure);
 
   updatePityUI(data.mythicPity, data.mythicPityLimit);
   checkAndTriggerLegendary(data.treasure, data.mythicPityTriggered);
@@ -651,11 +751,8 @@ document.getElementById('bulkOpenBtn').addEventListener('click', async function(
     if (!res.ok){ alert(data.message); return; }
 
     syncServerTime(data.serverTime);
-    cachedCharges = data.charges;
-    cachedMaxCharges = data.maxCharges;
-    cachedNextChargeAt = data.nextChargeInMs != null ? new Date(adjustedNow().getTime() + data.nextChargeInMs) : null;
-
-    document.getElementById('totalTreasure').textContent = data.totalTreasure;
+    applyChargeInfo(data);
+    setGold(data.totalTreasure);
     document.getElementById('rarityBadge').textContent = '';
     document.getElementById('treasureName').textContent = `📦 ${data.quantity}개 일괄 오픈`;
     document.getElementById('treasureDetail').textContent =
@@ -677,47 +774,6 @@ document.getElementById('bulkOpenBtn').addEventListener('click', async function(
 });
 
 // -------------------------------
-// 패시브 골드 받기
-// -------------------------------
-async function collectIncome(btnEl){
-  btnEl.disabled = true;
-  try {
-    const res = await authFetch('/api/box/collect-income', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok) return;
-
-    document.getElementById('totalTreasure').textContent = data.totalTreasure;
-    document.getElementById('shopGold').textContent = data.totalTreasure;
-    cachedLastIncomeCollectedAt = new Date();
-    renderTick();
-
-    if (data.earned > 0) {
-      const onMainScreen = !gameScreen.classList.contains('hidden');
-      if (onMainScreen) {
-        document.getElementById('rarityBadge').textContent = '';
-        document.getElementById('treasureName').textContent = `💰 +${formatGold(data.earned)}G`;
-        document.getElementById('treasureDetail').textContent = '패시브 수입을 받았습니다';
-        document.getElementById('resultBox').style.display = 'block';
-      } else {
-        const craftResult = document.getElementById('craftResult');
-        craftResult.style.display = 'block';
-        craftResult.style.color = 'var(--teal)';
-        craftResult.textContent = `💰 +${formatGold(data.earned)}G 받았습니다!`;
-      }
-    }
-  } finally {
-    // 메인 화면 상태뿐 아니라, 도감 화면에 있다면 환생 진행도(rebirthProgressText 등)도 같이 갱신
-    if (!collectionScreen.classList.contains('hidden')) {
-      loadCollection(false);
-    }
-    refreshStatus();
-    btnEl.disabled = false;
-  }
-}
-document.getElementById('collectIncomeBtnMain').addEventListener('click', function(){ collectIncome(this); });
-document.getElementById('collectIncomeBtnCollection').addEventListener('click', function(){ collectIncome(this); });
-
-// -------------------------------
 // 환생 / 초심으로 돌아가기
 // -------------------------------
 async function performRebirth(btnEl){
@@ -736,11 +792,12 @@ async function performRebirth(btnEl){
         craftResult.textContent = data.message;
       }
     } else {
-      const msg = `✨ ${data.rebirthNumber}번째 환생! 이번 판 기록: ${formatDuration(Math.floor(data.durationMs / 1000))} — 처음부터 다시 시작합니다`;
+      const recordText = `기록: ${formatDuration(Math.floor(data.durationMs / 1000))} · 환생 포인트 +${data.prestigeGained} (영구 수입 +${data.prestigeIncomeBonusPercent}%)`;
+      const msg = `✨ ${data.rebirthNumber}번째 환생! ${recordText}`;
       if (onMainScreen) {
         document.getElementById('rarityBadge').textContent = '';
         document.getElementById('treasureName').textContent = `✨ ${data.rebirthNumber}번째 환생 달성!`;
-        document.getElementById('treasureDetail').textContent = `기록: ${formatDuration(Math.floor(data.durationMs / 1000))}`;
+        document.getElementById('treasureDetail').textContent = recordText;
         document.getElementById('resultBox').style.display = 'block';
       } else {
         const craftResult = document.getElementById('craftResult');
@@ -750,13 +807,8 @@ async function performRebirth(btnEl){
       }
       cachedRunStartedAt = new Date(data.runStartedAt);
       cachedRebirthCount = data.rebirthNumber;
-      cachedLegendaryCount = 0;
-      cachedMythicCount = 0;
-      cachedLegendaryIncome = 0;
-      cachedMythicIncome = 0;
-      cachedPerSecondIncome = cachedBaseIncome;
       document.getElementById('rebirthCount').textContent = cachedRebirthCount;
-      document.getElementById('totalTreasure').textContent = data.totalTreasure;
+      setGold(data.totalTreasure);
     }
     if (!collectionScreen.classList.contains('hidden')) await loadCollection(false, false);
     await refreshStatus();
@@ -768,7 +820,7 @@ document.getElementById('rebirthBtn').addEventListener('click', function(){ perf
 document.getElementById('mainRebirthBtn').addEventListener('click', function(){ performRebirth(this); });
 
 document.getElementById('resetRunBtn').addEventListener('click', async function(){
-  const confirmed = confirm('정말 초심으로 돌아가시겠어요?\n지금 모은 골드와 아이템이 모두 사라지고, 다시 2000골드부터 시작합니다.\n(이건 환생이 아니라서 기록에 남지 않아요)');
+  const confirmed = confirm('정말 초심으로 돌아가시겠어요?\n지금 모은 골드·아이템·강화·자동화가 모두 사라지고, 다시 2000골드부터 시작합니다.\n(환생이 아니라서 기록과 환생 포인트는 생기지 않아요. 이미 가진 환생 포인트는 유지돼요)');
   if (!confirmed) return;
 
   this.disabled = true;
@@ -778,12 +830,7 @@ document.getElementById('resetRunBtn').addEventListener('click', async function(
     if (!res.ok) { alert(data.message); return; }
 
     cachedRunStartedAt = new Date(data.runStartedAt);
-    cachedLegendaryCount = 0;
-    cachedMythicCount = 0;
-    cachedLegendaryIncome = 0;
-    cachedMythicIncome = 0;
-    cachedPerSecondIncome = cachedBaseIncome;
-    document.getElementById('totalTreasure').textContent = data.totalTreasure;
+    setGold(data.totalTreasure);
     document.getElementById('resultBox').style.display = 'none';
     renderTick();
     await refreshStatus();
@@ -823,19 +870,14 @@ async function loadCollection(showLoadingText = true){
     if (!res.ok) return;
 
     if (data.mode && data.mode !== currentMode) applyModeUI(data.mode);
-    document.getElementById('shopGold').textContent = data.totalTreasure;
+    applyIncome(data.income);
+    setGold(data.totalTreasure, data.income && data.income.lastCollectedAt);
     document.getElementById('collectionProgress').textContent = `${data.progress.obtained}/${data.progress.total}`;
-    document.getElementById('rebirthProgressText').textContent =
-      `${data.totalTreasure.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
-    const canRebirth = data.totalTreasure >= REBIRTH_GOLD_REQUIRED;
-    document.getElementById('rebirthBtn').disabled = !canRebirth;
-    document.getElementById('rebirthBtn').classList.toggle('hidden', !canRebirth);
 
     const claimBtn = document.getElementById('claimBonusBtn');
     if (data.isComplete && !data.bonusClaimed) claimBtn.classList.remove('hidden');
     else claimBtn.classList.add('hidden');
 
-    if (data.passiveIncomePreview) applyIncomePreview(data.passiveIncomePreview);
     if (data.collectorRank) renderCollectorRank(data.collectorRank);
     renderTick();
 
@@ -880,7 +922,7 @@ async function loadCollection(showLoadingText = true){
           <div class="item-name">${item.name}</div>
           <div class="item-count">x${item.count}</div>
           <div class="item-stars">${renderStars(item.stars, item.maxStars)}</div>
-          ${cachedItemIncome[item.key] ? `<div class="item-income">초당 +${formatGold(cachedItemIncome[item.key])}G</div>` : ''}
+          ${item.incomePerMinute ? `<div class="item-income">분당 +${formatGold(item.incomePerMinute)}G</div>` : ''}
           <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${isMaxRarity ? '최고 등급' : (isCraftLocked ? '합성 불가' : `합성(-${CRAFT_COST})`)}</button>
         `;
         runGrid.appendChild(card);
@@ -1043,6 +1085,124 @@ document.getElementById('toggleRebirthHistoryBtn').addEventListener('click', asy
     listEl.textContent = '불러오지 못했습니다.';
   }
 });
+
+// -------------------------------
+// 강화 화면 (업그레이드 · 자동화 · 환생 포인트)
+// -------------------------------
+document.getElementById('openUpgradeBtn').addEventListener('click', async () => {
+  gameScreen.classList.add('hidden');
+  upgradeScreen.classList.remove('hidden');
+  document.getElementById('upgradeResult').style.display = 'none';
+  renderUpgradeScreen();
+  await refreshStatus();
+});
+document.getElementById('backFromUpgradeBtn').addEventListener('click', () => {
+  upgradeScreen.classList.add('hidden');
+  gameScreen.classList.remove('hidden');
+  refreshStatus();
+});
+
+function renderUpgradeScreen(){
+  if (!lastStatus || !lastStatus.upgrades) return;
+
+  const upgradeList = document.getElementById('upgradeList');
+  upgradeList.innerHTML = '';
+  lastStatus.upgrades.forEach(u => {
+    const row = document.createElement('div');
+    row.className = 'shop-row';
+    const isMax = u.cost === null;
+    row.innerHTML = `
+      <div class="shop-info">
+        <div class="shop-title">${u.emoji} ${u.name} <span class="shop-level">Lv.${u.level}/${u.maxLevel}</span></div>
+        <div class="shop-desc">${isMax ? `${u.effect} · 최대 레벨` : `${u.effect} → <strong>${u.nextEffect}</strong>`}</div>
+      </div>
+      <button class="shop-btn" data-upgrade="${u.key}" data-cost="${isMax ? '' : u.cost}" ${isMax ? 'disabled' : ''}>${isMax ? 'MAX' : `${formatGold(u.cost)}G`}</button>
+    `;
+    upgradeList.appendChild(row);
+  });
+
+  const autoList = document.getElementById('automationList');
+  autoList.innerHTML = '';
+  lastStatus.automation.forEach(a => {
+    const row = document.createElement('div');
+    row.className = 'shop-row';
+    const buttonText = !a.unlocked ? `${formatGold(a.cost)}G` : (a.enabled ? '켜짐' : '꺼짐');
+    row.innerHTML = `
+      <div class="shop-info">
+        <div class="shop-title">${a.emoji} ${a.name}</div>
+        <div class="shop-desc">${a.desc}</div>
+      </div>
+      <button class="shop-btn ${a.unlocked ? (a.enabled ? 'on' : 'off') : ''}" data-automation="${a.key}"
+        data-cost="${a.unlocked ? '' : a.cost}" data-enabled="${a.enabled}">${buttonText}</button>
+    `;
+    autoList.appendChild(row);
+  });
+
+  const prestigeBox = document.getElementById('prestigeBox');
+  const p = lastStatus.prestige;
+  prestigeBox.classList.toggle('hidden', !p || !p.enabled);
+  if (p && p.enabled) {
+    document.getElementById('prestigeInfo').textContent =
+      `보유 ${p.points}개 · 영구 수입 +${p.incomeBonusPercent}% (포인트당 +${p.incomePercentPerPoint}%)`;
+    document.getElementById('prestigeNext').textContent = p.pointsOnRebirth > 0
+      ? `지금 환생하면 +${p.pointsOnRebirth}개 · 이번 판 ${formatGold(p.runGoldEarned)}G 벌었어요`
+      : `이번 판 ${formatGold(p.runGoldEarned)} / ${formatGold(p.nextPointAt)}G 벌면 첫 포인트를 받아요`;
+  }
+
+  upgradeList.querySelectorAll('[data-upgrade]').forEach(btn => {
+    btn.addEventListener('click', () => buyUpgrade(btn.dataset.upgrade, btn));
+  });
+  autoList.querySelectorAll('[data-automation]').forEach(btn => {
+    btn.addEventListener('click', () => setAutomation(btn.dataset.automation, btn.dataset.enabled !== 'true', btn));
+  });
+  updateUpgradeAffordability();
+}
+
+// 골드가 실시간으로 늘어나므로, 살 수 있게 되는 순간 버튼을 켜줍니다.
+function updateUpgradeAffordability(){
+  const gold = liveGold();
+  upgradeScreen.querySelectorAll('.shop-btn[data-cost]').forEach(btn => {
+    if (btn.dataset.busy) return;
+    const cost = btn.dataset.cost;
+    if (cost === '') { btn.disabled = btn.dataset.upgrade ? true : false; return; }
+    btn.disabled = gold < Number(cost);
+  });
+}
+
+function showUpgradeResult(message, isError){
+  const el = document.getElementById('upgradeResult');
+  el.style.display = 'block';
+  el.style.color = isError ? 'var(--danger)' : 'var(--gold)';
+  el.textContent = message;
+}
+
+async function postShopAction(path, body, btn){
+  btn.dataset.busy = '1';
+  btn.disabled = true;
+  try {
+    const res = await authFetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    showUpgradeResult(data.message, !res.ok);
+    if (res.ok) setGold(data.totalTreasure);
+  } catch (err) {
+    showUpgradeResult('서버에 연결할 수 없습니다.', true);
+  } finally {
+    delete btn.dataset.busy;
+    await refreshStatus();
+  }
+}
+
+function buyUpgrade(key, btn){
+  return postShopAction('/api/box/upgrade', { key }, btn);
+}
+
+function setAutomation(key, enabled, btn){
+  return postShopAction('/api/box/automation', { key, enabled }, btn);
+}
 
 // -------------------------------
 // 랭킹 화면

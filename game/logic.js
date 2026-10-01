@@ -1,5 +1,5 @@
 // game/logic.js
-// DB와 무관한 순수 게임 로직(확률 뽑기, 천장, 숙련도, 수집가 등급 등)입니다.
+// DB와 무관한 순수 게임 로직(확률 뽑기, 천장, 합성, 숙련도, 업그레이드 효과 등)입니다.
 // 입력만 같으면 결과가 같기 때문에 따로 떼어두면 읽기도, 테스트하기도 쉽습니다.
 
 const {
@@ -7,56 +7,76 @@ const {
   TREASURE_BY_KEY,
   RARITY_ORDER,
   CRAFTABLE_RARITIES,
+  CRAFT_COST,
   MYTHIC_PITY_LIMIT,
   MASTERY_THRESHOLDS,
   COLLECTOR_RANKS,
+  CHARGE_INTERVAL_MS,
+  MAX_BOX_CHARGES,
+  UPGRADES,
+  UPGRADE_COST_GROWTH,
+  INCOME_BONUS_PERCENT_PER_LEVEL,
+  CHARGE_SPEED_MS_PER_LEVEL,
+  MIN_CHARGE_INTERVAL_MS,
+  CAPACITY_PER_LEVEL,
+  LUCK_PERCENT_PER_LEVEL,
+  PRESTIGE_GOLD_PER_POINT,
+  PRESTIGE_INCOME_PERCENT_PER_POINT,
 } = require('./config');
 
-// weight 기반으로 목록 중 하나를 랜덤하게 뽑습니다.
+// weight 기반으로 목록 중 하나를 랜덤하게 뽑습니다. (pool 원소는 { treasure, weight })
 function pickWeighted(pool) {
-  const totalWeight = pool.reduce((sum, t) => sum + t.weight, 0);
+  const totalWeight = pool.reduce((sum, entry) => sum + entry.weight, 0);
   let rand = Math.random() * totalWeight;
-  for (const treasure of pool) {
-    if (rand < treasure.weight) return treasure;
-    rand -= treasure.weight;
+  for (const entry of pool) {
+    if (rand < entry.weight) return entry.treasure;
+    rand -= entry.weight;
   }
-  return pool[0];
+  return pool[0].treasure;
 }
 
-// 등급별 아이템 목록은 바뀌지 않으므로 미리 나눠둡니다.
-const TREASURES_BY_RARITY = RARITY_ORDER.reduce((acc, rarity) => {
-  acc[rarity] = TREASURES.filter(t => t.rarity === rarity);
+// 행운 레벨별 뽑기 풀: 희귀 이상 아이템의 weight를 레벨당 +5%씩 키웁니다. (레벨별로 한 번만 계산)
+const poolCache = new Map();
+function getBoxPool(luckLevel = 0) {
+  if (!poolCache.has(luckLevel)) {
+    const luckPercent = 100 + luckLevel * LUCK_PERCENT_PER_LEVEL;
+    poolCache.set(luckLevel, TREASURES.map(t => ({
+      treasure: t,
+      weight: t.rarity === 'common' ? t.weight : t.weight * luckPercent / 100,
+    })));
+  }
+  return poolCache.get(luckLevel);
+}
+
+// 등급별 아이템 목록은 바뀌지 않으므로 미리 나눠둡니다 (합성 결과/천장용).
+const POOL_BY_RARITY = RARITY_ORDER.reduce((acc, rarity) => {
+  acc[rarity] = TREASURES.filter(t => t.rarity === rarity).map(t => ({ treasure: t, weight: t.weight }));
   return acc;
 }, {});
 
-// 전체 아이템 중 하나를 뽑습니다 (상자 열기용).
-function pickRandomTreasure() {
-  return pickWeighted(TREASURES);
-}
-
-// 특정 등급 안에서만 하나를 뽑습니다 (합성 결과/천장용).
+// 특정 등급 안에서만 하나를 뽑습니다.
 function pickRandomFromRarity(rarity) {
-  return pickWeighted(TREASURES_BY_RARITY[rarity]);
+  return pickWeighted(POOL_BY_RARITY[rarity]);
 }
 
 // 상자 하나를 뽑되, 천장 카운터를 반영합니다.
 // pity = 지금까지 신화 없이 연 상자 수. 이번이 천장 번째 상자면 신화 확정.
-function rollWithPity(pity) {
+function rollWithPity(pity, luckLevel = 0) {
   if (pity + 1 >= MYTHIC_PITY_LIMIT) {
     return { treasure: pickRandomFromRarity('mythic'), pity: 0, guaranteed: true };
   }
-  const treasure = pickRandomTreasure();
+  const treasure = pickWeighted(getBoxPool(luckLevel));
   return { treasure, pity: treasure.rarity === 'mythic' ? 0 : pity + 1, guaranteed: false };
 }
 
 // 상자 여러 개를 연속으로 뽑습니다. 천장 카운터는 한 개씩 순서대로 반영됩니다.
 // 반환: { counts: { itemKey: 개수 }, pity: 최종 천장 카운터, pityTriggered: 천장 발동 여부 }
-function rollBoxes(startPity, quantity) {
+function rollBoxes(startPity, quantity, luckLevel = 0) {
   let pity = startPity;
   let pityTriggered = false;
   const counts = {};
   for (let i = 0; i < quantity; i++) {
-    const roll = rollWithPity(pity);
+    const roll = rollWithPity(pity, luckLevel);
     pity = roll.pity;
     if (roll.guaranteed) pityTriggered = true;
     counts[roll.treasure.key] = (counts[roll.treasure.key] || 0) + 1;
@@ -78,6 +98,36 @@ function rollCraftResults(rarity, craftCount) {
     counts[item.key] = (counts[item.key] || 0) + 1;
   }
   return counts;
+}
+
+// 보유 개수(owned: { itemKey: 개수 })로 가능한 만큼 전부 합성합니다.
+// 일반 → 희귀 → 영웅 순서로 처리해서, 합성으로 새로 생긴 아이템도 바로 다음 단계 재료가 됩니다.
+// 반환: { deltas: { itemKey: 증감 }, results: [{ sourceKey, craftCount, obtained }], totalCrafts }
+function craftCascade(owned) {
+  const counts = { ...owned };
+  const deltas = {};
+  const results = [];
+  let totalCrafts = 0;
+  const addDelta = (key, amount) => { deltas[key] = (deltas[key] || 0) + amount; };
+
+  for (const rarity of CRAFTABLE_RARITIES) {
+    for (const item of TREASURES.filter(t => t.rarity === rarity)) {
+      const craftCount = Math.floor((counts[item.key] || 0) / CRAFT_COST);
+      if (craftCount === 0) continue;
+
+      counts[item.key] -= craftCount * CRAFT_COST;
+      addDelta(item.key, -craftCount * CRAFT_COST);
+
+      const obtained = rollCraftResults(getNextCraftRarity(item), craftCount);
+      for (const [key, amount] of Object.entries(obtained)) {
+        counts[key] = (counts[key] || 0) + amount;
+        addDelta(key, amount);
+      }
+      totalCrafts += craftCount;
+      results.push({ sourceKey: item.key, craftCount, obtained });
+    }
+  }
+  return { deltas, results, totalCrafts };
 }
 
 // { itemKey: 개수 } → 응답용 배열로 변환합니다. fields로 포함할 아이템 속성을 고릅니다.
@@ -121,14 +171,62 @@ function getCollectorRank(obtainedCount) {
   };
 }
 
+// -------------------------------
+// 업그레이드 / 환생 포인트
+// -------------------------------
+function getUpgradeCost(upgrade, level) {
+  return Math.floor(upgrade.baseCost * Math.pow(UPGRADE_COST_GROWTH, level));
+}
+
+// 업그레이드 레벨에 따른 효과를 화면에 보여줄 문구로 만듭니다.
+function describeUpgradeEffect(key, level) {
+  switch (key) {
+    case 'income':      return `수입 +${level * INCOME_BONUS_PERCENT_PER_LEVEL}%`;
+    case 'chargeSpeed': return `충전 ${getChargeIntervalMs(level) / 1000}초마다`;
+    case 'capacity':    return `최대 충전 ${getMaxCharges(level)}개`;
+    case 'luck':        return `희귀 이상 등장률 +${level * LUCK_PERCENT_PER_LEVEL}%`;
+    default:            return '';
+  }
+}
+
+function getChargeIntervalMs(chargeSpeedLevel) {
+  return Math.max(MIN_CHARGE_INTERVAL_MS, CHARGE_INTERVAL_MS - chargeSpeedLevel * CHARGE_SPEED_MS_PER_LEVEL);
+}
+
+function getMaxCharges(capacityLevel) {
+  return MAX_BOX_CHARGES + capacityLevel * CAPACITY_PER_LEVEL;
+}
+
+// box_claims 한 줄(claim)에서 업그레이드·환생 포인트가 반영된 현재 능력치를 계산합니다.
+function getClaimStats(claim) {
+  return {
+    chargeIntervalMs: getChargeIntervalMs(claim.upgrade_charge_speed),
+    maxCharges: getMaxCharges(claim.upgrade_capacity),
+    luckLevel: claim.upgrade_luck,
+    // 수입 배율은 퍼센트 정수 두 개로 들고 다닙니다 (부동소수점 오차 방지)
+    upgradeIncomePercent: 100 + claim.upgrade_income * INCOME_BONUS_PERCENT_PER_LEVEL,
+    prestigeIncomePercent: 100 + claim.prestige_points * PRESTIGE_INCOME_PERCENT_PER_POINT,
+  };
+}
+
+// 이번 판에 번 골드로 환생하면 받을 포인트
+function getPrestigePointsForRun(runGoldEarned) {
+  return Math.floor(Number(runGoldEarned) / PRESTIGE_GOLD_PER_POINT);
+}
+
 module.exports = {
-  pickRandomTreasure,
   pickRandomFromRarity,
   rollWithPity,
   rollBoxes,
   getNextCraftRarity,
   rollCraftResults,
+  craftCascade,
   toObtainedList,
   getItemStars,
   getCollectorRank,
+  getUpgradeCost,
+  describeUpgradeEffect,
+  getClaimStats,
+  getPrestigePointsForRun,
+  UPGRADE_KEYS: UPGRADES.map(u => u.key),
 };
