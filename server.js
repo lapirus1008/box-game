@@ -6,8 +6,8 @@
 require('dotenv').config(); // .env 파일의 값을 process.env로 읽어올 수 있게 함
 const express = require('express');
 const cors = require('cors');
-const rateLimit = require('express-rate-limit');
 const db = require('./db'); // 방금 만든 db.js를 불러옴
+const { createLimiter } = require('./lib/rateLimit');
 
 // 2. express 앱 생성
 const app = express();
@@ -25,12 +25,9 @@ app.use(express.json({ limit: '10kb' })); // 요청 body를 JSON으로 자동 �
 
 // 모든 API에 적용되는 기본 방어선. IP 하나가 짧은 시간에 너무 많은 요청을 보내는 걸 막습니다.
 // (로그인/가입은 이보다 더 엄격한 자체 제한이 routes/auth.js에 따로 있습니다.)
-const globalLimiter = rateLimit({
+const globalLimiter = createLimiter({
   windowMs: 60 * 1000, // 1분
   max: 120,            // 같은 IP에서 분당 120회까지
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' },
 });
 app.use(globalLimiter);
 
@@ -57,12 +54,9 @@ app.use('/api/auth', authRoutes);
 
 // 골드/아이템 계산은 전부 서버가 하고 있어서 값 자체를 조작당할 위험은 없지만,
 // 초당 수십~수백 번씩 스크립트로 두드리는 건 서버 부하와 DB 커넥션을 불필요하게 소모시키므로 별도로 더 제한합니다.
-const boxLimiter = rateLimit({
+const boxLimiter = createLimiter({
   windowMs: 60 * 1000, // 1분
   max: 60,             // 같은 IP에서 분당 60회까지 (초당 1회꼴 - 정상적인 클릭 플레이로는 충분한 수치)
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' },
 });
 
 const boxRoutes = require('./routes/box');

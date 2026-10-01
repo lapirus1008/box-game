@@ -7,10 +7,20 @@ box-game/                    ← GitHub 저장소 루트
 ├── routes/
 │   ├── auth.js                회원가입 / 로그인 / 내 정보 조회 API
 │   └── box.js                 상자 열기 / 상태 조회 API
+├── game/
+│   ├── config.js              게임 수치(충전, 골드, 천장 등) + 아이템 목록 + 수집가 등급
+│   ├── logic.js               DB와 무관한 순수 로직 (뽑기, 천장, 숙련도, 등급 계산)
+│   └── store.js               게임 데이터 DB 읽기/쓰기 함수
+├── lib/
+│   ├── http.js                트랜잭션 헬퍼(withTransaction) + 공통 에러 응답(handle, HttpError)
+│   ├── rateLimit.js           요청 횟수 제한(limiter) 생성
+│   └── token.js               JWT 발급/검증
 ├── middleware/
 │   └── auth.js                로그인 토큰(JWT) 검증
 └── public/
-    └── index.html              프론트엔드 전체 (HTML+CSS+JS 한 파일)
+    ├── index.html              프론트엔드 화면 구조 (HTML)
+    ├── style.css               스타일
+    └── app.js                  화면 동작 스크립트
 
 구성요소								|  실행위치		|	역할
 server.js, routes/, middleware/, db.js	|	Render	|	항상 켜져있는 백엔드 서버
