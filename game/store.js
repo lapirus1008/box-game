@@ -10,7 +10,7 @@ const {
   BASE_INCOME_PER_SECOND,
   INCOME_PER_SECOND_BY_RARITY,
   MASTERY_THRESHOLDS,
-  MASTERY_INCOME_BONUS_PER_STAR,
+  MASTERY_INCOME_BONUS_PERCENT_PER_STAR,
   RESET_GOLD,
   TREASURES,
 } = require('./config');
@@ -85,7 +85,10 @@ async function computeIncomeBreakdown(runner, userId, mode) {
     if (count === 0) continue;
 
     const stars = getItemStars(count);
-    const itemIncome = count * INCOME_PER_SECOND_BY_RARITY[treasure.rarity] * (1 + stars * MASTERY_INCOME_BONUS_PER_STAR);
+    // 초당 수입은 항상 정수로 맞춥니다 (★ 보너스로 생기는 소수점은 내림).
+    // 0.1 같은 소수를 곱하면 부동소수점 오차가 생기므로 정수 퍼센트로 계산합니다.
+    const bonusPercent = 100 + stars * MASTERY_INCOME_BONUS_PERCENT_PER_STAR;
+    const itemIncome = Math.floor(count * INCOME_PER_SECOND_BY_RARITY[treasure.rarity] * bonusPercent / 100);
 
     totals[treasure.rarity].count += count;
     totals[treasure.rarity].income += itemIncome;

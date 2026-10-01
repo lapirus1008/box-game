@@ -78,7 +78,7 @@ const TREASURE_BY_KEY = new Map(TREASURES.map(t => [t.key, t]));
 // 전설/신화 아이템은 별이 붙을 때마다 해당 아이템의 패시브 골드 수입도 함께 늘어나서,
 // 도감을 채운 뒤에도 "같은 아이템을 더 모을 이유"가 생깁니다.
 const MASTERY_THRESHOLDS = [10, 30, 100, 300]; // 이 개수를 넘길 때마다 ★ +1 (최대 4개)
-const MASTERY_INCOME_BONUS_PER_STAR = 0.1;     // ★ 1개당 그 아이템의 수입 +10%
+const MASTERY_INCOME_BONUS_PERCENT_PER_STAR = 10; // ★ 1개당 그 아이템의 수입 +10%
 
 // 도감 발견 개수를 기준으로 한 수집가 등급입니다. 기록모드는 환생/초기화 때마다
 // 도감이 비워지므로 사실상 수집모드에서 의미가 있는 시스템입니다.
@@ -112,6 +112,6 @@ module.exports = {
   TREASURES,
   TREASURE_BY_KEY,
   MASTERY_THRESHOLDS,
-  MASTERY_INCOME_BONUS_PER_STAR,
+  MASTERY_INCOME_BONUS_PERCENT_PER_STAR,
   COLLECTOR_RANKS,
 };

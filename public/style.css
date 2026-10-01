@@ -791,3 +791,29 @@ body.mode-collection .collection-mode-notice{ display:block; }
 }
 .rank-pagination button{ width:auto; padding:8px 14px; font-size:13px; background:var(--surface-2); border:1px solid #2C3F6B; color:var(--ink); border-radius:8px; }
 .rank-pagination span{ font-size:13px; color:var(--ink-dim); }
+
+/* 칭호(수집가 등급) */
+.rank-badge{
+  margin:10px 0 0;
+  padding:8px 12px;
+  border-radius:10px;
+  background:var(--surface-2);
+  border:1px solid var(--gold-dim);
+  font-size:13px;
+  font-weight:600;
+  color:var(--gold);
+}
+.rank-badge .rank-next{
+  display:block;
+  margin-top:2px;
+  font-size:11px;
+  font-weight:400;
+  color:var(--ink-dim);
+}
+.mastery-hint{ font-size:11px; color:var(--ink-dim); margin:8px 0 12px; }
+
+/* 아이템 숙련도(★)와 아이템별 초당 수입 */
+.item-card .item-stars{ font-size:11px; color:var(--gold); margin-top:4px; letter-spacing:1px; }
+.item-card .item-stars .off{ color:var(--ink-dim); opacity:0.4; }
+.item-card .item-income{ font-size:10px; color:var(--teal); margin-top:2px; }
+.item-card .item-next-star{ font-size:10px; color:var(--ink-dim); margin-top:2px; }

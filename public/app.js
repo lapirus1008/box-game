@@ -35,6 +35,49 @@ const collectionScreen = document.getElementById('collectionScreen');
 const rankingScreen = document.getElementById('rankingScreen');
 const authError = document.getElementById('authError');
 
+// 골드는 항상 소수점 없이, 천 단위 쉼표를 붙여 표시합니다.
+function formatGold(value){
+  return Math.floor(Number(value) || 0).toLocaleString();
+}
+
+// 아이템별 초당 수입 (도감/가방 카드 표시용, key → 초당 골드)
+let cachedItemIncome = {};
+
+function applyIncomePreview(preview){
+  cachedLegendaryCount = preview.legendaryCount;
+  cachedMythicCount = preview.mythicCount || 0;
+  cachedBaseIncome = preview.baseIncome;
+  cachedLegendaryIncome = preview.legendaryIncome;
+  cachedMythicIncome = preview.mythicIncome || 0;
+  cachedPerSecondIncome = preview.perSecondIncome;
+  cachedLastIncomeCollectedAt = preview.lastCollectedAt ? new Date(preview.lastCollectedAt) : null;
+  cachedItemIncome = {};
+  (preview.items || []).forEach(item => { cachedItemIncome[item.key] = item.incomePerSecond; });
+}
+
+// 칭호(수집가 등급)를 메인 화면과 가방·도감 화면에 표시합니다.
+function renderCollectorRank(rank){
+  ['collectorRankMain', 'collectorRankCollection'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!rank) { el.classList.add('hidden'); return; }
+    const nextText = rank.next
+      ? `다음 칭호 ${rank.next.emoji} ${rank.next.name}까지 ${rank.next.remaining}종 더 발견하기`
+      : '최고 칭호를 달성했어요!';
+    el.innerHTML = '';
+    el.append(`${rank.emoji} ${rank.name} · 도감 ${rank.obtainedCount}/${rank.total}`);
+    const next = document.createElement('span');
+    next.className = 'rank-next';
+    next.textContent = nextText;
+    el.appendChild(next);
+    el.classList.remove('hidden');
+  });
+}
+
+// ★ 표시: 채운 별 + 빈 별
+function renderStars(stars, maxStars){
+  return '★'.repeat(stars) + `<span class="off">${'★'.repeat(Math.max(0, maxStars - stars))}</span>`;
+}
+
 function syncServerTime(serverTimeStr){
   if (!serverTimeStr) return;
   serverTimeOffset = new Date(serverTimeStr).getTime() - Date.now();
@@ -246,15 +289,8 @@ async function refreshStatus(){
     document.getElementById('mainClaimBonusBtn')
       .classList.toggle('hidden', !(data.collectionComplete && !data.bonusClaimed));
 
-    if (data.passiveIncomePreview) {
-      cachedLegendaryCount = data.passiveIncomePreview.legendaryCount;
-      cachedMythicCount = data.passiveIncomePreview.mythicCount || 0;
-      cachedBaseIncome = data.passiveIncomePreview.baseIncome;
-      cachedLegendaryIncome = data.passiveIncomePreview.legendaryIncome;
-      cachedMythicIncome = data.passiveIncomePreview.mythicIncome || 0;
-      cachedPerSecondIncome = data.passiveIncomePreview.perSecondIncome;
-      cachedLastIncomeCollectedAt = new Date(data.passiveIncomePreview.lastCollectedAt);
-    }
+    if (data.passiveIncomePreview) applyIncomePreview(data.passiveIncomePreview);
+    if (data.collectorRank) renderCollectorRank(data.collectorRank);
     if (data.runStartedAt) cachedRunStartedAt = new Date(data.runStartedAt);
     if (typeof data.rebirthCount === 'number') {
       cachedRebirthCount = data.rebirthCount;
@@ -314,11 +350,11 @@ function renderTick(){
   let pendingGold = 0;
   if (cachedLastIncomeCollectedAt) {
     const pendingSeconds = Math.floor((adjustedNow() - cachedLastIncomeCollectedAt) / 1000);
-    pendingGold = Math.max(0, pendingSeconds) * cachedPerSecondIncome;
+    pendingGold = Math.floor(Math.max(0, pendingSeconds) * cachedPerSecondIncome);
   }
   const incomeLine = (cachedLegendaryCount > 0 || cachedMythicCount > 0)
-    ? `⏳ 초당 +${cachedPerSecondIncome}G (기본 ${cachedBaseIncome}${cachedLegendaryCount > 0 ? ` + 전설 ${cachedLegendaryIncome}` : ''}${cachedMythicCount > 0 ? ` + 신화 ${cachedMythicIncome}` : ''}) · 지금 +${pendingGold}G`
-    : `⏳ 초당 +${cachedBaseIncome}G 쌓이는 중 · 지금 +${pendingGold}G`;
+    ? `⏳ 초당 +${formatGold(cachedPerSecondIncome)}G (기본 ${formatGold(cachedBaseIncome)}${cachedLegendaryCount > 0 ? ` + 전설 ${formatGold(cachedLegendaryIncome)}` : ''}${cachedMythicCount > 0 ? ` + 신화 ${formatGold(cachedMythicIncome)}` : ''}) · 지금 +${formatGold(pendingGold)}G`
+    : `⏳ 초당 +${formatGold(cachedBaseIncome)}G 쌓이는 중 · 지금 +${formatGold(pendingGold)}G`;
   document.getElementById('pendingIncomeNearBtn').textContent = incomeLine;
   document.getElementById('hourlyIncomeText').textContent = incomeLine;
 
@@ -645,14 +681,14 @@ async function collectIncome(btnEl){
       const onMainScreen = !gameScreen.classList.contains('hidden');
       if (onMainScreen) {
         document.getElementById('rarityBadge').textContent = '';
-        document.getElementById('treasureName').textContent = `💰 +${data.earned}G`;
+        document.getElementById('treasureName').textContent = `💰 +${formatGold(data.earned)}G`;
         document.getElementById('treasureDetail').textContent = '패시브 수입을 받았습니다';
         document.getElementById('resultBox').style.display = 'block';
       } else {
         const craftResult = document.getElementById('craftResult');
         craftResult.style.display = 'block';
         craftResult.style.color = 'var(--teal)';
-        craftResult.textContent = `💰 +${data.earned}G 받았습니다!`;
+        craftResult.textContent = `💰 +${formatGold(data.earned)}G 받았습니다!`;
       }
     }
   } finally {
@@ -783,15 +819,8 @@ async function loadCollection(showLoadingText = true){
     if (data.isComplete && !data.bonusClaimed) claimBtn.classList.remove('hidden');
     else claimBtn.classList.add('hidden');
 
-    if (data.passiveIncomePreview) {
-      cachedLegendaryCount = data.passiveIncomePreview.legendaryCount;
-      cachedMythicCount = data.passiveIncomePreview.mythicCount || 0;
-      cachedBaseIncome = data.passiveIncomePreview.baseIncome;
-      cachedLegendaryIncome = data.passiveIncomePreview.legendaryIncome;
-      cachedMythicIncome = data.passiveIncomePreview.mythicIncome || 0;
-      cachedPerSecondIncome = data.passiveIncomePreview.perSecondIncome;
-      cachedLastIncomeCollectedAt = data.passiveIncomePreview.lastCollectedAt ? new Date(data.passiveIncomePreview.lastCollectedAt) : null;
-    }
+    if (data.passiveIncomePreview) applyIncomePreview(data.passiveIncomePreview);
+    if (data.collectorRank) renderCollectorRank(data.collectorRank);
     renderTick();
 
     // ── 수집모드 그리드: 평생 발견 기록 (전부 다 표시, 잠긴 건 ❔) ──
@@ -806,6 +835,10 @@ async function loadCollection(showLoadingText = true){
       card.innerHTML = `
         <span class="item-emoji">${item.obtained ? item.emoji : '❔'}</span>
         <div class="item-name">${item.obtained ? item.name : '???'}</div>
+        ${item.obtained ? `
+          <div class="item-stars">${renderStars(item.stars, item.maxStars)}</div>
+          <div class="item-next-star">${item.nextStarAt ? `다음 ★ ${item.count}/${item.nextStarAt}` : '★ 최대'}</div>
+        ` : ''}
       `;
       collectionGrid.appendChild(card);
     });
@@ -830,6 +863,8 @@ async function loadCollection(showLoadingText = true){
           <span class="item-emoji">${item.emoji}</span>
           <div class="item-name">${item.name}</div>
           <div class="item-count">x${item.count}</div>
+          <div class="item-stars">${renderStars(item.stars, item.maxStars)}</div>
+          ${cachedItemIncome[item.key] ? `<div class="item-income">초당 +${formatGold(cachedItemIncome[item.key])}G</div>` : ''}
           <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${isMaxRarity ? '최고 등급' : (isCraftLocked ? '합성 불가' : `합성(-${CRAFT_COST})`)}</button>
         `;
         runGrid.appendChild(card);
