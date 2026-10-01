@@ -117,20 +117,30 @@ function computeIncome(ownedCounts, claim) {
 // - 수집모드: 절대 지워지지 않는 영구 기록입니다.
 // 같은 아이템을 또 발견해도 딱 한 번만 기록됩니다 (최초 발견일만 남김).
 async function addItems(client, userId, mode, deltas) {
-  const keys = Object.keys(deltas).filter(key => deltas[key] !== 0);
-  if (keys.length === 0) return;
+  const gainedKeys = Object.keys(deltas).filter(key => deltas[key] > 0);
+  const spentKeys = Object.keys(deltas).filter(key => deltas[key] < 0);
 
+  // 소모(음수)는 이미 가진 아이템의 개수만 줄이는 UPDATE로 따로 처리합니다.
+  // INSERT ... ON CONFLICT에 음수를 넣으면, 충돌로 UPDATE가 되더라도 DB가 "넣으려던 값"(음수)을
+  // 먼저 검사해서 count >= 0 같은 제약에 걸리기 때문입니다.
+  if (spentKeys.length > 0) {
+    await client.query(
+      `UPDATE user_items SET count = user_items.count + t.amount
+       FROM unnest($3::text[], $4::int[]) AS t(item_key, amount)
+       WHERE user_items.user_id = $1 AND user_items.mode = $2 AND user_items.item_key = t.item_key`,
+      [userId, mode, spentKeys, spentKeys.map(key => deltas[key])]
+    );
+  }
+
+  if (gainedKeys.length === 0) return;
   await client.query(
     `INSERT INTO user_items (user_id, mode, item_key, count, first_obtained_at)
      SELECT $1, $2, t.item_key, t.amount, NOW()
      FROM unnest($3::text[], $4::int[]) AS t(item_key, amount)
      ON CONFLICT (user_id, mode, item_key)
      DO UPDATE SET count = user_items.count + EXCLUDED.count`,
-    [userId, mode, keys, keys.map(key => deltas[key])]
+    [userId, mode, gainedKeys, gainedKeys.map(key => deltas[key])]
   );
-
-  const gainedKeys = keys.filter(key => deltas[key] > 0);
-  if (gainedKeys.length === 0) return;
   await client.query(
     `INSERT INTO user_discoveries (user_id, mode, item_key, first_discovered_at)
      SELECT $1, $2, t.item_key, NOW()
