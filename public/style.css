@@ -560,7 +560,9 @@ body.mode-collection .collection-mode-notice{ display:block; }
   background:var(--surface-2);
   border-radius:10px;
 }
-.income-box span{ font-size:12px; color:var(--teal); }
+.income-text{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.income-pending{ font-size:14px; color:var(--teal); }
+.income-rate{ font-size:11px; color:var(--ink-dim); }
 
 .mode-tabs{
   display:flex;
@@ -586,18 +588,15 @@ body.mode-collection .collection-mode-notice{ display:block; }
 }
 .income-box button{
   width:auto;
+  flex-shrink:0;
+  white-space:nowrap;
   padding:6px 12px;
   font-size:12px;
   background:var(--teal);
   color:#0B1220;
   border-radius:8px;
 }
-.income-hint{
-  font-size:11px;
-  color:var(--ink-dim);
-  margin:-6px 0 12px;
-  text-align:center;
-}
+
 
 /* 도감 완료 알림 pill (메인 화면, 작게) */
 .claim-pill{
@@ -802,6 +801,7 @@ body.mode-collection .collection-mode-notice{ display:block; }
   font-size:13px;
   font-weight:600;
   color:var(--gold);
+  margin-bottom:12px;
 }
 .rank-badge .rank-next{
   display:block;
@@ -810,10 +810,28 @@ body.mode-collection .collection-mode-notice{ display:block; }
   font-weight:400;
   color:var(--ink-dim);
 }
-.mastery-hint{ font-size:11px; color:var(--ink-dim); margin:8px 0 12px; }
+.mastery-hint{ font-size:11px; color:var(--ink-dim); margin:0 0 12px; }
 
 /* 아이템 숙련도(★)와 아이템별 초당 수입 */
-.item-card .item-stars{ font-size:11px; color:var(--gold); margin-top:4px; letter-spacing:1px; }
+.item-card .item-stars{ font-size:11px; color:var(--gold); margin-top:2px; letter-spacing:1px; }
 .item-card .item-stars .off{ color:var(--ink-dim); opacity:0.4; }
 .item-card .item-income{ font-size:10px; color:var(--teal); margin-top:2px; }
 .item-card .item-next-star{ font-size:10px; color:var(--ink-dim); margin-top:2px; }
+
+/* 메인 화면 칭호: 모드 바 아래 한 줄짜리 칩 */
+.rank-chip{
+  display:inline-block;
+  margin:8px 0 0;
+  padding:4px 10px;
+  border-radius:999px;
+  background:var(--surface-2);
+  border:1px solid var(--gold-dim);
+  font-size:12px;
+  font-weight:600;
+  color:var(--gold);
+}
+.screen-sub{ font-size:12px; color:var(--ink-dim); margin:-10px 0 12px; }
+.screen-sub strong{ color:var(--gold); }
+
+.rebirth-box{ padding:12px 14px; }
+.rebirth-box .collection-link{ margin-top:4px; }

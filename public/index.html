@@ -69,7 +69,7 @@
       <button id="switchModeBtn">📖 수집모드로</button>
     </div>
 
-    <div class="rank-badge hidden" id="collectorRankMain"></div>
+    <div class="rank-chip hidden" id="collectorRankMain"></div>
 
     <button class="claim-pill hidden" id="mainClaimBonusBtn">🎉 도감 완료! 보상 받기</button>
 
@@ -139,13 +139,15 @@
       <div class="goal-bar-wrap"><div class="goal-bar-fill" id="rebirthGoalBar"></div></div>
     </div>
 
-    <button class="btn-primary record-only" id="mainRebirthBtn" disabled style="margin:10px 0 12px;">✨ 환생하기! (100,000G)</button>
+    <button class="btn-primary record-only hidden" id="mainRebirthBtn" disabled style="margin:10px 0 12px;">✨ 환생하기! (100,000G)</button>
 
     <div class="income-box" id="mainIncomeBox">
-      <span id="pendingIncomeNearBtn"></span>
+      <div class="income-text">
+        <strong class="income-pending" data-income="pending"></strong>
+        <small class="income-rate" data-income="rate"></small>
+      </div>
       <button id="collectIncomeBtnMain">받기</button>
     </div>
-    <p class="income-hint">💡 기본 초당 1G + 전설 1개당 +1G · 신화 1개당 +5G</p>
 
     <div class="nav-grid">
       <button class="nav-tile" id="openCollectionBtn">🎒 가방 · 도감</button>
@@ -157,23 +159,24 @@
   <!-- 도감 화면 -->
   <div class="card hidden" id="collectionScreen">
     <div class="top-row">
-      <h1 style="margin:0; font-size:20px;">도감</h1>
+      <h1 style="margin:0; font-size:20px;">가방 · 도감</h1>
       <button id="backToGameBtn">← 돌아가기</button>
     </div>
-    <p style="font-size:13px; color:var(--gold); margin-top:-10px; margin-bottom:4px;">보유 골드: <strong id="shopGold">0</strong></p>
-    <p style="font-size:11px; color:var(--ink-dim); margin:0 0 12px;" id="collectionModeSubtext"></p>
+    <p class="screen-sub">💰 <strong id="shopGold">0</strong>G · <span id="collectionModeSubtext"></span></p>
     <div class="rank-badge hidden" id="collectorRankCollection"></div>
-    <p class="mastery-hint">같은 아이템을 10 · 30 · 100 · 300개 모을 때마다 ★가 붙어요. 전설·신화는 ★ 1개당 초당 수입 +10%!</p>
 
     <div class="rebirth-box record-only">
       <p class="rebirth-top"><span>🌀 환생 진행도</span><span id="rebirthProgressText" style="color:var(--gold);">0 / 100,000G</span></p>
-      <button class="btn-primary" id="rebirthBtn" disabled style="margin-bottom:8px;">✨ 환생하기 (100,000G)</button>
+      <button class="btn-primary hidden" id="rebirthBtn" disabled style="margin-bottom:8px;">✨ 환생하기 (100,000G)</button>
       <button class="collection-link" id="toggleRebirthHistoryBtn" style="margin:0; font-size:12px;">환생 기록 보기</button>
       <div class="hidden" id="rebirthHistoryList" style="margin-top:8px; font-size:12px; color:var(--ink-dim);"></div>
     </div>
 
     <div class="income-box" id="collectionIncomeBox">
-      <span id="hourlyIncomeText"></span>
+      <div class="income-text">
+        <strong class="income-pending" data-income="pending"></strong>
+        <small class="income-rate" data-income="rate"></small>
+      </div>
       <button id="collectIncomeBtnCollection">받기</button>
     </div>
 
@@ -187,7 +190,8 @@
 
     <!-- 도감: 발견 기록 (기록모드는 이번 판 한정, 수집모드는 영구) -->
     <div id="collectionModeView" class="hidden">
-      <p style="font-size:13px; color:var(--ink-dim); margin:0 0 12px;">수집 진행도: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong></p>
+      <p style="font-size:13px; color:var(--ink-dim); margin:0 0 4px;">수집 진행도: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong></p>
+      <p class="mastery-hint">같은 아이템을 10·30·100·300개 모으면 ★ · 전설·신화는 ★당 수입 +10%</p>
       <button class="btn-primary hidden" id="claimBonusBtn" style="margin-bottom:16px;">🎉 도감 완성 보상 받기</button>
       <div class="collection-grid" id="collectionGrid"></div>
     </div>

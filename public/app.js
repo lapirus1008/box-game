@@ -57,20 +57,28 @@ function applyIncomePreview(preview){
 
 // 칭호(수집가 등급)를 메인 화면과 가방·도감 화면에 표시합니다.
 function renderCollectorRank(rank){
-  ['collectorRankMain', 'collectorRankCollection'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!rank) { el.classList.add('hidden'); return; }
-    const nextText = rank.next
-      ? `다음 칭호 ${rank.next.emoji} ${rank.next.name}까지 ${rank.next.remaining}종 더 발견하기`
-      : '최고 칭호를 달성했어요!';
-    el.innerHTML = '';
-    el.append(`${rank.emoji} ${rank.name} · 도감 ${rank.obtainedCount}/${rank.total}`);
-    const next = document.createElement('span');
-    next.className = 'rank-next';
-    next.textContent = nextText;
-    el.appendChild(next);
-    el.classList.remove('hidden');
-  });
+  const main = document.getElementById('collectorRankMain');
+  const detail = document.getElementById('collectorRankCollection');
+  if (!rank) {
+    main.classList.add('hidden');
+    detail.classList.add('hidden');
+    return;
+  }
+  const title = `${rank.emoji} ${rank.name}`;
+  const nextText = rank.next
+    ? `다음 칭호 ${rank.next.emoji} ${rank.next.name}까지 ${rank.next.remaining}종`
+    : '최고 칭호 달성!';
+
+  main.textContent = `${title} · 도감 ${rank.obtainedCount}/${rank.total}`;
+  main.classList.remove('hidden');
+
+  detail.innerHTML = '';
+  detail.append(title);
+  const next = document.createElement('span');
+  next.className = 'rank-next';
+  next.textContent = nextText;
+  detail.appendChild(next);
+  detail.classList.remove('hidden');
 }
 
 // ★ 표시: 채운 별 + 빈 별
@@ -204,13 +212,13 @@ function applyModeUI(mode){
   document.getElementById('switchModeBtn').textContent = isRecord ? '📖 수집모드로' : '🏆 기록모드로';
 
   document.getElementById('collectionModeSubtext').textContent = isRecord
-    ? '기록모드: 도감은 이번 판 한정이에요. 환생하면 함께 초기화돼요.'
-    : '수집모드: 도감은 영구 보존돼요. 환생도, 초기화도 없어요.';
+    ? '도감은 이번 판 한정 (환생 시 초기화)'
+    : '도감 영구 보존';
 
   document.getElementById('modeTabRun').textContent = '🎒 가방';
   document.getElementById('runModeHint').textContent = isRecord
-    ? '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (전설까지만, 신화는 상자에서만!) · 환생하면 비워져요'
-    : '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (전설까지만, 신화는 상자에서만!)';
+    ? '같은 아이템 3개 → 한 등급 위로 합성 (영웅→전설까지) · 환생하면 비워져요'
+    : '같은 아이템 3개 → 한 등급 위로 합성 (영웅→전설까지)';
 }
 
 async function switchMode(targetMode){
@@ -352,11 +360,15 @@ function renderTick(){
     const pendingSeconds = Math.floor((adjustedNow() - cachedLastIncomeCollectedAt) / 1000);
     pendingGold = Math.floor(Math.max(0, pendingSeconds) * cachedPerSecondIncome);
   }
-  const incomeLine = (cachedLegendaryCount > 0 || cachedMythicCount > 0)
-    ? `⏳ 초당 +${formatGold(cachedPerSecondIncome)}G (기본 ${formatGold(cachedBaseIncome)}${cachedLegendaryCount > 0 ? ` + 전설 ${formatGold(cachedLegendaryIncome)}` : ''}${cachedMythicCount > 0 ? ` + 신화 ${formatGold(cachedMythicIncome)}` : ''}) · 지금 +${formatGold(pendingGold)}G`
-    : `⏳ 초당 +${formatGold(cachedBaseIncome)}G 쌓이는 중 · 지금 +${formatGold(pendingGold)}G`;
-  document.getElementById('pendingIncomeNearBtn').textContent = incomeLine;
-  document.getElementById('hourlyIncomeText').textContent = incomeLine;
+  const breakdown = [`기본 ${formatGold(cachedBaseIncome)}`];
+  if (cachedLegendaryCount > 0) breakdown.push(`전설 ${formatGold(cachedLegendaryIncome)}`);
+  if (cachedMythicCount > 0) breakdown.push(`신화 ${formatGold(cachedMythicIncome)}`);
+  const pendingText = `⏳ +${formatGold(pendingGold)}G 쌓임`;
+  const rateText = breakdown.length > 1
+    ? `초당 ${formatGold(cachedPerSecondIncome)}G (${breakdown.join(' + ')})`
+    : `초당 ${formatGold(cachedPerSecondIncome)}G`;
+  document.querySelectorAll('[data-income="pending"]').forEach(el => { el.textContent = pendingText; });
+  document.querySelectorAll('[data-income="rate"]').forEach(el => { el.textContent = rateText; });
 
   // 환생 목표 진행바
   const goldNow = parseInt(document.getElementById('totalTreasure').textContent.replace(/,/g, ''), 10) || 0;
@@ -368,7 +380,9 @@ function renderTick(){
   const goalReady = goldNow >= REBIRTH_GOLD_REQUIRED;
   goalBox.style.borderColor = goalReady ? 'var(--gold)' : '#2C3F6B';
   goalBox.style.boxShadow = goalReady ? '0 0 12px rgba(227,178,60,0.4)' : 'none';
-  document.getElementById('mainRebirthBtn').disabled = !goalReady;
+  const mainRebirthBtn = document.getElementById('mainRebirthBtn');
+  mainRebirthBtn.disabled = !goalReady;
+  mainRebirthBtn.classList.toggle('hidden', !goalReady); // 환생 가능할 때만 버튼 노출
 
   clampBulkOpenQty();
   clampBuyBoxQty();
@@ -516,7 +530,7 @@ function updatePityUI(pity, limit){
   box.classList.toggle('imminent', imminent);
   hint.textContent = imminent
     ? '🔥 다음 상자는 신화 확정!'
-    : `${remaining.toLocaleString()}번째 상자까지 신화가 안 나오면 확정 · 신화가 나오면 초기화`;
+    : `${remaining.toLocaleString()}개 더 열면 신화 확정`;
 }
 
 const mythicQueue = [];
@@ -813,7 +827,9 @@ async function loadCollection(showLoadingText = true){
     document.getElementById('collectionProgress').textContent = `${data.progress.obtained}/${data.progress.total}`;
     document.getElementById('rebirthProgressText').textContent =
       `${data.totalTreasure.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
-    document.getElementById('rebirthBtn').disabled = data.totalTreasure < REBIRTH_GOLD_REQUIRED;
+    const canRebirth = data.totalTreasure >= REBIRTH_GOLD_REQUIRED;
+    document.getElementById('rebirthBtn').disabled = !canRebirth;
+    document.getElementById('rebirthBtn').classList.toggle('hidden', !canRebirth);
 
     const claimBtn = document.getElementById('claimBonusBtn');
     if (data.isComplete && !data.bonusClaimed) claimBtn.classList.remove('hidden');
