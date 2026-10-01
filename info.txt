@@ -17,7 +17,8 @@ box-game/                    ← GitHub 저장소 루트
 │   ├── rateLimit.js           요청 횟수 제한(limiter) 생성
 │   └── token.js               JWT 발급/검증
 ├── migrations/
-│   └── 001_idle_progression.sql  업그레이드·자동화·환생 포인트 컬럼 추가
+│   ├── 001_idle_progression.sql  업그레이드·자동화·환생 포인트 컬럼 추가
+│   └── 002_auto_open_time_and_prestige_shop.sql  자동 개봉 시간·환생 상점 컬럼 추가
 ├── middleware/
 │   └── auth.js                로그인 토큰(JWT) 검증
 └── public/

@@ -18,16 +18,18 @@ const {
   MAX_AUTO_OPEN_PER_SYNC,
   RESET_GOLD,
   TREASURES,
+  PERK_START_GOLD,
+  PERK_START_AUTO_OPEN_MS,
 } = require('./config');
-const { getItemStars, getClaimStats, rollBoxes, craftCascade } = require('./logic');
+const { getItemStars, getClaimStats, getPerkLevel, rollBoxes, craftCascade } = require('./logic');
 
 // box_claims에서 게임 진행에 필요한 컬럼 전체
 const CLAIM_COLUMNS = [
   'total_treasure', 'box_charges', 'last_charge_calculated_at', 'last_income_collected_at',
   'mythic_pity', 'completion_bonus_claimed', 'rebirth_count', 'run_started_at',
   'upgrade_income', 'upgrade_charge_speed', 'upgrade_capacity', 'upgrade_luck',
-  'auto_open_unlocked', 'auto_open_enabled', 'auto_craft_unlocked', 'auto_craft_enabled',
-  'prestige_points', 'run_gold_earned', 'last_active_at',
+  'auto_open_enabled', 'auto_open_remaining_ms', 'auto_craft_unlocked', 'auto_craft_enabled',
+  'prestige_points', 'prestige_perks', 'run_gold_earned', 'last_active_at',
 ];
 
 // 이 요청 시점에 유저가 어떤 모드(기록/수집)를 쓰고 있는지 확인합니다.
@@ -152,8 +154,9 @@ async function addItems(client, userId, mode, deltas) {
 
 // 세이브를 "지금 시각" 기준으로 정산합니다. (동시 요청 안전성을 위해 FOR UPDATE 사용)
 // 1. 마지막 정산 이후 쌓인 골드를 지급
-// 2. 흐른 시간만큼 충전을 채우고, 자동 개봉이 켜져 있으면 충전된 상자를 전부 열기
+// 2. 흐른 시간만큼 충전을 채우고, 자동 개봉 시간이 남아 있으면 그동안 충전된 상자를 열기
 // 3. 자동 합성이 켜져 있으면 가능한 만큼 합성
+// 흐른 시간은 창고의 보관 시간까지만 인정합니다. (오래 비우면 그 뒤로는 쌓이지 않음)
 // 세이브가 없으면 null을 돌려줍니다.
 async function settle(client, userId, mode) {
   const claim = await getClaim(client, userId, mode, CLAIM_COLUMNS, { forUpdate: true });
@@ -172,36 +175,47 @@ async function settle(client, userId, mode) {
 
   // 1. 골드: 지금까지 들고 있던 아이템 기준으로 계산 (이번 정산에서 새로 얻은 아이템은 다음 정산부터 반영)
   const income = computeIncome(owned, claim);
-  const elapsedSeconds = Math.max(0, (now - new Date(claim.last_income_collected_at)) / 1000);
-  const earned = Math.floor(elapsedSeconds * income.perMinuteIncome / 60);
+  const incomeElapsedMs = Math.max(0, now - new Date(claim.last_income_collected_at));
+  const storageCapped = incomeElapsedMs > stats.storageMs;
+  const earned = Math.floor(Math.min(incomeElapsedMs, stats.storageMs) / 1000 * income.perMinuteIncome / 60);
   const gold = parseInt(claim.total_treasure, 10) + earned;
   const runGoldEarned = parseInt(claim.run_gold_earned, 10) + earned;
 
   // 2. 충전 (+ 자동 개봉)
   const lastCalc = new Date(claim.last_charge_calculated_at);
-  const gained = Math.max(0, Math.floor((now - lastCalc) / stats.chargeIntervalMs));
+  const chargeElapsedMs = Math.max(0, now - lastCalc);
+  const countedMs = Math.min(chargeElapsedMs, stats.storageMs);
+  const gained = Math.floor(countedMs / stats.chargeIntervalMs);
+
   let charges = claim.box_charges;
-  let newLastCalc = lastCalc;
   let pity = claim.mythic_pity;
+  let autoOpenRemainingMs = Number(claim.auto_open_remaining_ms);
   let autoOpened = null;
 
-  if (claim.auto_open_enabled) {
-    // 자동 개봉은 창고 한도와 상관없이 그동안 쌓였을 상자를 전부 엽니다 (너무 많으면 상한까지만)
-    const toOpen = Math.min(MAX_AUTO_OPEN_PER_SYNC, charges + gained);
-    newLastCalc = new Date(lastCalc.getTime() + gained * stats.chargeIntervalMs);
-    charges = 0;
+  const autoActive = claim.auto_open_enabled && autoOpenRemainingMs > 0;
+  if (autoActive) {
+    // 자동 개봉 시간이 남아 있는 구간에 충전된 상자(+이미 쌓여 있던 상자)를 엽니다.
+    // 시간이 중간에 다 떨어졌다면, 그 뒤로 충전된 상자는 평소처럼 쌓입니다.
+    const autoMs = Math.min(countedMs, autoOpenRemainingMs);
+    const autoGained = Math.min(gained, Math.floor(autoMs / stats.chargeIntervalMs));
+    const toOpen = Math.min(MAX_AUTO_OPEN_PER_SYNC, charges + autoGained);
+    autoOpenRemainingMs -= autoMs;
+    charges = Math.min(stats.maxCharges, gained - autoGained);
     if (toOpen > 0) {
       const rolled = rollBoxes(pity, toOpen, stats.luckLevel);
       pity = rolled.pity;
       applyDeltas(rolled.counts);
       autoOpened = { count: toOpen, counts: rolled.counts, pityTriggered: rolled.pityTriggered };
     }
-  } else if (gained > 0) {
+  } else {
     charges = Math.min(stats.maxCharges, charges + gained);
-    newLastCalc = charges >= stats.maxCharges ? now : new Date(lastCalc.getTime() + gained * stats.chargeIntervalMs);
-  } else if (charges >= stats.maxCharges) {
-    newLastCalc = now; // 꽉 찬 상태에서는 타이머를 멈춰둡니다
   }
+
+  const stillAuto = claim.auto_open_enabled && autoOpenRemainingMs > 0;
+  // 보관 시간을 넘겼거나 충전이 꽉 찬 상태라면 타이머를 지금부터 다시 시작합니다.
+  const newLastCalc = (chargeElapsedMs > stats.storageMs || (!stillAuto && charges >= stats.maxCharges))
+    ? now
+    : new Date(lastCalc.getTime() + gained * stats.chargeIntervalMs);
 
   // 3. 자동 합성
   let autoCrafted = null;
@@ -221,6 +235,7 @@ async function settle(client, userId, mode) {
     box_charges: charges,
     last_charge_calculated_at: newLastCalc,
     mythic_pity: pity,
+    auto_open_remaining_ms: autoOpenRemainingMs,
     last_active_at: now,
   });
 
@@ -232,9 +247,10 @@ async function settle(client, userId, mode) {
     box_charges: charges,
     last_charge_calculated_at: newLastCalc,
     mythic_pity: pity,
+    auto_open_remaining_ms: autoOpenRemainingMs,
     last_active_at: now,
   };
-  const nextChargeInMs = (claim.auto_open_enabled || charges < stats.maxCharges)
+  const nextChargeInMs = (stillAuto || charges < stats.maxCharges)
     ? stats.chargeIntervalMs - (now - newLastCalc)
     : null;
 
@@ -245,6 +261,7 @@ async function settle(client, userId, mode) {
     now,
     earned,
     previousActiveAt: claim.last_active_at ? new Date(claim.last_active_at) : null,
+    storageCapped,
     autoOpened,
     autoCrafted,
     // 아이템이 바뀌었을 수 있으니 수입은 정산 후 보유 기준으로 다시 계산해서 돌려줍니다.
@@ -255,8 +272,14 @@ async function settle(client, userId, mode) {
 
 // 현재 모드의 세이브를 "이번 판" 처음 상태로 되돌립니다. (초심으로 돌아가기 / 환생 공용)
 // 보유 아이템과 도감(발견기록)을 지우고, 골드·충전·천장·업그레이드·자동화를 초기화합니다.
-// 환생 포인트는 남겨두고, 환생이라면 이번 판에서 얻은 포인트를 더합니다.
-async function resetSave(client, userId, mode, now, { rebirthCount = null, prestigeGain = 0 } = {}) {
+// 환생 포인트와 상점 특성은 남겨두고, 환생이라면 이번 판에서 얻은 포인트를 더합니다.
+// 시작 골드·자동 개봉 시간·자동 합성은 환생 상점 특성(perks)을 반영합니다.
+// 반환: 새 판의 시작 골드
+async function resetSave(client, userId, mode, now, { rebirthCount = null, prestigeGain = 0, claim = {} } = {}) {
+  const startGold = RESET_GOLD + getPerkLevel(claim, 'startGold') * PERK_START_GOLD;
+  const startAutoOpenMs = getPerkLevel(claim, 'startAuto') * PERK_START_AUTO_OPEN_MS;
+  const startAutoCraft = getPerkLevel(claim, 'autoCraft') > 0;
+
   await client.query('DELETE FROM user_items WHERE user_id = $1 AND mode = $2', [userId, mode]);
   await client.query('DELETE FROM user_discoveries WHERE user_id = $1 AND mode = $2', [userId, mode]);
   await client.query(
@@ -273,16 +296,17 @@ async function resetSave(client, userId, mode, now, { rebirthCount = null, prest
          upgrade_charge_speed = 0,
          upgrade_capacity = 0,
          upgrade_luck = 0,
-         auto_open_unlocked = FALSE,
-         auto_open_enabled = FALSE,
-         auto_craft_unlocked = FALSE,
-         auto_craft_enabled = FALSE,
+         auto_open_enabled = TRUE,
+         auto_open_remaining_ms = $7,
+         auto_craft_unlocked = $8,
+         auto_craft_enabled = $8,
          run_gold_earned = 0,
          prestige_points = prestige_points + $6,
          last_active_at = $2
      WHERE user_id = $3 AND mode = $4`,
-    [RESET_GOLD, now, userId, mode, rebirthCount, prestigeGain]
+    [startGold, now, userId, mode, rebirthCount, prestigeGain, startAutoOpenMs, startAutoCraft]
   );
+  return startGold;
 }
 
 // 환생 포인트는 기록모드에서만 의미가 있습니다.

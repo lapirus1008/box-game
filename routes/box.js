@@ -19,9 +19,10 @@
 //
 // [방치형 성장 구조]
 // - 골드는 시간이 지나면 자동으로 쌓입니다. 기본 분당 60G + 보유 아이템마다 등급별 분당 골드.
-// - 상자는 시간이 지날수록 충전이 쌓이고(기본 최대 100개), 원할 때 열 수 있습니다.
-// - 골드로 업그레이드(수입·충전 속도·창고·행운)와 자동화(자동 개봉·자동 합성)를 살 수 있습니다.
-// - 기록모드에서는 10만 골드를 모으면 "환생"해서 영구 수입 보너스(환생 포인트)를 받고 다시 시작합니다.
+// - 상자는 시간이 지날수록 충전이 쌓이고(최대 100개), 원할 때 열 수 있습니다.
+// - 자리를 비운 시간은 창고의 "보관 시간"까지만 인정됩니다 (기본 4시간).
+// - 골드로 업그레이드(수입·충전 속도·창고·행운), 자동 개봉 시간(시간 충전식), 자동 합성을 살 수 있습니다.
+// - 기록모드에서는 10만 골드를 모으면 "환생"해서 환생 포인트를 받고, 환생 상점에서 영구 특성을 삽니다.
 //
 // 게임 수치는 game/config.js, 확률/계산 로직은 game/logic.js, DB 읽기·쓰기는 game/store.js에 있습니다.
 
@@ -38,16 +39,16 @@ const {
   COMPLETION_BONUS_GOLD,
   REBIRTH_GOLD_REQUIRED,
   MAX_BOX_CHARGES,
-  CAPACITY_PER_LEVEL,
   GOLD_PER_BOX_PURCHASE,
   MAX_GOLD_BOX_PURCHASE,
-  RESET_GOLD,
   MYTHIC_PITY_LIMIT,
   MASTERY_THRESHOLDS,
   UPGRADES,
-  AUTOMATIONS,
+  AUTO_CRAFT,
+  HOUR_MS,
   PRESTIGE_GOLD_PER_POINT,
-  PRESTIGE_INCOME_PERCENT_PER_POINT,
+  PRESTIGE_PERKS,
+  PERK_INCOME_PERCENT,
   AWAY_SUMMARY_MIN_MS,
 } = require('../game/config');
 const {
@@ -61,6 +62,9 @@ const {
   getCollectorRank,
   getUpgradeCost,
   describeUpgradeEffect,
+  getPerkLevel,
+  getAutoOpenCostPerHour,
+  formatHours,
   getPrestigePointsForRun,
 } = require('../game/logic');
 const store = require('../game/store');
@@ -72,8 +76,6 @@ router.use(verifyToken);
 
 const NOT_STARTED_MESSAGE = '아직 게임을 시작하지 않았습니다.';
 const LEADERBOARD_PAGE_SIZE = 10;
-// 창고를 끝까지 확장했을 때의 최대 충전 (일괄 열기 수량의 절대 상한)
-const MAX_POSSIBLE_CHARGES = MAX_BOX_CHARGES + UPGRADES.find(u => u.key === 'capacity').maxLevel * CAPACITY_PER_LEVEL;
 
 // 요청 body의 quantity를 검사해서 1 ~ max 사이의 정수로 돌려줍니다.
 function parseQuantity(rawQuantity, max, overMaxMessage) {
@@ -122,10 +124,13 @@ function autoEventResponse(save) {
 }
 
 // 업그레이드 상점 / 자동화 / 환생 포인트 정보 (화면 표시용)
-function progressionResponse(mode, claim) {
+function progressionResponse(mode, save) {
+  const { claim, stats } = save;
   const prestigeEnabled = store.isPrestigeMode(mode);
   const pointsOnRebirth = prestigeEnabled ? getPrestigePointsForRun(claim.run_gold_earned) : 0;
+  const autoOpenRemainingMs = Number(claim.auto_open_remaining_ms);
   return {
+    storageMs: stats.storageMs,
     upgrades: UPGRADES.map(upgrade => {
       const level = claim[upgrade.column];
       const isMax = level >= upgrade.maxLevel;
@@ -140,23 +145,37 @@ function progressionResponse(mode, claim) {
         nextEffect: isMax ? null : describeUpgradeEffect(upgrade.key, level + 1),
       };
     }),
-    automation: AUTOMATIONS.map(auto => ({
-      key: auto.key,
-      name: auto.name,
-      emoji: auto.emoji,
-      desc: auto.desc,
-      cost: auto.cost,
-      unlocked: claim[auto.unlockedColumn],
-      enabled: claim[auto.enabledColumn],
-    })),
+    autoOpen: {
+      enabled: claim.auto_open_enabled,
+      remainingMs: autoOpenRemainingMs,
+      maxMs: stats.storageMs,
+      costPerHour: getAutoOpenCostPerHour(save.income.perMinuteIncome),
+    },
+    autoCraft: {
+      key: AUTO_CRAFT.key,
+      name: AUTO_CRAFT.name,
+      emoji: AUTO_CRAFT.emoji,
+      desc: AUTO_CRAFT.desc,
+      cost: AUTO_CRAFT.cost,
+      unlocked: claim[AUTO_CRAFT.unlockedColumn],
+      enabled: claim[AUTO_CRAFT.enabledColumn],
+    },
     prestige: {
       enabled: prestigeEnabled,
       points: claim.prestige_points,
-      incomeBonusPercent: claim.prestige_points * PRESTIGE_INCOME_PERCENT_PER_POINT,
-      incomePercentPerPoint: PRESTIGE_INCOME_PERCENT_PER_POINT,
+      incomeBonusPercent: getPerkLevel(claim, 'income') * PERK_INCOME_PERCENT,
       runGoldEarned: parseInt(claim.run_gold_earned, 10),
       pointsOnRebirth,
       nextPointAt: (pointsOnRebirth + 1) * PRESTIGE_GOLD_PER_POINT,
+      perks: PRESTIGE_PERKS.map(perk => ({
+        key: perk.key,
+        emoji: perk.emoji,
+        name: perk.name,
+        desc: perk.desc,
+        cost: perk.cost,
+        level: getPerkLevel(claim, perk.key),
+        maxLevel: perk.maxLevel,
+      })),
     },
   };
 }
@@ -174,6 +193,8 @@ function awaySummary(save) {
     : [];
   return {
     awayMs,
+    storageCapped: save.storageCapped,
+    storageText: formatHours(save.stats.storageMs),
     goldEarned: save.earned,
     autoOpenedCount: opened ? opened.count : 0,
     autoCraftCount: save.autoCrafted ? save.autoCrafted.count : 0,
@@ -208,7 +229,7 @@ router.post('/mode', handle('서버 오류로 모드를 전환하지 못했습�
 
 // 충전으로 상자를 열 수 있는지 확인합니다.
 function assertCanOpen(save, quantity) {
-  if (save.claim.auto_open_enabled) {
+  if (save.claim.auto_open_enabled && Number(save.claim.auto_open_remaining_ms) > 0) {
     throw new HttpError(400, '자동 개봉이 켜져 있어서 충전된 상자는 자동으로 열려요.', chargeResponse(save.chargeInfo));
   }
   if (save.chargeInfo.charges < quantity) {
@@ -260,8 +281,8 @@ router.post('/bulk-open', handle('서버 오류로 일괄 열기에 실패했습
   const userId = req.user.userId;
   const quantity = parseQuantity(
     req.body.quantity,
-    MAX_POSSIBLE_CHARGES,
-    `한 번에 최대 ${MAX_POSSIBLE_CHARGES}개까지만 열 수 있습니다.`
+    MAX_BOX_CHARGES,
+    `한 번에 최대 ${MAX_BOX_CHARGES}개까지만 열 수 있습니다.`
   );
 
   return withSave(userId, async (client, mode, save) => {
@@ -363,7 +384,7 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       collectorRank: getCollectorRank(obtainedCount),
       rebirthCount: claim.rebirth_count,
       runStartedAt: claim.run_started_at,
-      ...progressionResponse(mode, claim),
+      ...progressionResponse(mode, save),
       ...autoEventResponse(save),
       awaySummary: awaySummary(save),
     };
@@ -416,13 +437,64 @@ router.post('/upgrade', handle('서버 오류로 업그레이드에 실패했습
 }));
 
 // -------------------------------
-// 자동화 구매 / 켜기·끄기: POST /api/box/automation { key, enabled }
+// 자동 개봉 시간 구매 / 켜기·끄기: POST /api/box/auto-open { hours | enabled }
+// -------------------------------
+// - hours: 1 이상의 정수 또는 'max'(보관 시간까지 가득). 산 만큼 자동 개봉이 돌아갑니다.
+// - enabled: 켜고 끄기. 끄면 남은 시간이 줄지 않습니다.
+router.post('/auto-open', handle('서버 오류로 자동 개봉 설정에 실패했습니다.', async (req) => {
+  const userId = req.user.userId;
+  const { hours, enabled } = req.body;
+
+  return withSave(userId, async (client, mode, save) => {
+    const gold = save.claim.total_treasure;
+    const remainingMs = Number(save.claim.auto_open_remaining_ms);
+    const maxMs = save.stats.storageMs;
+
+    if (hours === undefined) {
+      const on = Boolean(enabled);
+      await store.updateClaim(client, userId, mode, { auto_open_enabled: on });
+      return { message: `⏳ 자동 개봉을 ${on ? '켰어요' : '껐어요'}.`, mode, enabled: on, totalTreasure: gold };
+    }
+
+    const spaceMs = Math.max(0, maxMs - remainingMs);
+    let addMs;
+    if (hours === 'max') {
+      addMs = spaceMs;
+    } else {
+      const n = parseInt(hours, 10);
+      if (!Number.isInteger(n) || n < 1) throw new HttpError(400, '구매할 시간은 1시간 이상이어야 합니다.');
+      addMs = n * HOUR_MS;
+    }
+    if (addMs <= 0 || addMs > spaceMs) {
+      throw new HttpError(400, `자동 개봉 시간은 보관 시간(${formatHours(maxMs)})까지만 채울 수 있어요. 창고를 늘려보세요!`);
+    }
+
+    const cost = Math.ceil(getAutoOpenCostPerHour(save.income.perMinuteIncome) * addMs / HOUR_MS);
+    if (gold < cost) throw new HttpError(400, `골드가 부족합니다. (필요: ${cost.toLocaleString()}G)`);
+
+    const newRemaining = remainingMs + addMs;
+    await store.updateClaim(client, userId, mode, {
+      total_treasure: gold - cost,
+      auto_open_remaining_ms: newRemaining,
+      auto_open_enabled: true,
+    });
+    return {
+      message: `⏳ 자동 개봉 시간 +${formatHours(addMs)}! (남은 시간 ${formatHours(newRemaining)})`,
+      mode,
+      enabled: true,
+      remainingMs: newRemaining,
+      totalTreasure: gold - cost,
+    };
+  });
+}));
+
+// -------------------------------
+// 자동 합성 구매 / 켜기·끄기: POST /api/box/auto-craft { enabled }
 // -------------------------------
 // 아직 잠겨 있으면 골드를 내고 해금(켜진 상태로 시작)하고, 해금돼 있으면 enabled 값으로 켜고 끕니다.
-router.post('/automation', handle('서버 오류로 자동화 설정에 실패했습니다.', async (req) => {
+router.post('/auto-craft', handle('서버 오류로 자동 합성 설정에 실패했습니다.', async (req) => {
   const userId = req.user.userId;
-  const auto = AUTOMATIONS.find(a => a.key === req.body.key);
-  if (!auto) throw new HttpError(400, '존재하지 않는 자동화입니다.');
+  const auto = AUTO_CRAFT;
 
   return withSave(userId, async (client, mode, save) => {
     const gold = save.claim.total_treasure;
@@ -434,12 +506,53 @@ router.post('/automation', handle('서버 오류로 자동화 설정에 실패�
         [auto.unlockedColumn]: true,
         [auto.enabledColumn]: true,
       });
-      return { message: `${auto.emoji} ${auto.name}을(를) 해금했어요!`, mode, key: auto.key, unlocked: true, enabled: true, totalTreasure: gold - auto.cost };
+      return { message: `${auto.emoji} ${auto.name}을(를) 해금했어요!`, mode, unlocked: true, enabled: true, totalTreasure: gold - auto.cost };
     }
 
-    const enabled = Boolean(req.body.enabled);
-    await store.updateClaim(client, userId, mode, { [auto.enabledColumn]: enabled });
-    return { message: `${auto.emoji} ${auto.name}을(를) ${enabled ? '켰어요' : '껐어요'}.`, mode, key: auto.key, unlocked: true, enabled, totalTreasure: gold };
+    const on = Boolean(req.body.enabled);
+    await store.updateClaim(client, userId, mode, { [auto.enabledColumn]: on });
+    return { message: `${auto.emoji} ${auto.name}을(를) ${on ? '켰어요' : '껐어요'}.`, mode, unlocked: true, enabled: on, totalTreasure: gold };
+  });
+}));
+
+// -------------------------------
+// 환생 상점: POST /api/box/prestige-shop { key } (기록모드 전용)
+// -------------------------------
+// 환생 포인트로 영구 특성을 삽니다. 시작 자금·자동 개봉 비축은 다음 판부터 적용됩니다.
+router.post('/prestige-shop', handle('서버 오류로 구매에 실패했습니다.', async (req) => {
+  const userId = req.user.userId;
+  const perk = PRESTIGE_PERKS.find(p => p.key === req.body.key);
+  if (!perk) throw new HttpError(400, '존재하지 않는 특성입니다.');
+
+  return withSave(userId, async (client, mode, save) => {
+    if (!store.isPrestigeMode(mode)) throw new HttpError(400, '환생 상점은 기록모드에서만 이용할 수 있어요.');
+
+    const level = getPerkLevel(save.claim, perk.key);
+    if (level >= perk.maxLevel) throw new HttpError(400, '이미 최대 레벨입니다.');
+    if (save.claim.prestige_points < perk.cost) {
+      throw new HttpError(400, `환생 포인트가 부족합니다. (필요: ${perk.cost}개)`);
+    }
+
+    const perks = { ...(save.claim.prestige_perks || {}), [perk.key]: level + 1 };
+    const fields = {
+      prestige_points: save.claim.prestige_points - perk.cost,
+      prestige_perks: JSON.stringify(perks),
+    };
+    // 타고난 장인은 지금 판에도 바로 자동 합성을 열어줍니다.
+    if (perk.key === 'autoCraft' && !save.claim[AUTO_CRAFT.unlockedColumn]) {
+      fields[AUTO_CRAFT.unlockedColumn] = true;
+      fields[AUTO_CRAFT.enabledColumn] = true;
+    }
+    await store.updateClaim(client, userId, mode, fields);
+
+    const nextRunOnly = ['startGold', 'startAuto'].includes(perk.key);
+    return {
+      message: `${perk.emoji} ${perk.name} Lv.${level + 1}! ${perk.desc}${nextRunOnly ? ' (다음 판부터 적용)' : ''}`,
+      mode,
+      key: perk.key,
+      level: level + 1,
+      points: fields.prestige_points,
+    };
   });
 }));
 
@@ -554,7 +667,7 @@ router.get('/collection', handle('서버 오류가 발생했습니다.', async (
       bonusClaimed: save.claim.completion_bonus_claimed,
       collectorRank: getCollectorRank(obtainedCount),
       income: incomeResponse(save),
-      prestige: progressionResponse(mode, save.claim).prestige,
+      prestige: progressionResponse(mode, save).prestige,
     };
   });
 }));
@@ -615,12 +728,14 @@ router.post('/reset-run', handle('서버 오류가 발생했습니다.', async (
     }
 
     const now = new Date();
-    await store.resetSave(client, userId, mode, now);
+    const claim = await store.getClaim(client, userId, mode, ['prestige_perks'], { forUpdate: true });
+    if (!claim) throw new HttpError(400, NOT_STARTED_MESSAGE);
+    const startGold = await store.resetSave(client, userId, mode, now, { claim });
 
     return {
       message: '초심으로 돌아갔습니다. 도감도 함께 초기화됐어요. 다시 도전해보세요!',
       mode,
-      totalTreasure: RESET_GOLD,
+      totalTreasure: startGold,
       runStartedAt: now,
     };
   });
@@ -629,7 +744,7 @@ router.post('/reset-run', handle('서버 오류가 발생했습니다.', async (
 // -------------------------------
 // 환생: POST /api/box/rebirth (기록모드 전용)
 // -------------------------------
-// 이번 판에 번 골드 5만 G당 환생 포인트 1개를 받습니다. 포인트는 영구 수입 보너스가 됩니다.
+// 이번 판에 번 골드 5만 G당 환생 포인트 1개를 받습니다. 포인트는 환생 상점에서 영구 특성을 사는 데 씁니다.
 router.post('/rebirth', handle('서버 오류로 환생에 실패했습니다.', async (req) => {
   const userId = req.user.userId;
 
@@ -661,18 +776,20 @@ router.post('/rebirth', handle('서버 오류로 환생에 실패했습니다.',
 
     // 환생은 "이번 판"을 완전히 새로 시작하는 것이므로, 보유 아이템뿐 아니라
     // 도감(발견기록)·업그레이드·자동화도 함께 초기화합니다. 환생 포인트만 쌓입니다.
-    await store.resetSave(client, userId, mode, now, { rebirthCount: rebirthNumber, prestigeGain: prestigeGained });
+    const startGold = await store.resetSave(client, userId, mode, now, {
+      rebirthCount: rebirthNumber,
+      prestigeGain: prestigeGained,
+      claim,
+    });
 
-    const prestigePoints = claim.prestige_points + prestigeGained;
     return {
       message: `${rebirthNumber}번째 환생을 달성했습니다! 처음부터 다시 시작합니다.`,
       mode,
       rebirthNumber,
       durationMs,
       prestigeGained,
-      prestigePoints,
-      prestigeIncomeBonusPercent: prestigePoints * PRESTIGE_INCOME_PERCENT_PER_POINT,
-      totalTreasure: RESET_GOLD,
+      prestigePoints: claim.prestige_points + prestigeGained,
+      totalTreasure: startGold,
       runStartedAt: now,
     };
   });

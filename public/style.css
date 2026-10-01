@@ -909,3 +909,12 @@ body.mode-collection .collection-mode-notice{ display:block; }
 .away-details{ list-style:none; padding:0; margin:0 0 16px; font-size:13px; color:var(--ink); text-align:left; }
 .away-details li{ padding:6px 0; border-top:1px solid #22335C; }
 #awayCloseBtn{ background:var(--gold); color:#1A1305; }
+
+/* 강화 화면: 자동 개봉 시간 */
+.shop-row-wide{ flex-direction:column; align-items:stretch; }
+.shop-actions{ display:flex; gap:6px; }
+.shop-actions .shop-btn{ flex:1; min-width:0; }
+.time-bar-wrap{ margin-top:6px; height:6px; border-radius:4px; background:#0B1220; overflow:hidden; }
+.time-bar-fill{ height:100%; width:0%; background:var(--teal); transition:width 0.3s; }
+.perk-btn{ min-width:64px; }
+.prestige-box .shop-row{ background:var(--surface); }

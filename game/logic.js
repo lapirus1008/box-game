@@ -18,10 +18,15 @@ const {
   INCOME_BONUS_PERCENT_PER_LEVEL,
   CHARGE_SPEED_MS_PER_LEVEL,
   MIN_CHARGE_INTERVAL_MS,
-  CAPACITY_PER_LEVEL,
   LUCK_PERCENT_PER_LEVEL,
+  HOUR_MS,
+  BASE_STORAGE_MS,
+  STORAGE_MS_PER_LEVEL,
+  AUTO_OPEN_MIN_COST_PER_HOUR,
+  AUTO_OPEN_COST_INCOME_MINUTES,
   PRESTIGE_GOLD_PER_POINT,
-  PRESTIGE_INCOME_PERCENT_PER_POINT,
+  PERK_INCOME_PERCENT,
+  PERK_STORAGE_MS,
 } = require('./config');
 
 // weight 기반으로 목록 중 하나를 랜덤하게 뽑습니다. (pool 원소는 { treasure, weight })
@@ -178,35 +183,56 @@ function getUpgradeCost(upgrade, level) {
   return Math.floor(upgrade.baseCost * Math.pow(UPGRADE_COST_GROWTH, level));
 }
 
-// 업그레이드 레벨에 따른 효과를 화면에 보여줄 문구로 만듭니다.
+// 환생 상점 특성 레벨 (prestige_perks JSONB 컬럼, 없으면 0)
+function getPerkLevel(claim, key) {
+  const perks = claim.prestige_perks || {};
+  return Number(perks[key]) || 0;
+}
+
+function getChargeIntervalMs(speedLevel) {
+  return Math.max(MIN_CHARGE_INTERVAL_MS, CHARGE_INTERVAL_MS - speedLevel * CHARGE_SPEED_MS_PER_LEVEL);
+}
+
+function getStorageMs(capacityLevel, storagePerkLevel = 0) {
+  return BASE_STORAGE_MS + capacityLevel * STORAGE_MS_PER_LEVEL + storagePerkLevel * PERK_STORAGE_MS;
+}
+
+// 시간을 "4시간", "1시간 30분"처럼 표시합니다.
+function formatHours(ms) {
+  const totalMinutes = Math.round(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}분`;
+  return minutes === 0 ? `${hours}시간` : `${hours}시간 ${minutes}분`;
+}
+
+// 업그레이드 레벨에 따른 효과를 화면에 보여줄 문구로 만듭니다. (환생 특성 보너스는 제외한 업그레이드 자체 효과)
 function describeUpgradeEffect(key, level) {
   switch (key) {
     case 'income':      return `수입 +${level * INCOME_BONUS_PERCENT_PER_LEVEL}%`;
     case 'chargeSpeed': return `충전 ${getChargeIntervalMs(level) / 1000}초마다`;
-    case 'capacity':    return `최대 충전 ${getMaxCharges(level)}개`;
+    case 'capacity':    return `보관 시간 ${formatHours(getStorageMs(level))}`;
     case 'luck':        return `희귀 이상 등장률 +${level * LUCK_PERCENT_PER_LEVEL}%`;
     default:            return '';
   }
 }
 
-function getChargeIntervalMs(chargeSpeedLevel) {
-  return Math.max(MIN_CHARGE_INTERVAL_MS, CHARGE_INTERVAL_MS - chargeSpeedLevel * CHARGE_SPEED_MS_PER_LEVEL);
-}
-
-function getMaxCharges(capacityLevel) {
-  return MAX_BOX_CHARGES + capacityLevel * CAPACITY_PER_LEVEL;
-}
-
-// box_claims 한 줄(claim)에서 업그레이드·환생 포인트가 반영된 현재 능력치를 계산합니다.
+// box_claims 한 줄(claim)에서 업그레이드·환생 특성이 반영된 현재 능력치를 계산합니다.
 function getClaimStats(claim) {
   return {
-    chargeIntervalMs: getChargeIntervalMs(claim.upgrade_charge_speed),
-    maxCharges: getMaxCharges(claim.upgrade_capacity),
-    luckLevel: claim.upgrade_luck,
+    chargeIntervalMs: getChargeIntervalMs(claim.upgrade_charge_speed + getPerkLevel(claim, 'chargeSpeed')),
+    maxCharges: MAX_BOX_CHARGES,
+    storageMs: getStorageMs(claim.upgrade_capacity, getPerkLevel(claim, 'storage')),
+    luckLevel: claim.upgrade_luck + getPerkLevel(claim, 'luck'),
     // 수입 배율은 퍼센트 정수 두 개로 들고 다닙니다 (부동소수점 오차 방지)
     upgradeIncomePercent: 100 + claim.upgrade_income * INCOME_BONUS_PERCENT_PER_LEVEL,
-    prestigeIncomePercent: 100 + claim.prestige_points * PRESTIGE_INCOME_PERCENT_PER_POINT,
+    prestigeIncomePercent: 100 + getPerkLevel(claim, 'income') * PERK_INCOME_PERCENT,
   };
+}
+
+// 자동 개봉 1시간 가격: 최소 가격과 "지금 분당 수입 × N분" 중 큰 값
+function getAutoOpenCostPerHour(perMinuteIncome) {
+  return Math.max(AUTO_OPEN_MIN_COST_PER_HOUR, perMinuteIncome * AUTO_OPEN_COST_INCOME_MINUTES);
 }
 
 // 이번 판에 번 골드로 환생하면 받을 포인트
@@ -227,6 +253,10 @@ module.exports = {
   getUpgradeCost,
   describeUpgradeEffect,
   getClaimStats,
+  getPerkLevel,
+  getAutoOpenCostPerHour,
+  formatHours,
   getPrestigePointsForRun,
+  HOUR_MS,
   UPGRADE_KEYS: UPGRADES.map(u => u.key),
 };

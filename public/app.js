@@ -18,7 +18,8 @@ let cachedCharges = 0;
 let cachedMaxCharges = MAX_BOX_CHARGES;
 let cachedNextChargeAt = null;
 let cachedChargeIntervalMs = DEFAULT_CHARGE_INTERVAL_MS;
-let cachedAutoOpen = false;
+let cachedAutoOpen = false;        // 지금 자동 개봉이 돌아가는 중인지 (켜짐 + 남은 시간 있음)
+let cachedAutoOpenEndsAt = null;   // 남은 자동 개봉 시간이 끝나는 시각 (화면 카운트다운용)
 // 골드는 서버가 마지막으로 정산한 값(cachedGold, 정산 시각) + 그 뒤로 흐른 시간 × 분당 수입으로 실시간 표시합니다.
 let cachedGold = 0;
 let cachedLastIncomeCollectedAt = null;
@@ -306,7 +307,7 @@ async function refreshStatus(){
     applyIncome(data.income);
     setGold(data.totalTreasure, data.income && data.income.lastCollectedAt);
     if (data.chargeIntervalMs) cachedChargeIntervalMs = data.chargeIntervalMs;
-    cachedAutoOpen = Boolean((data.automation || []).find(a => a.key === 'autoOpen' && a.enabled));
+    applyAutoOpen(data.autoOpen);
     applyChargeInfo(data);
     updatePityUI(data.mythicPity, data.mythicPityLimit);
     document.getElementById('mainClaimBonusBtn')
@@ -327,6 +328,17 @@ async function refreshStatus(){
   } catch (err) {
     // 네트워크 문제는 조용히 무시하고 다음 동기화 때 재시도
   }
+}
+
+function applyAutoOpen(autoOpen){
+  if (!autoOpen) return;
+  cachedAutoOpen = autoOpen.enabled && autoOpen.remainingMs > 0;
+  cachedAutoOpenEndsAt = cachedAutoOpen ? new Date(adjustedNow().getTime() + autoOpen.remainingMs) : null;
+}
+
+function autoOpenRemainingMs(){
+  if (!cachedAutoOpenEndsAt) return 0;
+  return Math.max(0, cachedAutoOpenEndsAt - adjustedNow());
 }
 
 function applyChargeInfo(data){
@@ -364,10 +376,11 @@ function showAwaySummary(summary, autoOpened){
   document.getElementById('awayGold').textContent = `+${formatGold(summary.goldEarned)}G`;
 
   const details = [];
-  if (summary.autoOpenedCount > 0) details.push(`🤖 상자 ${formatGold(summary.autoOpenedCount)}개 자동 개봉`);
+  if (summary.storageCapped) details.push(`📦 보관 시간 ${summary.storageText}까지만 쌓였어요 (강화에서 창고를 늘려보세요)`);
+  if (summary.autoOpenedCount > 0) details.push(`⏳ 상자 ${formatGold(summary.autoOpenedCount)}개 자동 개봉`);
   if (summary.autoCraftCount > 0) details.push(`⚙️ ${formatGold(summary.autoCraftCount)}번 자동 합성`);
   summary.notable.forEach(item => details.push(`${item.emoji} ${item.name} x${item.count}`));
-  if (details.length === 0) details.push('💡 강화 화면에서 자동 개봉을 사면 자리 비운 동안에도 상자가 열려요');
+  if (summary.autoOpenedCount === 0) details.push('💡 강화 화면에서 자동 개봉 시간을 사두면 자리 비운 동안에도 상자가 열려요');
 
   const list = document.getElementById('awayDetails');
   list.innerHTML = '';
@@ -391,7 +404,7 @@ document.getElementById('awayCloseBtn').addEventListener('click', () => {
 function renderPrestigeHint(prestige){
   const el = document.getElementById('prestigeHint');
   if (!prestige || !prestige.enabled) { el.textContent = ''; return; }
-  const owned = prestige.points > 0 ? `✨ 환생 포인트 ${prestige.points}개 (수입 +${prestige.incomeBonusPercent}%)` : '✨ 환생 포인트 없음';
+  const owned = `✨ 환생 포인트 ${prestige.points}개`;
   const gain = prestige.pointsOnRebirth > 0
     ? `지금 환생하면 +${prestige.pointsOnRebirth}개`
     : `이번 판 ${formatGold(prestige.runGoldEarned)} / ${formatGold(prestige.nextPointAt)}G 벌면 +1개`;
@@ -404,6 +417,10 @@ function renderTick(){
   const chest = document.getElementById('chest');
 
   // 충전 로컬 시뮬레이션: 다음 충전 시각이 지났으면 1개씩 늘려줌
+  if (cachedAutoOpen && autoOpenRemainingMs() <= 0) {
+    cachedAutoOpen = false; // 자동 개봉 시간이 다 됨 → 이제부터는 충전이 쌓임
+    refreshStatus();
+  }
   if (cachedAutoOpen) {
     // 자동 개봉 중에는 충전되는 즉시 서버가 열어주므로, 다음 상자까지의 타이머만 돌립니다.
     while (cachedNextChargeAt && adjustedNow() >= cachedNextChargeAt) {
@@ -422,7 +439,7 @@ function renderTick(){
   chest.style.pointerEvents = (canOpen && !isOpening) ? 'auto' : 'none';
 
   if (cachedAutoOpen) {
-    statusText.textContent = '🤖 자동 개봉 중 · 상자가 충전되는 대로 열려요';
+    statusText.textContent = `⏳ 자동 개봉 중 · 남은 시간 ${formatDuration(Math.floor(autoOpenRemainingMs() / 1000))}`;
     statusText.classList.add('ready');
   } else if (canOpen) {
     statusText.textContent = `충전된 상자 ${cachedCharges}개 · 열 수 있습니다`;
@@ -485,7 +502,10 @@ function renderTick(){
 
   clampBulkOpenQty();
   clampBuyBoxQty();
-  if (!upgradeScreen.classList.contains('hidden')) updateUpgradeAffordability();
+  if (!upgradeScreen.classList.contains('hidden')) {
+    updateUpgradeAffordability();
+    renderAutoOpenTimer();
+  }
 }
 
 const GOLD_PER_BOX_PURCHASE = 75; // 서버의 GOLD_PER_BOX_PURCHASE와 반드시 일치시켜야 함
@@ -576,7 +596,7 @@ function clampBulkOpenQty(){
   input.value = max === 0 ? 0 : value;
 
   document.getElementById('bulkOpenCostText').textContent = cachedAutoOpen
-    ? '🤖 자동 개봉이 켜져 있어서 충전된 상자는 자동으로 열려요'
+    ? '⏳ 자동 개봉 중이라 충전된 상자는 자동으로 열려요'
     : `충전 ${cachedCharges}/${cachedMaxCharges} · 최대 ${max}개까지 무료로 열 수 있어요`;
 
   document.getElementById('bulkOpenBtn').disabled = cachedAutoOpen || max === 0 || value < 1 || isOpening;
@@ -792,7 +812,7 @@ async function performRebirth(btnEl){
         craftResult.textContent = data.message;
       }
     } else {
-      const recordText = `기록: ${formatDuration(Math.floor(data.durationMs / 1000))} · 환생 포인트 +${data.prestigeGained} (영구 수입 +${data.prestigeIncomeBonusPercent}%)`;
+      const recordText = `기록: ${formatDuration(Math.floor(data.durationMs / 1000))} · 환생 포인트 +${data.prestigeGained} (보유 ${data.prestigePoints}개, 강화 → 환생 상점에서 사용)`;
       const msg = `✨ ${data.rebirthNumber}번째 환생! ${recordText}`;
       if (onMainScreen) {
         document.getElementById('rarityBadge').textContent = '';
@@ -1123,39 +1143,106 @@ function renderUpgradeScreen(){
 
   const autoList = document.getElementById('automationList');
   autoList.innerHTML = '';
-  lastStatus.automation.forEach(a => {
-    const row = document.createElement('div');
-    row.className = 'shop-row';
-    const buttonText = !a.unlocked ? `${formatGold(a.cost)}G` : (a.enabled ? '켜짐' : '꺼짐');
-    row.innerHTML = `
-      <div class="shop-info">
-        <div class="shop-title">${a.emoji} ${a.name}</div>
-        <div class="shop-desc">${a.desc}</div>
-      </div>
-      <button class="shop-btn ${a.unlocked ? (a.enabled ? 'on' : 'off') : ''}" data-automation="${a.key}"
-        data-cost="${a.unlocked ? '' : a.cost}" data-enabled="${a.enabled}">${buttonText}</button>
-    `;
-    autoList.appendChild(row);
-  });
 
+  // 자동 개봉 시간: 남은 시간 / 최대(보관 시간), +1시간 · 가득 채우기 · 켜기/끄기
+  const ao = lastStatus.autoOpen;
+  const remainingMs = ao.enabled ? autoOpenRemainingMs() : ao.remainingMs;
+  const spaceMs = Math.max(0, ao.maxMs - remainingMs);
+  const fillCost = Math.ceil(ao.costPerHour * spaceMs / 3600000);
+  const autoOpenRow = document.createElement('div');
+  autoOpenRow.className = 'shop-row shop-row-wide';
+  autoOpenRow.innerHTML = `
+    <div class="shop-info">
+      <div class="shop-title">⏳ 자동 개봉 시간 <span class="shop-level" id="autoOpenRemainingText"></span></div>
+      <div class="shop-desc">사둔 시간 동안 충전되는 상자를 자동으로 열어요 · 최대 ${formatHoursText(ao.maxMs)}(보관 시간)까지</div>
+      <div class="time-bar-wrap"><div class="time-bar-fill" id="autoOpenBar"></div></div>
+    </div>
+    <div class="shop-actions">
+      <button class="shop-btn" data-autoopen="1" data-cost="${spaceMs >= 3600000 ? ao.costPerHour : ''}" ${spaceMs >= 3600000 ? '' : 'disabled'}>+1시간 · ${formatGold(ao.costPerHour)}G</button>
+      <button class="shop-btn" data-autoopen="max" data-cost="${spaceMs > 0 ? fillCost : ''}" ${spaceMs > 0 ? '' : 'disabled'}>가득 · ${formatGold(fillCost)}G</button>
+      <button class="shop-btn ${ao.enabled ? 'on' : 'off'}" data-autoopen-toggle="${ao.enabled}">${ao.enabled ? '켜짐' : '꺼짐'}</button>
+    </div>
+  `;
+  autoList.appendChild(autoOpenRow);
+
+  // 자동 합성: 한 번 해금 후 켜기/끄기
+  const ac = lastStatus.autoCraft;
+  const craftRow = document.createElement('div');
+  craftRow.className = 'shop-row';
+  craftRow.innerHTML = `
+    <div class="shop-info">
+      <div class="shop-title">${ac.emoji} ${ac.name}</div>
+      <div class="shop-desc">${ac.desc}</div>
+    </div>
+    <button class="shop-btn ${ac.unlocked ? (ac.enabled ? 'on' : 'off') : ''}" data-autocraft="1"
+      data-cost="${ac.unlocked ? '' : ac.cost}" data-enabled="${ac.enabled}">${!ac.unlocked ? `${formatGold(ac.cost)}G` : (ac.enabled ? '켜짐' : '꺼짐')}</button>
+  `;
+  autoList.appendChild(craftRow);
+  renderAutoOpenTimer();
+
+  // 환생 상점 (기록모드 전용)
   const prestigeBox = document.getElementById('prestigeBox');
   const p = lastStatus.prestige;
   prestigeBox.classList.toggle('hidden', !p || !p.enabled);
   if (p && p.enabled) {
-    document.getElementById('prestigeInfo').textContent =
-      `보유 ${p.points}개 · 영구 수입 +${p.incomeBonusPercent}% (포인트당 +${p.incomePercentPerPoint}%)`;
+    document.getElementById('prestigeInfo').textContent = `보유 포인트 ${p.points}개`;
     document.getElementById('prestigeNext').textContent = p.pointsOnRebirth > 0
       ? `지금 환생하면 +${p.pointsOnRebirth}개 · 이번 판 ${formatGold(p.runGoldEarned)}G 벌었어요`
       : `이번 판 ${formatGold(p.runGoldEarned)} / ${formatGold(p.nextPointAt)}G 벌면 첫 포인트를 받아요`;
+    const perkList = document.getElementById('perkList');
+    perkList.innerHTML = '';
+    p.perks.forEach(perk => {
+      const isMax = perk.level >= perk.maxLevel;
+      const row = document.createElement('div');
+      row.className = 'shop-row';
+      row.innerHTML = `
+        <div class="shop-info">
+          <div class="shop-title">${perk.emoji} ${perk.name} <span class="shop-level">Lv.${perk.level}/${perk.maxLevel}</span></div>
+          <div class="shop-desc">${perk.desc}${perk.maxLevel > 1 ? ' (레벨당)' : ''}</div>
+        </div>
+        <button class="shop-btn perk-btn" data-perk="${perk.key}" data-points="${isMax ? '' : perk.cost}" ${isMax || p.points < perk.cost ? 'disabled' : ''}>${isMax ? 'MAX' : `✨ ${perk.cost}`}</button>
+      `;
+      perkList.appendChild(row);
+    });
+    perkList.querySelectorAll('[data-perk]').forEach(btn => {
+      btn.addEventListener('click', () => postShopAction('/api/box/prestige-shop', { key: btn.dataset.perk }, btn));
+    });
   }
 
   upgradeList.querySelectorAll('[data-upgrade]').forEach(btn => {
     btn.addEventListener('click', () => buyUpgrade(btn.dataset.upgrade, btn));
   });
-  autoList.querySelectorAll('[data-automation]').forEach(btn => {
-    btn.addEventListener('click', () => setAutomation(btn.dataset.automation, btn.dataset.enabled !== 'true', btn));
+  autoList.querySelectorAll('[data-autoopen]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const hours = btn.dataset.autoopen === 'max' ? 'max' : 1;
+      postShopAction('/api/box/auto-open', { hours }, btn);
+    });
+  });
+  autoList.querySelectorAll('[data-autoopen-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => postShopAction('/api/box/auto-open', { enabled: btn.dataset.autoopenToggle !== 'true' }, btn));
+  });
+  autoList.querySelectorAll('[data-autocraft]').forEach(btn => {
+    btn.addEventListener('click', () => postShopAction('/api/box/auto-craft', { enabled: btn.dataset.enabled !== 'true' }, btn));
   });
   updateUpgradeAffordability();
+}
+
+function formatHoursText(ms){
+  const totalMinutes = Math.round(ms / 60000);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0) return `${m}분`;
+  return m === 0 ? `${h}시간` : `${h}시간 ${m}분`;
+}
+
+// 강화 화면의 자동 개봉 남은 시간 표시 (매 틱마다 갱신)
+function renderAutoOpenTimer(){
+  const textEl = document.getElementById('autoOpenRemainingText');
+  if (!textEl || !lastStatus || !lastStatus.autoOpen) return;
+  const ao = lastStatus.autoOpen;
+  const remainingMs = ao.enabled ? autoOpenRemainingMs() : ao.remainingMs;
+  textEl.textContent = `${formatDuration(Math.floor(remainingMs / 1000))} 남음`;
+  document.getElementById('autoOpenBar').style.width = `${Math.min(100, (remainingMs / ao.maxMs) * 100)}%`;
 }
 
 // 골드가 실시간으로 늘어나므로, 살 수 있게 되는 순간 버튼을 켜줍니다.
@@ -1164,7 +1251,8 @@ function updateUpgradeAffordability(){
   upgradeScreen.querySelectorAll('.shop-btn[data-cost]').forEach(btn => {
     if (btn.dataset.busy) return;
     const cost = btn.dataset.cost;
-    if (cost === '') { btn.disabled = btn.dataset.upgrade ? true : false; return; }
+    // 가격이 없는 버튼: 최대 레벨/더 채울 수 없는 상태는 계속 잠그고, 해금된 자동 합성 켜기·끄기만 열어둡니다.
+    if (cost === '') { btn.disabled = !btn.dataset.autocraft; return; }
     btn.disabled = gold < Number(cost);
   });
 }
@@ -1187,7 +1275,7 @@ async function postShopAction(path, body, btn){
     });
     const data = await res.json();
     showUpgradeResult(data.message, !res.ok);
-    if (res.ok) setGold(data.totalTreasure);
+    if (res.ok && typeof data.totalTreasure === 'number') setGold(data.totalTreasure);
   } catch (err) {
     showUpgradeResult('서버에 연결할 수 없습니다.', true);
   } finally {
@@ -1200,9 +1288,6 @@ function buyUpgrade(key, btn){
   return postShopAction('/api/box/upgrade', { key }, btn);
 }
 
-function setAutomation(key, enabled, btn){
-  return postShopAction('/api/box/automation', { key, enabled }, btn);
-}
 
 // -------------------------------
 // 랭킹 화면

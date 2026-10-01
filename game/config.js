@@ -90,35 +90,59 @@ const UPGRADE_COST_GROWTH = 1.5;
 const INCOME_BONUS_PERCENT_PER_LEVEL = 10;  // 수입 증가: 레벨당 전체 수입 +10%
 const CHARGE_SPEED_MS_PER_LEVEL = 1000;     // 충전 가속: 레벨당 충전 시간 -1초
 const MIN_CHARGE_INTERVAL_MS = 5 * 1000;    // 충전 시간은 5초보다 빨라지지 않습니다
-const CAPACITY_PER_LEVEL = 50;              // 창고 확장: 레벨당 최대 충전 +50개
 const LUCK_PERCENT_PER_LEVEL = 5;           // 행운: 레벨당 희귀 이상 등장률 +5%
+
+// 창고(보관 시간): 자리를 비웠을 때 이 시간까지만 골드·충전·자동 개봉이 쌓입니다.
+// (요청이 올 때마다 정산하므로, 접속해 있는 동안에는 사실상 제한이 없습니다)
+const HOUR_MS = 60 * 60 * 1000;
+const BASE_STORAGE_MS = 4 * HOUR_MS;        // 기본 보관 시간 4시간
+const STORAGE_MS_PER_LEVEL = HOUR_MS;       // 창고 레벨당 +1시간
 
 // key는 API와 화면에서, column은 box_claims 테이블에서 쓰입니다.
 const UPGRADES = [
   { key: 'income',      column: 'upgrade_income',       name: '수입 증가', emoji: '💰', baseCost: 500,  maxLevel: 30 },
   { key: 'chargeSpeed', column: 'upgrade_charge_speed', name: '충전 가속', emoji: '⚡', baseCost: 1000,
     maxLevel: (CHARGE_INTERVAL_MS - MIN_CHARGE_INTERVAL_MS) / CHARGE_SPEED_MS_PER_LEVEL },
-  { key: 'capacity',    column: 'upgrade_capacity',     name: '창고 확장', emoji: '📦', baseCost: 800,  maxLevel: 20 },
+  { key: 'capacity',    column: 'upgrade_capacity',     name: '창고',      emoji: '📦', baseCost: 800,  maxLevel: 20 },
   { key: 'luck',        column: 'upgrade_luck',         name: '행운',      emoji: '🍀', baseCost: 2000, maxLevel: 10 },
 ];
 
 // -------------------------------
-// 자동화 (한 번 사면 켜고 끌 수 있습니다. 기록모드는 환생/초기화 때 다시 잠깁니다)
+// 자동 개봉 시간 (시간 충전식)
 // -------------------------------
-const AUTOMATIONS = [
-  { key: 'autoOpen',  unlockedColumn: 'auto_open_unlocked',  enabledColumn: 'auto_open_enabled',
-    name: '자동 개봉', emoji: '🤖', cost: 20000, desc: '충전된 상자를 접속하지 않아도 알아서 열어요' },
-  { key: 'autoCraft', unlockedColumn: 'auto_craft_unlocked', enabledColumn: 'auto_craft_enabled',
-    name: '자동 합성', emoji: '⚙️', cost: 10000, desc: '같은 아이템 3개가 모이면 알아서 합성해요' },
-];
-// 자동 개봉이 한 번에 처리하는 최대 상자 수 (아주 오래 비웠을 때 서버 부하 방지)
+// 골드로 시간을 사두면, 그 시간이 남아 있는 동안 충전되는 상자가 자동으로 열립니다.
+// 최대 보관 시간(창고)만큼만 채워둘 수 있습니다. 끄면 시간이 줄지 않습니다.
+// 1시간 가격 = max(최소 가격, 지금 분당 수입 × 10분) → 수입이 늘어도 적당한 부담이 유지됩니다.
+const AUTO_OPEN_MIN_COST_PER_HOUR = 3000;
+const AUTO_OPEN_COST_INCOME_MINUTES = 10;
+
+// 자동 합성: 한 번 사면 켜고 끌 수 있습니다. (기록모드는 환생/초기화 때 다시 잠깁니다)
+const AUTO_CRAFT = {
+  key: 'autoCraft', unlockedColumn: 'auto_craft_unlocked', enabledColumn: 'auto_craft_enabled',
+  name: '자동 합성', emoji: '⚙️', cost: 10000, desc: '같은 아이템 3개가 모이면 알아서 합성해요',
+};
+// 자동 개봉이 한 번에 처리하는 최대 상자 수 (서버 부하 방지)
 const MAX_AUTO_OPEN_PER_SYNC = 20000;
 
 // -------------------------------
-// 환생 포인트 (기록모드 전용, 환생해도 사라지지 않는 영구 보너스)
+// 환생 포인트 상점 (기록모드 전용)
 // -------------------------------
-const PRESTIGE_GOLD_PER_POINT = 50000;          // 이번 판에 번 골드 5만 G당 1포인트
-const PRESTIGE_INCOME_PERCENT_PER_POINT = 5;    // 포인트 1개당 영구 수입 +5%
+// 환생할 때 이번 판에 번 골드 5만 G당 1포인트를 받고, 상점에서 영구 특성을 삽니다.
+// 특성은 환생해도 사라지지 않습니다.
+const PRESTIGE_GOLD_PER_POINT = 50000;
+const PRESTIGE_PERKS = [
+  { key: 'income',      emoji: '💰', name: '영구 수입',       cost: 1, maxLevel: 100, desc: '전체 수입 +5%' },
+  { key: 'startGold',   emoji: '🪙', name: '시작 자금',       cost: 1, maxLevel: 10,  desc: '새 판 시작 골드 +5,000G' },
+  { key: 'storage',     emoji: '📦', name: '넓은 창고',       cost: 2, maxLevel: 4,   desc: '보관 시간 +2시간' },
+  { key: 'luck',        emoji: '🍀', name: '타고난 행운',     cost: 2, maxLevel: 5,   desc: '희귀 이상 등장률 +5%' },
+  { key: 'startAuto',   emoji: '⏳', name: '자동 개봉 비축',  cost: 2, maxLevel: 3,   desc: '새 판 시작 시 자동 개봉 2시간' },
+  { key: 'chargeSpeed', emoji: '⚡', name: '빠른 손',         cost: 3, maxLevel: 3,   desc: '충전 시간 -1초' },
+  { key: 'autoCraft',   emoji: '⚙️', name: '타고난 장인',     cost: 3, maxLevel: 1,   desc: '새 판을 자동 합성 해금 상태로 시작' },
+];
+const PERK_INCOME_PERCENT = 5;
+const PERK_START_GOLD = 5000;
+const PERK_STORAGE_MS = 2 * HOUR_MS;
+const PERK_START_AUTO_OPEN_MS = 2 * HOUR_MS;
 
 // 이 시간 이상 접속하지 않았다가 돌아오면 "자리 비운 동안" 요약을 보여줍니다.
 const AWAY_SUMMARY_MIN_MS = 5 * 60 * 1000;
@@ -160,12 +184,20 @@ module.exports = {
   INCOME_BONUS_PERCENT_PER_LEVEL,
   CHARGE_SPEED_MS_PER_LEVEL,
   MIN_CHARGE_INTERVAL_MS,
-  CAPACITY_PER_LEVEL,
   LUCK_PERCENT_PER_LEVEL,
+  HOUR_MS,
+  BASE_STORAGE_MS,
+  STORAGE_MS_PER_LEVEL,
   UPGRADES,
-  AUTOMATIONS,
+  AUTO_OPEN_MIN_COST_PER_HOUR,
+  AUTO_OPEN_COST_INCOME_MINUTES,
+  AUTO_CRAFT,
   MAX_AUTO_OPEN_PER_SYNC,
   PRESTIGE_GOLD_PER_POINT,
-  PRESTIGE_INCOME_PERCENT_PER_POINT,
+  PRESTIGE_PERKS,
+  PERK_INCOME_PERCENT,
+  PERK_START_GOLD,
+  PERK_STORAGE_MS,
+  PERK_START_AUTO_OPEN_MS,
   AWAY_SUMMARY_MIN_MS,
 };
