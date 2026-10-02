@@ -282,14 +282,16 @@ async function resetSave(client, userId, mode, now, { rebirthCount = null, prest
 
   await client.query('DELETE FROM user_items WHERE user_id = $1 AND mode = $2', [userId, mode]);
   await client.query('DELETE FROM user_discoveries WHERE user_id = $1 AND mode = $2', [userId, mode]);
+  // $2(지금 시각)는 여러 시간 컬럼에 함께 들어갑니다. 실제 DB는 컬럼마다 timestamp / timestamptz 타입이
+  // 섞여 있어서, 타입을 명시하지 않으면 PostgreSQL이 "$2의 타입을 하나로 정할 수 없다"며 거부합니다.
   await client.query(
     `UPDATE box_claims
      SET total_treasure = $1,
          completion_bonus_claimed = FALSE,
-         last_income_collected_at = $2,
-         run_started_at = $2,
+         last_income_collected_at = $2::timestamptz,
+         run_started_at = $2::timestamptz,
          box_charges = 1,
-         last_charge_calculated_at = $2,
+         last_charge_calculated_at = $2::timestamptz,
          mythic_pity = 0,
          rebirth_count = COALESCE($5, rebirth_count),
          upgrade_income = 0,
@@ -302,7 +304,7 @@ async function resetSave(client, userId, mode, now, { rebirthCount = null, prest
          auto_craft_enabled = $8,
          run_gold_earned = 0,
          prestige_points = prestige_points + $6,
-         last_active_at = $2
+         last_active_at = $2::timestamptz
      WHERE user_id = $3 AND mode = $4`,
     [startGold, now, userId, mode, rebirthCount, prestigeGain, startAutoOpenMs, startAutoCraft]
   );
