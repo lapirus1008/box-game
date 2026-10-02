@@ -142,6 +142,8 @@ button{
 }
 #switchModeBtn{
   all:unset;
+  flex-shrink:0;
+  white-space:nowrap;
   cursor:pointer;
   font-size:12px;
   font-weight:600;
@@ -599,17 +601,38 @@ body.mode-collection .collection-mode-notice{ display:block; }
 
 
 /* 도감 완료 알림 pill (메인 화면, 작게) */
-.claim-pill{
-  display:block;
-  margin:0 auto 14px;
-  padding:6px 14px;
+/* 도감 완성 보상 배너 (메인 화면 / 도감 탭 공용) */
+.claim-banner{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:100%;
+  margin:12px 0 14px;
+  padding:10px 12px;
+  text-align:left;
+  color:var(--ink);
+  background:linear-gradient(135deg, rgba(227,178,60,0.22), rgba(227,178,60,0.08));
+  border:1px solid var(--gold);
+  border-radius:12px;
+  box-shadow:0 0 14px rgba(227,178,60,0.25);
+  animation:pityPulse 1.8s ease-in-out infinite;
+}
+.claim-banner.hidden{ display:none; }
+.claim-banner-icon{ font-size:24px; line-height:1; flex-shrink:0; }
+.claim-banner-text{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.claim-banner-text strong{ font-size:14px; color:var(--gold); }
+.claim-banner-text small{ font-size:11px; color:var(--ink-dim); font-weight:400; }
+.claim-banner-cta{
+  flex-shrink:0;
+  padding:8px 12px;
   font-size:12px;
   font-weight:700;
+  white-space:nowrap;
   color:#1A1305;
   background:var(--gold);
-  border-radius:999px;
-  animation:pityPulse 1.4s ease-in-out infinite;
+  border-radius:8px;
 }
+.claim-banner:disabled{ opacity:0.6; animation:none; }
 
 /* 상자 열기 패널 (충전 / 골드 구매 탭) */
 .open-tabs{
@@ -912,8 +935,21 @@ body.mode-collection .collection-mode-notice{ display:block; }
 
 /* 강화 화면: 자동 개봉 시간 */
 .shop-row-wide{ flex-direction:column; align-items:stretch; }
-.shop-actions{ display:flex; gap:6px; }
+.shop-actions{ display:flex; gap:6px; margin-top:10px; }
 .shop-actions .shop-btn{ flex:1; min-width:0; }
+/* 두 줄 버튼: 위에 행동, 아래에 가격 */
+.shop-btn-stack{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+  padding:7px 6px;
+  line-height:1.2;
+}
+.shop-btn-stack span{ font-size:12px; font-weight:700; }
+.shop-btn-stack small{ font-size:11px; font-weight:600; opacity:0.85; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.shop-actions .shop-toggle{ flex:0 0 76px; }
 .time-bar-wrap{ margin-top:6px; height:6px; border-radius:4px; background:#0B1220; overflow:hidden; }
 .time-bar-fill{ height:100%; width:0%; background:var(--teal); transition:width 0.3s; }
 .perk-btn{ min-width:64px; }

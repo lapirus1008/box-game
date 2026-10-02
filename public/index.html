@@ -82,7 +82,11 @@
 
     <div class="rank-chip hidden" id="collectorRankMain"></div>
 
-    <button class="claim-pill hidden" id="mainClaimBonusBtn">🎉 도감 완료! 보상 받기</button>
+    <button class="claim-banner hidden" id="mainClaimBonusBtn">
+      <span class="claim-banner-icon">🎉</span>
+      <span class="claim-banner-text"><strong>도감 완성!</strong><small>전부 모았어요</small></span>
+      <span class="claim-banner-cta">보상 받기</span>
+    </button>
 
     <div class="chest-wrap">
       <div class="chest" id="chest">
@@ -203,7 +207,11 @@
     <div id="collectionModeView" class="hidden">
       <p style="font-size:13px; color:var(--ink-dim); margin:0 0 4px;">수집 진행도: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong></p>
       <p class="mastery-hint">같은 아이템을 10·30·100·300개 모으면 ★ · ★당 그 아이템 수입 +10%</p>
-      <button class="btn-primary hidden" id="claimBonusBtn" style="margin-bottom:16px;">🎉 도감 완성 보상 받기</button>
+      <button class="claim-banner hidden" id="claimBonusBtn">
+        <span class="claim-banner-icon">🎉</span>
+        <span class="claim-banner-text"><strong>도감 완성!</strong><small>전부 모았어요</small></span>
+        <span class="claim-banner-cta">보상 받기</span>
+      </button>
       <div class="collection-grid" id="collectionGrid"></div>
     </div>
 

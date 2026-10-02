@@ -1158,9 +1158,15 @@ function renderUpgradeScreen(){
       <div class="time-bar-wrap"><div class="time-bar-fill" id="autoOpenBar"></div></div>
     </div>
     <div class="shop-actions">
-      <button class="shop-btn" data-autoopen="1" data-cost="${spaceMs >= 3600000 ? ao.costPerHour : ''}" ${spaceMs >= 3600000 ? '' : 'disabled'}>+1시간 · ${formatGold(ao.costPerHour)}G</button>
-      <button class="shop-btn" data-autoopen="max" data-cost="${spaceMs > 0 ? fillCost : ''}" ${spaceMs > 0 ? '' : 'disabled'}>가득 · ${formatGold(fillCost)}G</button>
-      <button class="shop-btn ${ao.enabled ? 'on' : 'off'}" data-autoopen-toggle="${ao.enabled}">${ao.enabled ? '켜짐' : '꺼짐'}</button>
+      <button class="shop-btn shop-btn-stack" data-autoopen="1" data-cost="${spaceMs >= 3600000 ? ao.costPerHour : ''}" ${spaceMs >= 3600000 ? '' : 'disabled'}>
+        <span>+1시간</span><small>${formatGold(ao.costPerHour)}G</small>
+      </button>
+      <button class="shop-btn shop-btn-stack" data-autoopen="max" data-cost="${spaceMs > 0 ? fillCost : ''}" ${spaceMs > 0 ? '' : 'disabled'}>
+        <span>가득 채우기</span><small>${spaceMs > 0 ? `${formatGold(fillCost)}G` : '꽉 찼어요'}</small>
+      </button>
+      <button class="shop-btn shop-btn-stack shop-toggle ${ao.enabled ? 'on' : 'off'}" data-autoopen-toggle="${ao.enabled}">
+        <span>${ao.enabled ? '켜짐' : '꺼짐'}</span><small>${ao.enabled ? '누르면 끄기' : '누르면 켜기'}</small>
+      </button>
     </div>
   `;
   autoList.appendChild(autoOpenRow);
