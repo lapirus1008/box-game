@@ -241,14 +241,32 @@ async function syncGoldenBox(client, userId, mode, save) {
   return goldenBoxResponse(save);
 }
 
+// 황금 상자 규칙 (화면의 안내 팝업에 그대로 보여줍니다)
+const GOLDEN_REWARD_TEXT = {
+  gold: `💰 골드 (분당 수입 × ${GOLDEN_GOLD_MINUTES}분, 최소 ${GOLDEN_GOLD_MIN.toLocaleString()}G)`,
+  boxes: `📦 상자 ${GOLDEN_BOXES}개 즉시 개봉`,
+  boost: `⚡ ${INCOME_BOOST_MS / 60000}분간 수입 ${INCOME_BOOST_MULTIPLIER}배 (겹치면 시간이 늘어나요)`,
+  autoOpen: '⏳ 자동 개봉 +1시간 (보관 시간이 꽉 찼으면 골드로)',
+};
+const GOLDEN_BOX_INFO = (() => {
+  const total = GOLDEN_BOX_REWARDS.reduce((sum, r) => sum + r.weight, 0);
+  return {
+    minGapMinutes: GOLDEN_BOX_MIN_GAP_MS / 60000,
+    maxGapMinutes: GOLDEN_BOX_MAX_GAP_MS / 60000,
+    windowSeconds: GOLDEN_BOX_WINDOW_MS / 1000,
+    rewards: GOLDEN_BOX_REWARDS.map(r => ({ text: GOLDEN_REWARD_TEXT[r.key], chancePercent: Math.round(r.weight / total * 100) })),
+  };
+})();
+
 function goldenBoxResponse(save) {
   const nextAt = save.claim.golden_box_next_at ? new Date(save.claim.golden_box_next_at) : null;
-  if (!nextAt) return { available: false, appearsInMs: null, expiresInMs: null };
+  if (!nextAt) return { available: false, appearsInMs: null, expiresInMs: null, info: GOLDEN_BOX_INFO };
   const available = save.now >= nextAt && save.now - nextAt <= GOLDEN_BOX_WINDOW_MS;
   return {
     available,
     appearsInMs: available ? 0 : Math.max(0, nextAt - save.now),
     expiresInMs: nextAt.getTime() + GOLDEN_BOX_WINDOW_MS - save.now.getTime(),
+    info: GOLDEN_BOX_INFO,
   };
 }
 

@@ -421,11 +421,9 @@ function handleAutoEvents(data){
   if (data.autoCrafted && data.autoCrafted.count > 0) {
     lines.push(`⚙️ 자동 합성 ${data.autoCrafted.count}번`);
   }
-  if (lines.length === 0 || gameScreen.classList.contains('hidden')) return;
-  document.getElementById('rarityBadge').textContent = '';
-  document.getElementById('treasureName').textContent = lines[0];
-  document.getElementById('treasureDetail').textContent = lines.slice(1).join(' · ');
-  document.getElementById('resultBox').style.display = 'block';
+  // 결과 칸(직접 연 상자 결과)을 덮어쓰지 않도록, 화면 위 짧은 알림으로만 보여줍니다.
+  if (lines.length === 0) return;
+  showToast(lines.join(' · '));
 }
 
 // 자리 비운 동안 일어난 일을 팝업으로 보여줍니다.
@@ -1375,8 +1373,10 @@ function showToast(message, isError){
 // -------------------------------
 // 황금 상자
 // -------------------------------
+let goldenBoxInfo = null;
 function applyGoldenBox(box){
   if (!box) return;
+  if (box.info) goldenBoxInfo = box.info;
   const now = adjustedNow().getTime();
   if (box.available) {
     goldenBoxAppearAt = new Date(now);
@@ -1398,6 +1398,26 @@ function renderGoldenBox(){
     document.getElementById('goldenBoxTimer').textContent = `${secondsLeft}초 안에 눌러요`;
   }
 }
+
+// 황금 상자 안내 팝업
+document.getElementById('goldenHintBtn').addEventListener('click', () => {
+  const info = goldenBoxInfo;
+  document.getElementById('goldenInfoTiming').textContent = info
+    ? `접속해 있는 동안 ${info.minGapMinutes}~${info.maxGapMinutes}분마다 나타나요. 나타나면 ${info.windowSeconds}초 안에 눌러야 해요!`
+    : '접속해 있는 동안 가끔 나타나요. 나타나면 금방 사라지니 빨리 눌러요!';
+  const list = document.getElementById('goldenInfoRewards');
+  list.innerHTML = '';
+  (info ? info.rewards : []).forEach(r => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span></span><span class="golden-chance">${r.chancePercent}%</span>`;
+    li.firstChild.textContent = r.text;
+    list.appendChild(li);
+  });
+  document.getElementById('goldenInfoOverlay').classList.add('show');
+});
+document.getElementById('goldenInfoCloseBtn').addEventListener('click', () => {
+  document.getElementById('goldenInfoOverlay').classList.remove('show');
+});
 
 document.getElementById('goldenBox').addEventListener('click', async function(){
   this.disabled = true;

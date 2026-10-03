@@ -18,6 +18,17 @@
   <span class="golden-box-text"><strong>황금 상자!</strong><small id="goldenBoxTimer"></small></span>
 </button>
 
+<!-- 황금 상자 안내 팝업 -->
+<div id="goldenInfoOverlay" class="info-overlay">
+  <div class="away-card">
+    <p class="away-eyebrow">🎁 황금 상자란?</p>
+    <p class="away-time" id="goldenInfoTiming"></p>
+    <ul class="away-details" id="goldenInfoRewards"></ul>
+    <p class="golden-info-note">화면 오른쪽 아래에 통통 튀는 🎁 버튼으로 나타나요. 다른 화면(강화·업적 등)에 있어도 나타나요.</p>
+    <button id="goldenInfoCloseBtn">확인</button>
+  </div>
+</div>
+
 <!-- 짧은 알림 -->
 <div class="toast" id="toast"></div>
 
@@ -165,6 +176,11 @@
     </div>
 
     <button class="btn-primary record-only hidden" id="mainRebirthBtn" disabled style="margin:10px 0 12px;">✨ 환생하기! (100,000G)</button>
+
+    <button class="golden-hint" id="goldenHintBtn">
+      <span>🎁 <strong>황금 상자</strong> · 접속해 있으면 가끔 나타나요</span>
+      <span class="golden-hint-more">자세히 ›</span>
+    </button>
 
     <div class="income-box" id="mainIncomeBox">
       <div class="income-text">

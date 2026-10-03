@@ -477,8 +477,9 @@ body.mode-collection .collection-mode-notice{ display:block; }
   padding:10px;
   font-size:13px;
 }
-#bulkOpenBtn{ flex:1; background:var(--gold); color:#1A1305; border-radius:8px; }
-#maxQtyBtn{ background:var(--surface); border:1px solid #2C3F6B; color:var(--ink-dim); border-radius:8px; padding:10px 12px; font-size:12px; }
+.bulk-open-row button{ white-space:nowrap; }
+#bulkOpenBtn, #buyBoxBtn{ flex:1; min-width:0; background:var(--gold); color:#1A1305; border-radius:8px; }
+#maxQtyBtn, #maxBuyQtyBtn{ flex-shrink:0; background:var(--surface); border:1px solid #2C3F6B; color:var(--ink-dim); border-radius:8px; padding:10px 12px; font-size:12px; }
 #bulkOpenCostText{ font-size:11px; color:var(--ink-dim); margin:0; text-align:center; }
 
 .result-box{
@@ -1045,3 +1046,40 @@ body.mode-collection .collection-mode-notice{ display:block; }
 }
 .toast.show{ opacity:1; transform:translate(-50%, 0); }
 .toast.error{ border-color:var(--danger); }
+
+/* 메인: 황금 상자 안내 줄 */
+.golden-hint{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  width:100%;
+  margin:0 0 8px;
+  padding:8px 12px;
+  font-size:12px;
+  font-weight:400;
+  text-align:left;
+  color:var(--ink-dim);
+  background:transparent;
+  border:1px dashed var(--gold-dim);
+  border-radius:10px;
+}
+.golden-hint strong{ color:var(--gold); font-weight:600; }
+.golden-hint-more{ flex-shrink:0; color:var(--gold); font-weight:600; }
+
+/* 황금 상자 안내 팝업 (자리 비움 팝업과 같은 카드 스타일) */
+.info-overlay{
+  position:fixed;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  background:rgba(5,9,18,0.75);
+  z-index:900;
+}
+.info-overlay.show{ display:flex; }
+.info-overlay .away-details li{ display:flex; justify-content:space-between; gap:10px; }
+.golden-chance{ flex-shrink:0; color:var(--gold); font-weight:700; }
+.golden-info-note{ font-size:11px; color:var(--ink-dim); margin:-6px 0 14px; text-align:left; }
+#goldenInfoCloseBtn{ background:var(--gold); color:#1A1305; }
