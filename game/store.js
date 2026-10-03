@@ -250,8 +250,16 @@ async function settle(client, userId, mode) {
   if (autoActive) {
     // 자동 개봉 시간이 남아 있는 구간에 충전된 상자(+이미 쌓여 있던 상자)를 엽니다.
     // 시간이 중간에 다 떨어졌다면, 그 뒤로 충전된 상자는 평소처럼 쌓입니다.
-    const autoMs = Math.min(countedMs, autoOpenRemainingMs);
-    const autoGained = Math.min(gained, Math.floor(autoMs / stats.chargeIntervalMs));
+    // 자동 개봉 시간은 "직전 정산 이후" 흐른 시간만큼만 씁니다.
+    // (충전 타이머 기준으로 재면, 직전 정산 때 이미 쓴 자투리 시간이 매번 또 깎입니다)
+    const sinceLastSettleMs = Math.min(Math.max(0, now - lastCollected), stats.storageMs);
+    const autoMs = Math.min(sinceLastSettleMs, autoOpenRemainingMs);
+    // 이번에 새로 쌓인 충전 중, 자동 개봉 시간이 남아 있던 구간에 들어온 것만 자동으로 엽니다.
+    // 보관 시간을 넘겼다면 인정되는 구간(마지막 보관 시간만큼)의 시작점을 기준으로 셉니다.
+    const capped = chargeElapsedMs > stats.storageMs;
+    const tickBase = capped ? now.getTime() - countedMs : lastCalc.getTime();
+    const autoStart = capped ? tickBase : lastCollected.getTime();
+    const autoGained = Math.min(gained, Math.max(0, Math.floor((autoStart + autoMs - tickBase) / stats.chargeIntervalMs)));
     const toOpen = Math.min(MAX_AUTO_OPEN_PER_SYNC, charges + autoGained);
     autoOpenRemainingMs -= autoMs;
     charges = Math.min(stats.maxCharges, gained - autoGained);

@@ -52,20 +52,20 @@
 
     <form id="loginForm">
       <label for="loginEmail">이메일</label>
-      <input type="email" id="loginEmail" required>
+      <input type="email" id="loginEmail" autocomplete="username" enterkeyhint="next" required>
       <label for="loginPassword">비밀번호</label>
-      <input type="password" id="loginPassword" required>
-      <button type="submit" class="btn-primary">로그인</button>
+      <input type="password" id="loginPassword" autocomplete="current-password" enterkeyhint="go" required>
+      <button type="submit" class="btn-primary" id="loginSubmitBtn">로그인</button>
     </form>
 
     <form id="signupForm" class="hidden">
       <label for="signupNickname">닉네임</label>
-      <input type="text" id="signupNickname" required>
+      <input type="text" id="signupNickname" autocomplete="nickname" enterkeyhint="next" required>
       <label for="signupEmail">이메일</label>
-      <input type="email" id="signupEmail" required>
+      <input type="email" id="signupEmail" autocomplete="username" enterkeyhint="next" required>
       <label for="signupPassword">비밀번호 (4자 이상)</label>
-      <input type="password" id="signupPassword" minlength="4" required>
-      <button type="submit" class="btn-primary">회원가입</button>
+      <input type="password" id="signupPassword" autocomplete="new-password" enterkeyhint="go" minlength="4" required>
+      <button type="submit" class="btn-primary" id="signupSubmitBtn">회원가입</button>
     </form>
 
     <div class="switch-line">

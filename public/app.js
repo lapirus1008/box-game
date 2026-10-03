@@ -170,9 +170,40 @@ document.getElementById('switchToLogin').addEventListener('click', () => {
   clearAuthError();
 });
 
+// 로그인/회원가입 중에는 버튼을 잠그고 "…중" 표시 (서버가 잠들어 있으면 첫 응답이 수십 초 걸릴 수 있어서)
+function setAuthBusy(button, busy, busyText){
+  if (busy) {
+    button.dataset.label = button.textContent;
+    button.textContent = busyText;
+  } else if (button.dataset.label) {
+    button.textContent = button.dataset.label;
+  }
+  button.disabled = busy;
+}
+
+// 입력칸에서 엔터를 누르면: 마지막 칸이면 바로 제출, 아니면 다음 칸으로 이동
+// (대부분의 브라우저는 기본으로 제출하지만, 일부 모바일 키보드/브라우저를 위해 직접 처리합니다)
+['loginForm', 'signupForm'].forEach(formId => {
+  const form = document.getElementById(formId);
+  const inputs = [...form.querySelectorAll('input')];
+  inputs.forEach((input, i) => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      e.preventDefault();
+      const next = inputs[i + 1];
+      if (next && !input.value) return;
+      if (next && !next.value) next.focus();
+      else form.requestSubmit();
+    });
+  });
+});
+
 document.getElementById('signupForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const button = document.getElementById('signupSubmitBtn');
+  if (button.disabled) return;
   clearAuthError();
+  setAuthBusy(button, true, '가입 중...');
   const nickname = document.getElementById('signupNickname').value;
   const email = document.getElementById('signupEmail').value;
   const password = document.getElementById('signupPassword').value;
@@ -190,12 +221,17 @@ document.getElementById('signupForm').addEventListener('submit', async (e) => {
     enterGame();
   } catch (err) {
     showAuthError('서버에 연결할 수 없습니다.');
+  } finally {
+    setAuthBusy(button, false);
   }
 });
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const button = document.getElementById('loginSubmitBtn');
+  if (button.disabled) return;
   clearAuthError();
+  setAuthBusy(button, true, '로그인 중...');
   const email = document.getElementById('loginEmail').value;
   const password = document.getElementById('loginPassword').value;
   try {
@@ -212,6 +248,8 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     enterGame();
   } catch (err) {
     showAuthError('서버에 연결할 수 없습니다.');
+  } finally {
+    setAuthBusy(button, false);
   }
 });
 
