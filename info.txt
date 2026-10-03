@@ -20,7 +20,8 @@ box-game/                    ← GitHub 저장소 루트
 │   ├── 001_idle_progression.sql  업그레이드·자동화·환생 포인트 컬럼 추가
 │   ├── 002_auto_open_time_and_prestige_shop.sql  자동 개봉 시간·환생 상점 컬럼 추가
 │   ├── 003_golden_box_and_achievements.sql  황금 상자·수입 2배·누적 기록·업적 컬럼 추가
-│   └── 004_item_locks.sql  아이템 잠금 컬럼 추가
+│   ├── 004_item_locks.sql  아이템 잠금 컬럼 추가
+│   └── 005_ranking_season.sql  랭킹 시즌 컬럼 추가 (기존 기록은 시즌 1)
 ├── middleware/
 │   └── auth.js                로그인 토큰(JWT) 검증
 └── public/

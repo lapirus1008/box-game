@@ -2,7 +2,7 @@ const API_BASE = 'https://box-game-6y1g.onrender.com';
 
 const DEFAULT_CHARGE_INTERVAL_MS = 15 * 1000; // 서버에서 실제 값(업그레이드 반영)을 받기 전까지 쓰는 기본값
 const MAX_BOX_CHARGES = 100;
-const REBIRTH_GOLD_REQUIRED = 100000;
+let REBIRTH_GOLD_REQUIRED = 300000; // 서버 상태 응답(rebirthGoldRequired)으로 갱신됩니다
 const CRAFT_COST = 3;
 const RANK_PAGE_SIZE = 10;
 
@@ -365,6 +365,7 @@ async function refreshStatus(){
     setGold(data.totalTreasure, data.income && data.income.lastCollectedAt);
     if (data.chargeIntervalMs) cachedChargeIntervalMs = data.chargeIntervalMs;
     if (data.boxPrice) cachedBoxPrice = data.boxPrice;
+    if (data.rebirthGoldRequired) applyRebirthGoal(data.rebirthGoldRequired);
     renderItemEffects(data.itemEffects);
     applyAutoOpen(data.autoOpen);
     applyChargeInfo(data);
@@ -459,6 +460,14 @@ document.getElementById('awayCloseBtn').addEventListener('click', () => {
   if (pendingAwayAutoOpened) checkAndTriggerLegendary(pendingAwayAutoOpened.obtained, pendingAwayAutoOpened.pityTriggered);
   pendingAwayAutoOpened = null;
 });
+
+// 환생 조건(골드)을 서버 값으로 맞추고 버튼 문구도 갱신
+function applyRebirthGoal(goal){
+  REBIRTH_GOLD_REQUIRED = goal;
+  const text = `${goal.toLocaleString()}G`;
+  document.getElementById('mainRebirthBtn').textContent = `✨ 환생하기! (${text})`;
+  document.getElementById('rebirthBtn').textContent = `✨ 환생하기 (${text})`;
+}
 
 // 환생 목표 칸 아래: 환생 포인트 안내 (기록모드 전용)
 function renderPrestigeHint(prestige){
@@ -1205,7 +1214,8 @@ document.getElementById('toggleRebirthHistoryBtn').addEventListener('click', asy
     }
     listEl.innerHTML = data.history.map(h => {
       const date = new Date(h.completedAt).toLocaleString();
-      return `<div style="padding:4px 0; border-bottom:1px solid #22335C;">#${h.rebirthNumber} — ${formatDuration(Math.floor(h.durationMs / 1000))} (${date})</div>`;
+      const seasonTag = h.season && h.season !== data.season ? ` · 시즌${h.season}` : '';
+      return `<div style="padding:4px 0; border-bottom:1px solid #22335C;">#${h.rebirthNumber} — ${formatDuration(Math.floor(h.durationMs / 1000))} (${date}${seasonTag})</div>`;
     }).join('');
   } catch (err) {
     listEl.textContent = '불러오지 못했습니다.';
@@ -1618,6 +1628,10 @@ async function loadRanking(){
   try {
     const res = await authFetch(`/api/box/leaderboard?page=${currentRankPage}`);
     const data = await res.json();
+    if (data.season) {
+      document.getElementById('rankingSubtitle').textContent =
+        `시즌 ${data.season} · ${(data.goldRequired / 10000).toLocaleString()}만 골드까지 가장 빨리 도달한 환생 기록입니다`;
+    }
     if (!res.ok) {
       listEl.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
       return;

@@ -22,7 +22,7 @@
 // - 상자는 시간이 지날수록 충전이 쌓이고(최대 100개), 원할 때 열 수 있습니다.
 // - 자리를 비운 시간은 창고의 "보관 시간"까지만 인정됩니다 (기본 4시간).
 // - 골드로 업그레이드(수입·충전 속도·창고·행운), 자동 개봉 시간(시간 충전식), 자동 합성을 살 수 있습니다.
-// - 기록모드에서는 10만 골드를 모으면 "환생"해서 환생 포인트를 받고, 환생 상점에서 영구 특성을 삽니다.
+// - 기록모드에서는 30만 골드(REBIRTH_GOLD_REQUIRED)를 모으면 "환생"해서 환생 포인트를 받고, 환생 상점에서 영구 특성을 삽니다.
 //
 // 게임 수치는 game/config.js, 확률/계산 로직은 game/logic.js, DB 읽기·쓰기는 game/store.js에 있습니다.
 
@@ -38,6 +38,7 @@ const {
   CRAFT_COST,
   COMPLETION_BONUS_GOLD,
   REBIRTH_GOLD_REQUIRED,
+  RANKING_SEASON,
   MAX_BOX_CHARGES,
   MAX_GOLD_BOX_PURCHASE,
   MASTERY_THRESHOLDS,
@@ -512,6 +513,7 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       mythicPity: claim.mythic_pity,
       mythicPityLimit: save.stats.pityLimit,
       boxPrice: boxPriceOf(save),
+      rebirthGoldRequired: REBIRTH_GOLD_REQUIRED,
       itemEffects: activeItemEffects(save),
       income: incomeResponse(save),
       collectorRank: getCollectorRank(obtainedCount),
@@ -1047,7 +1049,7 @@ router.post('/rebirth', handle('서버 오류로 환생에 실패했습니다.',
 
     const currentGold = claim.total_treasure;
     if (currentGold < REBIRTH_GOLD_REQUIRED) {
-      throw new HttpError(400, `10만 골드가 필요합니다. (현재 ${currentGold}G)`);
+      throw new HttpError(400, `${REBIRTH_GOLD_REQUIRED.toLocaleString()}G가 필요합니다. (현재 ${currentGold.toLocaleString()}G)`);
     }
 
     const now = save.now;
@@ -1056,9 +1058,9 @@ router.post('/rebirth', handle('서버 오류로 환생에 실패했습니다.',
     const prestigeGained = getPrestigePointsForRun(claim.run_gold_earned);
 
     await client.query(
-      `INSERT INTO rebirth_history (user_id, mode, rebirth_number, duration_ms, completed_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [userId, mode, rebirthNumber, durationMs, now]
+      `INSERT INTO rebirth_history (user_id, mode, rebirth_number, duration_ms, completed_at, season)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [userId, mode, rebirthNumber, durationMs, now, RANKING_SEASON]
     );
 
     // 환생은 "이번 판"을 완전히 새로 시작하는 것이므로, 보유 아이템뿐 아니라
@@ -1087,7 +1089,7 @@ router.post('/rebirth', handle('서버 오류로 환생에 실패했습니다.',
 // -------------------------------
 router.get('/rebirth/history', handle('서버 오류가 발생했습니다.', async (req) => {
   const historyResult = await db.query(
-    `SELECT rebirth_number, duration_ms, completed_at FROM rebirth_history
+    `SELECT rebirth_number, duration_ms, completed_at, season FROM rebirth_history
      WHERE user_id = $1 AND mode = 'record' ORDER BY rebirth_number ASC`,
     [req.user.userId]
   );
@@ -1097,8 +1099,10 @@ router.get('/rebirth/history', handle('서버 오류가 발생했습니다.', as
       rebirthNumber: r.rebirth_number,
       durationMs: parseInt(r.duration_ms, 10),
       completedAt: r.completed_at,
+      season: r.season,
     })),
     goldRequired: REBIRTH_GOLD_REQUIRED,
+    season: RANKING_SEASON,
   };
 }));
 
@@ -1108,17 +1112,19 @@ router.get('/rebirth/history', handle('서버 오류가 발생했습니다.', as
 // 랭킹 화면에서 페이지에 내가 안 보일 때, 내 최고 기록과 전체 순위를 따로 계산합니다.
 async function findMyRank(userId) {
   const myBestResult = await db.query(
-    `SELECT MIN(duration_ms) AS best_duration_ms FROM rebirth_history WHERE user_id = $1 AND mode = 'record'`,
-    [userId]
+    `SELECT MIN(duration_ms) AS best_duration_ms FROM rebirth_history
+     WHERE user_id = $1 AND mode = 'record' AND season = $2`,
+    [userId, RANKING_SEASON]
   );
   const myBest = myBestResult.rows[0]?.best_duration_ms;
   if (!myBest) return null;
 
   const rankResult = await db.query(
     `SELECT COUNT(*) + 1 AS rank FROM (
-       SELECT user_id, MIN(duration_ms) AS best FROM rebirth_history WHERE mode = 'record' GROUP BY user_id
+       SELECT user_id, MIN(duration_ms) AS best FROM rebirth_history
+       WHERE mode = 'record' AND season = $2 GROUP BY user_id
      ) t WHERE t.best < $1`,
-    [myBest]
+    [myBest, RANKING_SEASON]
   );
   return {
     rank: parseInt(rankResult.rows[0].rank, 10),
@@ -1137,18 +1143,19 @@ router.get('/leaderboard', handle('서버 오류가 발생했습니다.', async 
   const [totalResult, result] = await Promise.all([
     db.query(
       `SELECT COUNT(*) AS total FROM (
-         SELECT user_id FROM rebirth_history WHERE mode = 'record' GROUP BY user_id
-       ) t`
+         SELECT user_id FROM rebirth_history WHERE mode = 'record' AND season = $1 GROUP BY user_id
+       ) t`,
+      [RANKING_SEASON]
     ),
     db.query(
       `SELECT u.id AS user_id, u.nickname, MIN(rh.duration_ms) AS best_duration_ms
        FROM rebirth_history rh
        JOIN users u ON u.id = rh.user_id
-       WHERE rh.mode = 'record'
+       WHERE rh.mode = 'record' AND rh.season = $3
        GROUP BY u.id, u.nickname
        ORDER BY best_duration_ms ASC
        LIMIT $1 OFFSET $2`,
-      [pageSize, offset]
+      [pageSize, offset, RANKING_SEASON]
     ),
   ]);
 
@@ -1164,7 +1171,11 @@ router.get('/leaderboard', handle('서버 오류가 발생했습니다.', async 
 
   const myRank = leaderboard.find(r => r.isMe) || await findMyRank(userId);
 
-  return { leaderboard, myRank, page, pageSize, totalPlayers, totalPages };
+  return {
+    leaderboard, myRank, page, pageSize, totalPlayers, totalPages,
+    season: RANKING_SEASON,
+    goldRequired: REBIRTH_GOLD_REQUIRED,
+  };
 }));
 
 module.exports = router;

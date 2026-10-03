@@ -170,12 +170,12 @@
     </div>
 
     <div class="goal-box record-only" id="rebirthGoalBox">
-      <p class="goal-top"><span>🎯 환생까지</span><span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 100,000G</span></p>
+      <p class="goal-top"><span>🎯 환생까지</span><span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 300,000G</span></p>
       <div class="goal-bar-wrap"><div class="goal-bar-fill" id="rebirthGoalBar"></div></div>
       <p class="prestige-hint" id="prestigeHint"></p>
     </div>
 
-    <button class="btn-primary record-only hidden" id="mainRebirthBtn" disabled style="margin:10px 0 12px;">✨ 환생하기! (100,000G)</button>
+    <button class="btn-primary record-only hidden" id="mainRebirthBtn" disabled style="margin:10px 0 12px;">✨ 환생하기! (300,000G)</button>
 
     <button class="golden-hint" id="goldenHintBtn">
       <span>🎁 <strong>황금 상자</strong> · 접속해 있으면 가끔 나타나요</span>
@@ -209,8 +209,8 @@
     <div class="item-effects-box" id="itemEffectsBox"></div>
 
     <div class="rebirth-box record-only">
-      <p class="rebirth-top"><span>🌀 환생 진행도</span><span id="rebirthProgressText" style="color:var(--gold);">0 / 100,000G</span></p>
-      <button class="btn-primary hidden" id="rebirthBtn" disabled style="margin-bottom:8px;">✨ 환생하기 (100,000G)</button>
+      <p class="rebirth-top"><span>🌀 환생 진행도</span><span id="rebirthProgressText" style="color:var(--gold);">0 / 300,000G</span></p>
+      <button class="btn-primary hidden" id="rebirthBtn" disabled style="margin-bottom:8px;">✨ 환생하기 (300,000G)</button>
       <button class="collection-link" id="toggleRebirthHistoryBtn" style="margin:0; font-size:12px;">환생 기록 보기</button>
       <div class="hidden" id="rebirthHistoryList" style="margin-top:8px; font-size:12px; color:var(--ink-dim);"></div>
     </div>
@@ -292,7 +292,7 @@
       <h1 style="margin:0; font-size:20px;">🏆 랭킹</h1>
       <button id="backFromRankingBtn">← 돌아가기</button>
     </div>
-    <p style="font-size:12px; color:var(--ink-dim); margin-top:-10px; margin-bottom:16px;">10만 골드까지 가장 빨리 도달한 환생 기록입니다</p>
+    <p style="font-size:12px; color:var(--ink-dim); margin-top:-10px; margin-bottom:16px;" id="rankingSubtitle">시즌 2 · 30만 골드까지 가장 빨리 도달한 환생 기록입니다</p>
     <div id="rankingList"></div>
     <div class="rank-pagination hidden" id="rankPagination">
       <button id="rankPrevBtn">← 이전</button>
