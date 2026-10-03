@@ -20,6 +20,8 @@ const {
   TREASURES,
   PERK_START_GOLD,
   PERK_START_AUTO_OPEN_MS,
+  INCOME_BOOST_MULTIPLIER,
+  TREASURE_BY_KEY,
 } = require('./config');
 const { getItemStars, getClaimStats, getPerkLevel, rollBoxes, craftCascade } = require('./logic');
 
@@ -30,6 +32,7 @@ const CLAIM_COLUMNS = [
   'upgrade_income', 'upgrade_charge_speed', 'upgrade_capacity', 'upgrade_luck',
   'auto_open_enabled', 'auto_open_remaining_ms', 'auto_craft_unlocked', 'auto_craft_enabled',
   'prestige_points', 'prestige_perks', 'run_gold_earned', 'last_active_at',
+  'golden_box_next_at', 'income_boost_until', 'lifetime_stats', 'achievements_claimed',
 ];
 
 // 이 요청 시점에 유저가 어떤 모드(기록/수집)를 쓰고 있는지 확인합니다.
@@ -112,6 +115,46 @@ function computeIncome(ownedCounts, claim) {
   };
 }
 
+// -------------------------------
+// 누적 기록 (업적용, 환생해도 사라지지 않음)
+// -------------------------------
+// lifetime_stats JSONB: { boxes, crafts, legendary, mythic, golden, bestIncome }
+
+// 얻은 아이템 묶음({ itemKey: 개수 })에서 전설/신화 개수를 셉니다.
+function countRareGains(counts) {
+  let legendary = 0;
+  let mythic = 0;
+  for (const [key, amount] of Object.entries(counts)) {
+    if (amount <= 0) continue;
+    const rarity = TREASURE_BY_KEY.get(key)?.rarity;
+    if (rarity === 'legendary') legendary += amount;
+    if (rarity === 'mythic') mythic += amount;
+  }
+  return { legendary, mythic };
+}
+
+// 메모리의 claim.lifetime_stats에 증가분을 더하고, 새 객체를 돌려줍니다.
+function bumpStats(claim, deltas) {
+  const stats = { ...(claim.lifetime_stats || {}) };
+  for (const [key, amount] of Object.entries(deltas)) {
+    if (!amount) continue;
+    stats[key] = (Number(stats[key]) || 0) + amount;
+  }
+  claim.lifetime_stats = stats;
+  return stats;
+}
+
+// 증가분을 더해서 DB에도 저장합니다. (claim은 이미 FOR UPDATE로 잠근 세이브여야 합니다)
+async function saveStats(client, userId, mode, claim, deltas) {
+  const stats = bumpStats(claim, deltas);
+  await updateClaim(client, userId, mode, { lifetime_stats: JSON.stringify(stats) });
+}
+
+// 상자를 열어서 얻은 아이템 묶음에 대한 기록 증가분
+function boxStatDeltas(boxCount, counts) {
+  return { boxes: boxCount, ...countRareGains(counts) };
+}
+
 // 얻은(또는 합성으로 소모한) 아이템을 user_items에 반영하고, 새로 얻은 아이템은 발견 기록도 남깁니다.
 // deltas는 { itemKey: 증감 } 형태입니다 (음수 = 소모). 아이템 종류가 많아도 쿼리는 두 번만 실행됩니다.
 // 발견 기록은
@@ -166,6 +209,10 @@ async function settle(client, userId, mode) {
   const stats = getClaimStats(claim);
   let owned = await getOwnedCounts(client, userId, mode, { forUpdate: true });
   const itemDeltas = {};
+  const statDeltas = {};
+  const addStats = (deltas) => {
+    for (const [key, amount] of Object.entries(deltas)) statDeltas[key] = (statDeltas[key] || 0) + amount;
+  };
   const applyDeltas = (deltas) => {
     for (const [key, amount] of Object.entries(deltas)) {
       itemDeltas[key] = (itemDeltas[key] || 0) + amount;
@@ -175,9 +222,16 @@ async function settle(client, userId, mode) {
 
   // 1. 골드: 지금까지 들고 있던 아이템 기준으로 계산 (이번 정산에서 새로 얻은 아이템은 다음 정산부터 반영)
   const income = computeIncome(owned, claim);
-  const incomeElapsedMs = Math.max(0, now - new Date(claim.last_income_collected_at));
+  const lastCollected = new Date(claim.last_income_collected_at);
+  const incomeElapsedMs = Math.max(0, now - lastCollected);
   const storageCapped = incomeElapsedMs > stats.storageMs;
-  const earned = Math.floor(Math.min(incomeElapsedMs, stats.storageMs) / 1000 * income.perMinuteIncome / 60);
+  const countedIncomeMs = Math.min(incomeElapsedMs, stats.storageMs);
+  // 수입 2배 버프: 버프가 걸려 있던 구간만큼 한 번 더 셉니다.
+  const boostUntil = claim.income_boost_until ? new Date(claim.income_boost_until) : null;
+  const boostedMs = boostUntil
+    ? Math.min(countedIncomeMs, Math.max(0, Math.min(now, boostUntil) - lastCollected)) * (INCOME_BOOST_MULTIPLIER - 1)
+    : 0;
+  const earned = Math.floor((countedIncomeMs + boostedMs) / 1000 * income.perMinuteIncome / 60);
   const gold = parseInt(claim.total_treasure, 10) + earned;
   const runGoldEarned = parseInt(claim.run_gold_earned, 10) + earned;
 
@@ -205,6 +259,7 @@ async function settle(client, userId, mode) {
       const rolled = rollBoxes(pity, toOpen, stats.luckLevel);
       pity = rolled.pity;
       applyDeltas(rolled.counts);
+      addStats(boxStatDeltas(toOpen, rolled.counts));
       autoOpened = { count: toOpen, counts: rolled.counts, pityTriggered: rolled.pityTriggered };
     }
   } else {
@@ -223,12 +278,15 @@ async function settle(client, userId, mode) {
     const crafted = craftCascade(owned);
     if (crafted.totalCrafts > 0) {
       applyDeltas(crafted.deltas);
+      addStats({ crafts: crafted.totalCrafts, ...countRareGains(crafted.deltas) });
       autoCrafted = { count: crafted.totalCrafts };
     }
   }
 
   await addItems(client, userId, mode, itemDeltas);
+  const lifetimeStats = bumpStats(claim, statDeltas);
   await updateClaim(client, userId, mode, {
+    lifetime_stats: JSON.stringify(lifetimeStats),
     total_treasure: gold,
     run_gold_earned: runGoldEarned,
     last_income_collected_at: now,
@@ -317,6 +375,10 @@ function isPrestigeMode(mode) {
 }
 
 module.exports = {
+  bumpStats,
+  saveStats,
+  boxStatDeltas,
+  countRareGains,
   getActiveMode,
   getClaim,
   updateClaim,

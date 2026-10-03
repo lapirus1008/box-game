@@ -144,6 +144,55 @@ const PERK_START_GOLD = 5000;
 const PERK_STORAGE_MS = 2 * HOUR_MS;
 const PERK_START_AUTO_OPEN_MS = 2 * HOUR_MS;
 
+// -------------------------------
+// 황금 상자 (접속해 있을 때만 가끔 나타나는 보너스)
+// -------------------------------
+// 상태 조회(접속 중) 때 다음 등장 시각을 정해두고, 등장 후 일정 시간 안에 누르면 보상을 줍니다.
+const GOLDEN_BOX_MIN_GAP_MS = 3 * 60 * 1000;   // 다음 황금 상자까지 최소 3분
+const GOLDEN_BOX_MAX_GAP_MS = 7 * 60 * 1000;   // 최대 7분
+const GOLDEN_BOX_WINDOW_MS = 45 * 1000;        // 나타난 뒤 45초 안에 눌러야 함
+const GOLDEN_BOX_REWARDS = [
+  { key: 'gold',     weight: 40 },  // 분당 수입 × 30분 (최소 3,000G)
+  { key: 'boxes',    weight: 25 },  // 상자 100개 즉시 개봉
+  { key: 'boost',    weight: 25 },  // 10분간 수입 2배
+  { key: 'autoOpen', weight: 10 },  // 자동 개봉 +1시간 (보관 시간이 꽉 찼으면 골드로 대체)
+];
+const GOLDEN_GOLD_MINUTES = 30;
+const GOLDEN_GOLD_MIN = 3000;
+const GOLDEN_BOXES = 100;
+const INCOME_BOOST_MS = 10 * 60 * 1000;
+const INCOME_BOOST_MULTIPLIER = 2;
+
+// -------------------------------
+// 업적 (모드별로 따로, 환생해도 사라지지 않습니다)
+// -------------------------------
+// stat: 어떤 기록으로 진행도를 잴지
+//   boxes(연 상자 수) · crafts(합성 횟수) · legendary/mythic(획득 수) · golden(황금 상자)
+//   bestIncome(최고 분당 수입) · rebirths(환생 횟수)
+// reward: { gold } 또는 { points }(환생 포인트, 기록모드 전용 업적에만)
+const ACHIEVEMENTS = [
+  { key: 'boxes_1',     stat: 'boxes',      goal: 100,     emoji: '📦', name: '첫 발걸음',     reward: { gold: 2000 } },
+  { key: 'boxes_2',     stat: 'boxes',      goal: 1000,    emoji: '📦', name: '상자 수집가',   reward: { gold: 15000 } },
+  { key: 'boxes_3',     stat: 'boxes',      goal: 10000,   emoji: '📦', name: '상자 중독',     reward: { gold: 100000 } },
+  { key: 'boxes_4',     stat: 'boxes',      goal: 100000,  emoji: '📦', name: '상자의 군주',   reward: { gold: 1000000 } },
+  { key: 'crafts_1',    stat: 'crafts',     goal: 50,      emoji: '⚙️', name: '견습 장인',     reward: { gold: 3000 } },
+  { key: 'crafts_2',    stat: 'crafts',     goal: 500,     emoji: '⚙️', name: '숙련 장인',     reward: { gold: 30000 } },
+  { key: 'crafts_3',    stat: 'crafts',     goal: 5000,    emoji: '⚙️', name: '전설의 장인',   reward: { gold: 300000 } },
+  { key: 'legendary_1', stat: 'legendary',  goal: 1,       emoji: '🔥', name: '전설과의 조우', reward: { gold: 5000 } },
+  { key: 'legendary_2', stat: 'legendary',  goal: 10,      emoji: '🔥', name: '전설 사냥꾼',   reward: { gold: 30000 } },
+  { key: 'legendary_3', stat: 'legendary',  goal: 100,     emoji: '🔥', name: '전설이 된 자',  reward: { gold: 300000 } },
+  { key: 'mythic_1',    stat: 'mythic',     goal: 1,       emoji: '🧭', name: '신화의 목격자', reward: { gold: 50000 } },
+  { key: 'mythic_2',    stat: 'mythic',     goal: 5,       emoji: '🧭', name: '신화 수집가',   reward: { gold: 500000 } },
+  { key: 'income_1',    stat: 'bestIncome', goal: 1000,    emoji: '💰', name: '부자의 길',     reward: { gold: 10000 } },
+  { key: 'income_2',    stat: 'bestIncome', goal: 10000,   emoji: '💰', name: '거상',          reward: { gold: 100000 } },
+  { key: 'income_3',    stat: 'bestIncome', goal: 100000,  emoji: '💰', name: '황금 제국',     reward: { gold: 1000000 } },
+  { key: 'golden_1',    stat: 'golden',     goal: 10,      emoji: '✨', name: '눈치 빠른 손',  reward: { gold: 20000 } },
+  { key: 'golden_2',    stat: 'golden',     goal: 100,     emoji: '✨', name: '황금 사냥꾼',   reward: { gold: 200000 } },
+  { key: 'rebirth_1',   stat: 'rebirths',   goal: 1,       emoji: '🌀', name: '다시 태어나다', reward: { points: 1 }, recordOnly: true },
+  { key: 'rebirth_2',   stat: 'rebirths',   goal: 5,       emoji: '🌀', name: '윤회의 고리',   reward: { points: 2 }, recordOnly: true },
+  { key: 'rebirth_3',   stat: 'rebirths',   goal: 20,      emoji: '🌀', name: '영원한 여행자', reward: { points: 3 }, recordOnly: true },
+];
+
 // 이 시간 이상 접속하지 않았다가 돌아오면 "자리 비운 동안" 요약을 보여줍니다.
 const AWAY_SUMMARY_MIN_MS = 5 * 60 * 1000;
 
@@ -200,4 +249,14 @@ module.exports = {
   PERK_STORAGE_MS,
   PERK_START_AUTO_OPEN_MS,
   AWAY_SUMMARY_MIN_MS,
+  GOLDEN_BOX_MIN_GAP_MS,
+  GOLDEN_BOX_MAX_GAP_MS,
+  GOLDEN_BOX_WINDOW_MS,
+  GOLDEN_BOX_REWARDS,
+  GOLDEN_GOLD_MINUTES,
+  GOLDEN_GOLD_MIN,
+  GOLDEN_BOXES,
+  INCOME_BOOST_MS,
+  INCOME_BOOST_MULTIPLIER,
+  ACHIEVEMENTS,
 };

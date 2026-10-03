@@ -12,6 +12,15 @@
 
 <div id="legendaryFlash"></div>
 
+<!-- 황금 상자: 접속 중일 때 가끔 화면 오른쪽 아래에 나타남 -->
+<button class="golden-box hidden" id="goldenBox">
+  <span class="golden-box-emoji">🎁</span>
+  <span class="golden-box-text"><strong>황금 상자!</strong><small id="goldenBoxTimer"></small></span>
+</button>
+
+<!-- 짧은 알림 -->
+<div class="toast" id="toast"></div>
+
 <!-- 자리 비운 동안 요약 -->
 <div id="awayOverlay">
   <div class="away-card">
@@ -167,6 +176,7 @@
     <div class="nav-grid">
       <button class="nav-tile" id="openCollectionBtn">🎒 가방·도감</button>
       <button class="nav-tile" id="openUpgradeBtn">🛠 강화</button>
+      <button class="nav-tile" id="openAchievementBtn">🏅 업적<span class="nav-badge hidden" id="achievementBadge"></span></button>
       <button class="nav-tile record-only" id="openRankingBtn">🏆 랭킹</button>
     </div>
     <button class="reset-link record-only" id="resetRunBtn">🔄 초심으로 돌아가기</button>
@@ -245,6 +255,17 @@
       <p class="prestige-rule">이번 판에 번 골드 50,000G마다 환생할 때 포인트 1개 · 상점 특성은 환생해도 영구히 남아요 (골드 업그레이드와 자동화는 환생하면 초기화)</p>
       <div class="shop-list" id="perkList" style="margin-top:10px;"></div>
     </div>
+  </div>
+
+  <!-- 업적 화면 -->
+  <div class="card hidden" id="achievementScreen">
+    <div class="top-row">
+      <h1 style="margin:0; font-size:20px;">업적</h1>
+      <button id="backFromAchievementBtn">← 돌아가기</button>
+    </div>
+    <p class="screen-sub">목표를 달성하고 보상을 받아요 · 환생해도 기록이 남아요</p>
+    <div class="craft-result" id="achievementResult"></div>
+    <div class="achievement-list" id="achievementList"></div>
   </div>
 
   <!-- 랭킹 화면 -->

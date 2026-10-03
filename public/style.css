@@ -671,7 +671,8 @@ body.mode-collection .collection-mode-notice{ display:block; }
 
 /* 하단 메뉴 타일 */
 .nav-grid{
-  display:flex;
+  display:grid;
+  grid-template-columns:1fr 1fr;
   gap:8px;
   margin-top:12px;
 }
@@ -718,13 +719,13 @@ body.mode-collection .collection-mode-notice{ display:block; }
 }
 
 /* 도감 화면 */
-#collectionScreen .top-row, #rankingScreen .top-row, #upgradeScreen .top-row{
+#collectionScreen .top-row, #rankingScreen .top-row, #upgradeScreen .top-row, #achievementScreen .top-row{
   display:flex;
   justify-content:space-between;
   align-items:center;
   margin-bottom:20px;
 }
-#backToGameBtn, #backFromRankingBtn, #backFromUpgradeBtn{
+#backToGameBtn, #backFromRankingBtn, #backFromUpgradeBtn, #backFromAchievementBtn{
   all:unset;
   color:var(--ink-dim);
   font-size:13px;
@@ -954,3 +955,93 @@ body.mode-collection .collection-mode-notice{ display:block; }
 .time-bar-fill{ height:100%; width:0%; background:var(--teal); transition:width 0.3s; }
 .perk-btn{ min-width:64px; }
 .prestige-box .shop-row{ background:var(--surface); }
+
+/* 업적 알림 배지 (메인 하단 업적 버튼) */
+.nav-tile{ position:relative; }
+.nav-badge{
+  position:absolute;
+  top:-6px;
+  right:-6px;
+  min-width:20px;
+  height:20px;
+  padding:0 5px;
+  border-radius:999px;
+  background:var(--danger);
+  color:#fff;
+  font-size:11px;
+  font-weight:700;
+  line-height:20px;
+  text-align:center;
+}
+
+/* 업적 화면 */
+.achievement-list{ display:flex; flex-direction:column; gap:8px; }
+.achievement-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:12px;
+  background:var(--surface-2);
+  border:1px solid transparent;
+}
+.achievement-row.claimable{ border-color:var(--gold); box-shadow:0 0 10px rgba(227,178,60,0.2); }
+.achievement-row.done{ opacity:0.55; }
+.achievement-emoji{ font-size:22px; flex-shrink:0; }
+.achievement-info{ flex:1; min-width:0; }
+.achievement-title{ font-size:13px; font-weight:600; color:var(--ink); }
+.achievement-goal{ font-size:11px; color:var(--ink-dim); margin-top:2px; }
+.achievement-row .time-bar-fill{ background:var(--gold); }
+.achievement-btn{ min-width:56px; }
+.achievement-state{ flex-shrink:0; font-size:11px; color:var(--ink-dim); white-space:nowrap; }
+
+/* 황금 상자 (떠 있는 버튼) */
+.golden-box{
+  position:fixed;
+  right:16px;
+  bottom:24px;
+  z-index:800;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  width:auto;
+  padding:10px 14px;
+  border-radius:14px;
+  color:#1A1305;
+  background:linear-gradient(135deg, #F7D774, var(--gold));
+  box-shadow:0 0 18px rgba(227,178,60,0.7);
+  animation:goldenBounce 1.1s ease-in-out infinite;
+}
+.golden-box.hidden{ display:none; }
+.golden-box-emoji{ font-size:26px; line-height:1; }
+.golden-box-text{ display:flex; flex-direction:column; text-align:left; }
+.golden-box-text strong{ font-size:14px; }
+.golden-box-text small{ font-size:11px; font-weight:600; }
+@keyframes goldenBounce{
+  0%, 100%{ transform:translateY(0) rotate(-2deg); }
+  50%{ transform:translateY(-6px) rotate(2deg); }
+}
+
+/* 짧은 알림 */
+.toast{
+  position:fixed;
+  left:50%;
+  top:16px;
+  z-index:950;
+  max-width:calc(100% - 32px);
+  padding:10px 16px;
+  border-radius:12px;
+  background:var(--surface);
+  border:1px solid var(--gold);
+  color:var(--ink);
+  font-size:13px;
+  font-weight:600;
+  text-align:center;
+  box-shadow:0 6px 20px rgba(0,0,0,0.4);
+  opacity:0;
+  pointer-events:none;
+  transform:translate(-50%, -10px);
+  transition:opacity 0.25s, transform 0.25s;
+}
+.toast.show{ opacity:1; transform:translate(-50%, 0); }
+.toast.error{ border-color:var(--danger); }

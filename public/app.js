@@ -26,6 +26,10 @@ let cachedLastIncomeCollectedAt = null;
 let cachedPerMinuteIncome = 60;
 let cachedIncome = null;
 let lastStatus = null; // 강화 화면 등에서 쓰는 마지막 상태 응답
+let cachedBoostUntil = null;      // 수입 2배가 끝나는 시각
+let cachedBoostMultiplier = 2;
+let goldenBoxAppearAt = null;     // 황금 상자가 나타나는 시각
+let goldenBoxExpireAt = null;     // 황금 상자가 사라지는 시각
 let cachedRunStartedAt = null;
 let cachedRebirthCount = 0;
 let serverTimeOffset = 0;
@@ -36,6 +40,7 @@ const gameScreen = document.getElementById('gameScreen');
 const collectionScreen = document.getElementById('collectionScreen');
 const rankingScreen = document.getElementById('rankingScreen');
 const upgradeScreen = document.getElementById('upgradeScreen');
+const achievementScreen = document.getElementById('achievementScreen');
 const authError = document.getElementById('authError');
 
 // 골드는 항상 소수점 없이, 천 단위 쉼표를 붙여 표시합니다.
@@ -46,8 +51,17 @@ function formatGold(value){
 // 지금 이 순간의 골드 (서버 정산값 + 정산 이후 쌓인 골드). 서버와 같은 방식으로 내림 계산합니다.
 function liveGold(){
   if (!cachedLastIncomeCollectedAt) return cachedGold;
-  const elapsedSeconds = Math.max(0, (adjustedNow() - cachedLastIncomeCollectedAt) / 1000);
-  return cachedGold + Math.floor(elapsedSeconds * cachedPerMinuteIncome / 60);
+  const now = adjustedNow();
+  const elapsedMs = Math.max(0, now - cachedLastIncomeCollectedAt);
+  // 수입 2배 버프가 걸려 있던 구간은 한 번 더 셉니다 (서버와 같은 계산)
+  const boostedMs = cachedBoostUntil
+    ? Math.min(elapsedMs, Math.max(0, Math.min(now, cachedBoostUntil) - cachedLastIncomeCollectedAt)) * (cachedBoostMultiplier - 1)
+    : 0;
+  return cachedGold + Math.floor((elapsedMs + boostedMs) / 1000 * cachedPerMinuteIncome / 60);
+}
+
+function boostRemainingMs(){
+  return cachedBoostUntil ? Math.max(0, cachedBoostUntil - adjustedNow()) : 0;
 }
 
 // 서버 응답의 골드로 기준값을 맞춥니다. (서버는 응답 직전에 정산하므로 기본 정산 시각은 "지금")
@@ -68,6 +82,8 @@ function applyIncome(income){
   if (!income) return;
   cachedIncome = income;
   cachedPerMinuteIncome = income.perMinuteIncome;
+  cachedBoostUntil = income.boostUntil ? new Date(income.boostUntil) : null;
+  if (income.boostMultiplier) cachedBoostMultiplier = income.boostMultiplier;
   if (income.lastCollectedAt) {
     cachedLastIncomeCollectedAt = new Date(income.lastCollectedAt);
   }
@@ -213,6 +229,9 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
   localStorage.removeItem('boxGameToken');
   clearInterval(statusInterval);
   clearInterval(resyncInterval);
+  goldenBoxAppearAt = null;
+  goldenBoxExpireAt = null;
+  document.getElementById('goldenBox').classList.add('hidden');
   resetGameResultUI();
   gameScreen.classList.add('hidden');
   authScreen.classList.remove('hidden');
@@ -315,6 +334,9 @@ async function refreshStatus(){
 
     if (data.collectorRank) renderCollectorRank(data.collectorRank);
     renderPrestigeHint(data.prestige);
+    applyGoldenBox(data.goldenBox);
+    renderAchievementBadge(data.claimableAchievements);
+    if (!achievementScreen.classList.contains('hidden')) renderAchievements();
     if (data.awaySummary) showAwaySummary(data.awaySummary, data.autoOpened);
     else handleAutoEvents(data);
     if (!upgradeScreen.classList.contains('hidden')) renderUpgradeScreen();
@@ -468,7 +490,10 @@ function renderTick(){
 
   // 골드는 실시간으로 쌓입니다 (받기 버튼 없이 자동 정산)
   renderGold();
-  const rateText = `💰 분당 +${formatGold(cachedPerMinuteIncome)}G 자동으로 쌓이는 중`;
+  const boostLeft = boostRemainingMs();
+  const rateText = boostLeft > 0
+    ? `⚡ 분당 +${formatGold(cachedPerMinuteIncome * cachedBoostMultiplier)}G · 수입 ${cachedBoostMultiplier}배 ${formatDuration(Math.floor(boostLeft / 1000)).slice(3)} 남음`
+    : `💰 분당 +${formatGold(cachedPerMinuteIncome)}G 자동으로 쌓이는 중`;
   let breakdownText = '';
   if (cachedIncome) {
     const parts = [`기본 ${formatGold(cachedIncome.baseIncome)}`, `아이템 ${formatGold(cachedIncome.itemIncome)}`];
@@ -506,6 +531,7 @@ function renderTick(){
     updateUpgradeAffordability();
     renderAutoOpenTimer();
   }
+  renderGoldenBox();
 }
 
 const GOLD_PER_BOX_PURCHASE = 75; // 서버의 GOLD_PER_BOX_PURCHASE와 반드시 일치시켜야 함
@@ -1294,6 +1320,151 @@ function buyUpgrade(key, btn){
   return postShopAction('/api/box/upgrade', { key }, btn);
 }
 
+
+// -------------------------------
+// 짧은 알림 (화면 위쪽에 잠깐 떴다 사라짐)
+// -------------------------------
+let toastTimer = null;
+function showToast(message, isError){
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.classList.toggle('error', Boolean(isError));
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 3200);
+}
+
+// -------------------------------
+// 황금 상자
+// -------------------------------
+function applyGoldenBox(box){
+  if (!box) return;
+  const now = adjustedNow().getTime();
+  if (box.available) {
+    goldenBoxAppearAt = new Date(now);
+    goldenBoxExpireAt = new Date(now + box.expiresInMs);
+  } else if (box.appearsInMs != null) {
+    goldenBoxAppearAt = new Date(now + box.appearsInMs);
+    goldenBoxExpireAt = new Date(now + box.expiresInMs);
+  }
+}
+
+function renderGoldenBox(){
+  const el = document.getElementById('goldenBox');
+  const loggedIn = authScreen.classList.contains('hidden');
+  const now = adjustedNow();
+  const visible = loggedIn && goldenBoxAppearAt && now >= goldenBoxAppearAt && now < goldenBoxExpireAt;
+  el.classList.toggle('hidden', !visible);
+  if (visible) {
+    const secondsLeft = Math.ceil((goldenBoxExpireAt - now) / 1000);
+    document.getElementById('goldenBoxTimer').textContent = `${secondsLeft}초 안에 눌러요`;
+  }
+}
+
+document.getElementById('goldenBox').addEventListener('click', async function(){
+  this.disabled = true;
+  try {
+    const res = await authFetch('/api/box/golden-box', { method: 'POST' });
+    const data = await res.json();
+    showToast(data.message, !res.ok);
+    goldenBoxAppearAt = null;
+    goldenBoxExpireAt = null;
+    renderGoldenBox();
+    if (res.ok) {
+      setGold(data.totalTreasure);
+      if (data.boostUntil) cachedBoostUntil = new Date(data.boostUntil);
+      if (data.obtained) checkAndTriggerLegendary(data.obtained, data.mythicPityTriggered);
+      else triggerLegendaryEffect();
+    }
+  } catch (err) {
+    showToast('서버에 연결할 수 없습니다.', true);
+  } finally {
+    this.disabled = false;
+    refreshStatus();
+  }
+});
+
+// -------------------------------
+// 업적 화면
+// -------------------------------
+function renderAchievementBadge(count){
+  const badge = document.getElementById('achievementBadge');
+  badge.textContent = count > 0 ? count : '';
+  badge.classList.toggle('hidden', !(count > 0));
+}
+
+document.getElementById('openAchievementBtn').addEventListener('click', async () => {
+  gameScreen.classList.add('hidden');
+  achievementScreen.classList.remove('hidden');
+  document.getElementById('achievementResult').style.display = 'none';
+  renderAchievements();
+  await refreshStatus();
+});
+document.getElementById('backFromAchievementBtn').addEventListener('click', () => {
+  achievementScreen.classList.add('hidden');
+  gameScreen.classList.remove('hidden');
+  refreshStatus();
+});
+
+const STAT_UNIT = { boxes: '개', crafts: '번', legendary: '개', mythic: '개', golden: '번', bestIncome: 'G/분', rebirths: '번' };
+
+function renderAchievements(){
+  if (!lastStatus || !lastStatus.achievements) return;
+  const list = document.getElementById('achievementList');
+  // 종류(stat)별로 묶어서, 받을 수 있는 단계 + 지금 도전 중인 단계 하나만 보여줍니다.
+  const groups = {};
+  lastStatus.achievements.forEach(a => { (groups[a.stat] = groups[a.stat] || []).push(a); });
+  const visible = [];
+  Object.values(groups).forEach(tiers => {
+    const claimable = tiers.filter(a => a.claimable);
+    const next = tiers.find(a => !a.claimed && !a.claimable);
+    const doneCount = tiers.filter(a => a.claimed).length;
+    claimable.forEach(a => visible.push({ ...a, tierText: `${tiers.indexOf(a) + 1}/${tiers.length}단계` }));
+    if (next && claimable.length === 0) visible.push({ ...next, tierText: `${tiers.indexOf(next) + 1}/${tiers.length}단계` });
+    if (!next && claimable.length === 0) visible.push({ ...tiers[tiers.length - 1], tierText: `${doneCount}/${tiers.length}단계 모두 완료` });
+  });
+  // 받을 수 있는 것 → 진행 중 → 완료 순서
+  const order = a => (a.claimable ? 0 : a.claimed ? 2 : 1);
+  visible.sort((a, b) => order(a) - order(b));
+  list.innerHTML = '';
+  visible.forEach(a => {
+    const row = document.createElement('div');
+    row.className = `achievement-row ${a.claimable ? 'claimable' : ''} ${a.claimed ? 'done' : ''}`;
+    const pct = Math.min(100, (a.progress / a.goal) * 100);
+    const unit = STAT_UNIT[a.stat] || '';
+    row.innerHTML = `
+      <span class="achievement-emoji">${a.emoji}</span>
+      <div class="achievement-info">
+        <div class="achievement-title">${a.name} <span class="shop-level">${a.tierText}</span></div>
+        <div class="achievement-goal">${formatGold(a.progress)} / ${formatGold(a.goal)}${unit} · 보상 ${a.rewardText}</div>
+        <div class="time-bar-wrap"><div class="time-bar-fill" style="width:${pct}%"></div></div>
+      </div>
+      ${a.claimable
+        ? `<button class="shop-btn achievement-btn" data-achievement="${a.key}">받기</button>`
+        : `<span class="achievement-state">${a.claimed ? '✔ 완료' : '진행 중'}</span>`}
+    `;
+    list.appendChild(row);
+  });
+  list.querySelectorAll('[data-achievement]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const res = await authFetch('/api/box/achievement', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: btn.dataset.achievement }),
+        });
+        const data = await res.json();
+        showToast(data.message, !res.ok);
+        if (res.ok) setGold(data.totalTreasure);
+      } catch (err) {
+        showToast('서버에 연결할 수 없습니다.', true);
+      } finally {
+        await refreshStatus();
+      }
+    });
+  });
+}
 
 // -------------------------------
 // 랭킹 화면

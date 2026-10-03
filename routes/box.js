@@ -50,6 +50,16 @@ const {
   PRESTIGE_PERKS,
   PERK_INCOME_PERCENT,
   AWAY_SUMMARY_MIN_MS,
+  GOLDEN_BOX_MIN_GAP_MS,
+  GOLDEN_BOX_MAX_GAP_MS,
+  GOLDEN_BOX_WINDOW_MS,
+  GOLDEN_BOX_REWARDS,
+  GOLDEN_GOLD_MINUTES,
+  GOLDEN_GOLD_MIN,
+  GOLDEN_BOXES,
+  INCOME_BOOST_MS,
+  INCOME_BOOST_MULTIPLIER,
+  ACHIEVEMENTS,
 } = require('../game/config');
 const {
   rollWithPity,
@@ -203,7 +213,77 @@ function awaySummary(save) {
 }
 
 function incomeResponse(save) {
-  return { ...save.income, lastCollectedAt: save.now };
+  const boostUntil = save.claim.income_boost_until ? new Date(save.claim.income_boost_until) : null;
+  return {
+    ...save.income,
+    lastCollectedAt: save.now,
+    boostUntil: boostUntil && boostUntil > save.now ? boostUntil : null,
+    boostMultiplier: INCOME_BOOST_MULTIPLIER,
+  };
+}
+
+// -------------------------------
+// 황금 상자 일정
+// -------------------------------
+function randomGoldenGap() {
+  return GOLDEN_BOX_MIN_GAP_MS + Math.floor(Math.random() * (GOLDEN_BOX_MAX_GAP_MS - GOLDEN_BOX_MIN_GAP_MS));
+}
+
+// 접속 중(상태 조회)일 때만 호출합니다. 다음 등장 시각이 없거나 이미 놓쳤다면 새로 잡습니다.
+async function syncGoldenBox(client, userId, mode, save) {
+  const now = save.now;
+  let nextAt = save.claim.golden_box_next_at ? new Date(save.claim.golden_box_next_at) : null;
+  if (!nextAt || now - nextAt > GOLDEN_BOX_WINDOW_MS) {
+    nextAt = new Date(now.getTime() + randomGoldenGap());
+    await store.updateClaim(client, userId, mode, { golden_box_next_at: nextAt });
+    save.claim.golden_box_next_at = nextAt;
+  }
+  return goldenBoxResponse(save);
+}
+
+function goldenBoxResponse(save) {
+  const nextAt = save.claim.golden_box_next_at ? new Date(save.claim.golden_box_next_at) : null;
+  if (!nextAt) return { available: false, appearsInMs: null, expiresInMs: null };
+  const available = save.now >= nextAt && save.now - nextAt <= GOLDEN_BOX_WINDOW_MS;
+  return {
+    available,
+    appearsInMs: available ? 0 : Math.max(0, nextAt - save.now),
+    expiresInMs: nextAt.getTime() + GOLDEN_BOX_WINDOW_MS - save.now.getTime(),
+  };
+}
+
+// -------------------------------
+// 업적
+// -------------------------------
+function getStatValue(claim, stat) {
+  if (stat === 'rebirths') return claim.rebirth_count;
+  return Number((claim.lifetime_stats || {})[stat]) || 0;
+}
+
+function describeReward(reward) {
+  return reward.points ? `✨ 환생 포인트 ${reward.points}` : `💰 ${reward.gold.toLocaleString()}G`;
+}
+
+function achievementsResponse(mode, claim) {
+  const claimed = claim.achievements_claimed || {};
+  const list = ACHIEVEMENTS
+    .filter(a => !a.recordOnly || store.isPrestigeMode(mode))
+    .map(a => {
+      const value = getStatValue(claim, a.stat);
+      const isClaimed = Boolean(claimed[a.key]);
+      return {
+        key: a.key,
+        emoji: a.emoji,
+        name: a.name,
+        stat: a.stat,
+        goal: a.goal,
+        progress: Math.min(value, a.goal),
+        claimed: isClaimed,
+        claimable: !isClaimed && value >= a.goal,
+        rewardText: describeReward(a.reward),
+      };
+    });
+  return { achievements: list, claimableAchievements: list.filter(a => a.claimable).length };
 }
 
 // -------------------------------
@@ -261,6 +341,7 @@ router.post('/open', handle('서버 오류로 상자를 열지 못했습니다.'
       mythic_pity: roll.pity,
     });
     await store.addItems(client, userId, mode, { [roll.treasure.key]: 1 });
+    await store.saveStats(client, userId, mode, save.claim, store.boxStatDeltas(1, { [roll.treasure.key]: 1 }));
 
     return {
       message: '상자를 열었습니다!',
@@ -294,6 +375,7 @@ router.post('/bulk-open', handle('서버 오류로 일괄 열기에 실패했습
       mythic_pity: pity,
     });
     await store.addItems(client, userId, mode, counts);
+    await store.saveStats(client, userId, mode, save.claim, store.boxStatDeltas(quantity, counts));
 
     return {
       message: `상자 ${quantity}개를 열었습니다!`,
@@ -330,6 +412,7 @@ router.post('/buy-boxes', handle('서버 오류로 구매에 실패했습니다.
 
     const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, save.stats.luckLevel);
     await store.addItems(client, userId, mode, counts);
+    await store.saveStats(client, userId, mode, save.claim, store.boxStatDeltas(quantity, counts));
 
     const remainingGold = currentGold - totalCost;
     await store.updateClaim(client, userId, mode, { total_treasure: remainingGold, mythic_pity: pity });
@@ -370,9 +453,18 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
     );
     const obtainedCount = parseInt(discoveredResult.rows[0].total, 10);
 
+    // 최고 분당 수입 기록 (업적용)
+    const bestIncome = Number((claim.lifetime_stats || {}).bestIncome) || 0;
+    if (save.income.perMinuteIncome > bestIncome) {
+      await store.saveStats(client, userId, mode, claim, { bestIncome: save.income.perMinuteIncome - bestIncome });
+    }
+    const goldenBox = await syncGoldenBox(client, userId, mode, save);
+
     return {
       mode,
       isRecordMode,
+      goldenBox,
+      ...achievementsResponse(mode, claim),
       collectionComplete: obtainedCount >= TREASURES.length,
       bonusClaimed: claim.completion_bonus_claimed,
       ...chargeResponse(save.chargeInfo),
@@ -516,6 +608,117 @@ router.post('/auto-craft', handle('서버 오류로 자동 합성 설정에 실�
 }));
 
 // -------------------------------
+// 황금 상자 열기: POST /api/box/golden-box
+// -------------------------------
+function pickGoldenReward() {
+  const total = GOLDEN_BOX_REWARDS.reduce((sum, r) => sum + r.weight, 0);
+  let rand = Math.random() * total;
+  for (const reward of GOLDEN_BOX_REWARDS) {
+    if (rand < reward.weight) return reward.key;
+    rand -= reward.weight;
+  }
+  return GOLDEN_BOX_REWARDS[0].key;
+}
+
+router.post('/golden-box', handle('서버 오류로 황금 상자를 열지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+
+  return withSave(userId, async (client, mode, save) => {
+    const box = goldenBoxResponse(save);
+    if (!box.available) {
+      throw new HttpError(400, box.appearsInMs > 0
+        ? '아직 황금 상자가 나타나지 않았어요.'
+        : '황금 상자가 사라졌어요. 다음 기회를 노려보세요!');
+    }
+
+    const { claim, now } = save;
+    const fields = { golden_box_next_at: new Date(now.getTime() + randomGoldenGap()) };
+    const result = { reward: pickGoldenReward() };
+    let gold = claim.total_treasure;
+    const statDeltas = { golden: 1 };
+
+    const giveGold = () => {
+      const amount = Math.max(GOLDEN_GOLD_MIN, save.income.perMinuteIncome * GOLDEN_GOLD_MINUTES);
+      gold += amount;
+      fields.total_treasure = gold;
+      fields.run_gold_earned = claim.run_gold_earned + amount;
+      result.reward = 'gold';
+      result.gold = amount;
+      result.message = `💰 황금 상자! +${amount.toLocaleString()}G`;
+    };
+
+    if (result.reward === 'boxes') {
+      const { counts, pity, pityTriggered } = rollBoxes(claim.mythic_pity, GOLDEN_BOXES, save.stats.luckLevel);
+      await store.addItems(client, userId, mode, counts);
+      fields.mythic_pity = pity;
+      Object.assign(statDeltas, store.boxStatDeltas(GOLDEN_BOXES, counts));
+      result.obtained = toObtainedList(counts);
+      result.mythicPityTriggered = pityTriggered;
+      result.message = `📦 황금 상자! 상자 ${GOLDEN_BOXES}개를 열었어요`;
+    } else if (result.reward === 'boost') {
+      const current = claim.income_boost_until ? new Date(claim.income_boost_until) : now;
+      const until = new Date(Math.max(now.getTime(), current.getTime()) + INCOME_BOOST_MS);
+      fields.income_boost_until = until;
+      result.boostUntil = until;
+      result.message = `⚡ 황금 상자! ${INCOME_BOOST_MS / 60000}분간 수입 ${INCOME_BOOST_MULTIPLIER}배`;
+    } else if (result.reward === 'autoOpen') {
+      const remaining = Number(claim.auto_open_remaining_ms);
+      const add = Math.min(HOUR_MS, save.stats.storageMs - remaining);
+      if (add <= 0) {
+        giveGold(); // 보관 시간이 꽉 찼으면 골드로 대신 줍니다
+      } else {
+        fields.auto_open_remaining_ms = remaining + add;
+        fields.auto_open_enabled = true;
+        result.message = `⏳ 황금 상자! 자동 개봉 +${formatHours(add)}`;
+      }
+    } else {
+      giveGold();
+    }
+
+    await store.updateClaim(client, userId, mode, fields);
+    await store.saveStats(client, userId, mode, claim, statDeltas);
+    return { ...result, mode, totalTreasure: gold };
+  });
+}));
+
+// -------------------------------
+// 업적 보상 받기: POST /api/box/achievement { key }
+// -------------------------------
+router.post('/achievement', handle('서버 오류로 업적 보상을 받지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+  const achievement = ACHIEVEMENTS.find(a => a.key === req.body.key);
+  if (!achievement) throw new HttpError(400, '존재하지 않는 업적입니다.');
+
+  return withSave(userId, async (client, mode, save) => {
+    const { claim } = save;
+    if (achievement.recordOnly && !store.isPrestigeMode(mode)) throw new HttpError(400, '기록모드 전용 업적입니다.');
+    const claimedMap = claim.achievements_claimed || {};
+    if (claimedMap[achievement.key]) throw new HttpError(400, '이미 보상을 받은 업적입니다.');
+    if (getStatValue(claim, achievement.stat) < achievement.goal) throw new HttpError(400, '아직 달성하지 못한 업적입니다.');
+
+    const fields = {
+      achievements_claimed: JSON.stringify({ ...claimedMap, [achievement.key]: save.now.toISOString() }),
+    };
+    let gold = claim.total_treasure;
+    if (achievement.reward.gold) {
+      gold += achievement.reward.gold;
+      fields.total_treasure = gold;
+    }
+    if (achievement.reward.points) {
+      fields.prestige_points = claim.prestige_points + achievement.reward.points;
+    }
+    await store.updateClaim(client, userId, mode, fields);
+
+    return {
+      message: `🏅 ${achievement.emoji} ${achievement.name} 달성! ${describeReward(achievement.reward)}`,
+      mode,
+      key: achievement.key,
+      totalTreasure: gold,
+    };
+  });
+}));
+
+// -------------------------------
 // 환생 상점: POST /api/box/prestige-shop { key } (기록모드 전용)
 // -------------------------------
 // 환생 포인트로 영구 특성을 삽니다. 시작 자금·자동 개봉 비축은 다음 판부터 적용됩니다.
@@ -583,6 +786,7 @@ router.post('/craft', handle('서버 오류로 합성에 실패했습니다.', a
 
     const resultItem = pickRandomFromRarity(nextRarity);
     await store.addItems(client, userId, mode, { [itemKey]: -CRAFT_COST, [resultItem.key]: 1 });
+    await store.saveStats(client, userId, mode, save.claim, { crafts: 1, ...store.countRareGains({ [resultItem.key]: 1 }) });
 
     return {
       message: '합성 성공!',
@@ -605,6 +809,7 @@ router.post('/craft-all', handle('서버 오류로 일괄 합성에 실패했습
     }
 
     await store.addItems(client, req.user.userId, mode, deltas);
+    await store.saveStats(client, req.user.userId, mode, save.claim, { crafts: totalCrafts, ...store.countRareGains(deltas) });
     return {
       message: `총 ${totalCrafts}번 합성했습니다!`,
       mode,
