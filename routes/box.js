@@ -42,6 +42,8 @@ const {
   SEASON_GOLD_REQUIRED,
   MAX_BOX_CHARGES,
   MAX_GOLD_BOX_PURCHASE,
+  GOLD_PER_BOX_PURCHASE,
+  BOX_PRICE_INCOME_MINUTES,
   MASTERY_THRESHOLDS,
   UPGRADES,
   AUTO_CRAFT,
@@ -75,6 +77,9 @@ const {
   describeUpgradeEffect,
   getPerkLevel,
   getBoxPrice,
+  getBoxPurchaseCost,
+  getMaxAffordableBoxes,
+  expectedIncomePerBox,
   describeItemEffect,
   getAutoOpenCostPerHour,
   formatHours,
@@ -119,6 +124,20 @@ function pityResponse(save, pity, triggered) {
 
 function boxPriceOf(save) {
   return getBoxPrice(save.income.perMinuteIncome, save.stats.boxDiscountPercent);
+}
+
+// 골드 상자 가격 계산 기준 (화면도 같은 값으로 총액을 미리 계산합니다)
+function boxPricingOf(save) {
+  const s = save.stats;
+  // 수입 배율(강화·환생 특성·신화)까지 반영한, 상자 1개당 평균 분당 수입 증가량
+  const multiplier = s.upgradeIncomePercent * s.prestigeIncomePercent * (100 + s.mythicIncomePercent) / 1000000;
+  return {
+    income: save.income.perMinuteIncome,
+    step: expectedIncomePerBox(s.luckPercent) * multiplier,
+    discountPercent: s.boxDiscountPercent,
+    minPrice: GOLD_PER_BOX_PURCHASE,
+    incomeMinutes: BOX_PRICE_INCOME_MINUTES,
+  };
 }
 
 // 지금 적용 중인 아이템 효과 목록 (화면 표시용)
@@ -442,11 +461,11 @@ router.post('/buy-boxes', handle('서버 오류로 구매에 실패했습니다.
 
   return withSave(userId, async (client, mode, save) => {
     const currentGold = save.claim.total_treasure;
-    const boxPrice = boxPriceOf(save);
-    const totalCost = boxPrice * quantity;
+    const pricing = boxPricingOf(save);
+    const { total: totalCost, firstPrice: boxPrice, lastPrice } = getBoxPurchaseCost(pricing, quantity);
     if (currentGold < totalCost) {
       throw new HttpError(400, `골드가 부족합니다. (필요: ${totalCost.toLocaleString()}G, 보유: ${currentGold.toLocaleString()}G)`, {
-        maxAffordable: Math.floor(currentGold / boxPrice),
+        maxAffordable: getMaxAffordableBoxes(pricing, currentGold, MAX_GOLD_BOX_PURCHASE),
       });
     }
 
@@ -463,6 +482,7 @@ router.post('/buy-boxes', handle('서버 오류로 구매에 실패했습니다.
       quantity,
       totalCost,
       boxPrice,
+      lastPrice,
       ...pityResponse(save, pity, pityTriggered),
       totalTreasure: remainingGold,
       obtained: toObtainedList(counts),
@@ -515,6 +535,7 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       mythicPityLimit: save.stats.pityLimit,
       pityReduction: save.stats.effects.pity, // 별의 파편 효과로 줄어든 천장
       boxPrice: boxPriceOf(save),
+      boxPricing: boxPricingOf(save),
       rebirthGoldRequired: REBIRTH_GOLD_REQUIRED,
       itemEffects: activeItemEffects(save),
       income: incomeResponse(save),

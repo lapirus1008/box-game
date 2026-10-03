@@ -367,6 +367,7 @@ async function refreshStatus(){
     setGold(data.totalTreasure, data.income && data.income.lastCollectedAt);
     if (data.chargeIntervalMs) cachedChargeIntervalMs = data.chargeIntervalMs;
     if (data.boxPrice) cachedBoxPrice = data.boxPrice;
+    if (data.boxPricing) cachedBoxPricing = data.boxPricing;
     if (data.rebirthGoldRequired) applyRebirthGoal(data.rebirthGoldRequired);
     renderItemEffects(data.itemEffects);
     applyAutoOpen(data.autoOpen);
@@ -585,13 +586,33 @@ function renderTick(){
   renderGoldenBox();
 }
 
-// 골드 상자 가격은 수입에 따라 바뀌므로 서버가 알려준 값을 씁니다 (상태 조회 때마다 갱신)
+// 골드 상자 가격은 수입에 따라 바뀌므로 서버가 알려준 기준값으로 계산합니다 (상태 조회 때마다 갱신)
+// 여러 개를 사면 하나씩 산 것처럼 상자마다 가격이 조금씩 올라갑니다 (서버와 같은 계산)
 let cachedBoxPrice = 75;
+let cachedBoxPricing = null;
+
+function boxPriceAt(k){
+  const p = cachedBoxPricing;
+  if (!p) return cachedBoxPrice;
+  const base = Math.max(p.minPrice, Math.floor((p.income + k * p.step) * p.incomeMinutes));
+  return Math.max(1, Math.floor(base * (100 - p.discountPercent) / 100));
+}
+
+function boxPurchaseCost(quantity){
+  let total = 0;
+  for (let k = 0; k < quantity; k++) total += boxPriceAt(k);
+  return total;
+}
 const MAX_GOLD_BOX_PURCHASE = 2000; // 서버의 MAX_GOLD_BOX_PURCHASE와 반드시 일치시켜야 함
 
 function getMaxBuyableQty(){
   const gold = liveGold();
-  return Math.min(MAX_GOLD_BOX_PURCHASE, Math.max(0, Math.floor(gold / cachedBoxPrice)));
+  let total = 0;
+  for (let k = 0; k < MAX_GOLD_BOX_PURCHASE; k++) {
+    total += boxPriceAt(k);
+    if (total > gold) return k;
+  }
+  return MAX_GOLD_BOX_PURCHASE;
 }
 
 function clampBuyBoxQty(){
@@ -602,9 +623,9 @@ function clampBuyBoxQty(){
   if (value > max) value = max;
   input.value = max === 0 ? 0 : value;
 
-  const cost = value * cachedBoxPrice;
+  const cost = boxPurchaseCost(Math.max(0, value));
   document.getElementById('buyBoxCostText').textContent =
-    `개당 ${formatGold(cachedBoxPrice)}G (수입이 늘면 올라요) · 총 ${formatGold(cost)}G · 최대 ${max}개`;
+    `개당 ${formatGold(boxPriceAt(0))}G부터 (많이 살수록 조금씩 올라요) · 총 ${formatGold(cost)}G · 최대 ${max}개`;
 
   document.getElementById('buyBoxBtn').disabled = max === 0 || value < 1 || isOpening;
   document.getElementById('maxBuyQtyBtn').disabled = max === 0;

@@ -30,6 +30,7 @@ const {
   ITEM_EFFECTS,
   GOLD_PER_BOX_PURCHASE,
   BOX_PRICE_INCOME_MINUTES,
+  INCOME_PER_MINUTE_BY_RARITY,
 } = require('./config');
 
 // weight 기반으로 목록 중 하나를 랜덤하게 뽑습니다. (pool 원소는 { treasure, weight })
@@ -270,6 +271,37 @@ function getBoxPrice(perMinuteIncome, discountPercent = 0) {
   return Math.max(1, Math.floor(base * (100 - discountPercent) / 100));
 }
 
+// 상자 1개를 열면 분당 수입이 평균 얼마나 오르는지 (행운 반영, ★·배율 제외)
+function expectedIncomePerBox(luckPercent = 0) {
+  const pool = getBoxPool(luckPercent);
+  const totalWeight = pool.reduce((sum, e) => sum + e.weight, 0);
+  return pool.reduce((sum, e) => sum + e.weight * INCOME_PER_MINUTE_BY_RARITY[e.treasure.rarity], 0) / totalWeight;
+}
+
+// 상자 여러 개를 한 번에 살 때의 총액.
+// 하나씩 산 것과 같도록, k번째 상자는 "앞의 상자들로 오른 평균 수입" 기준 가격을 매깁니다.
+// (한 번에 사면 첫 상자 가격으로 전부 사져서 몰아 사기가 무조건 이득이 되는 것을 막음)
+// pricing = { income, step(상자 1개당 평균 수입 증가), discountPercent }
+function getBoxPurchaseCost(pricing, quantity) {
+  let total = 0;
+  let lastPrice = 0;
+  for (let k = 0; k < quantity; k++) {
+    lastPrice = getBoxPrice(pricing.income + k * pricing.step, pricing.discountPercent);
+    total += lastPrice;
+  }
+  return { total, firstPrice: getBoxPrice(pricing.income, pricing.discountPercent), lastPrice };
+}
+
+// 가진 골드로 최대 몇 개까지 살 수 있는지
+function getMaxAffordableBoxes(pricing, gold, limit) {
+  let total = 0;
+  for (let k = 0; k < limit; k++) {
+    total += getBoxPrice(pricing.income + k * pricing.step, pricing.discountPercent);
+    if (total > gold) return k;
+  }
+  return limit;
+}
+
 // 자동 개봉 1시간 가격: 최소 가격과 "지금 분당 수입 × N분" 중 큰 값
 function getAutoOpenCostPerHour(perMinuteIncome) {
   return Math.max(AUTO_OPEN_MIN_COST_PER_HOUR, perMinuteIncome * AUTO_OPEN_COST_INCOME_MINUTES);
@@ -296,6 +328,9 @@ module.exports = {
   getItemEffects,
   describeItemEffect,
   getBoxPrice,
+  getBoxPurchaseCost,
+  getMaxAffordableBoxes,
+  expectedIncomePerBox,
   getPerkLevel,
   getAutoOpenCostPerHour,
   formatHours,
