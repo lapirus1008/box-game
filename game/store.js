@@ -274,7 +274,7 @@ async function settle(client, userId, mode) {
     autoOpenRemainingMs -= autoMs;
     charges = Math.min(stats.maxCharges, gained - autoGained);
     if (toOpen > 0) {
-      const rolled = rollBoxes(pity, toOpen, stats.luckPercent, stats.pityLimit);
+      const rolled = rollBoxes(pity, toOpen, stats.luckPercent, stats.pityLimit, owned);
       pity = rolled.pity;
       applyDeltas(rolled.counts);
       addStats(boxStatDeltas(toOpen, rolled.counts));

@@ -1017,7 +1017,7 @@ async function loadCollection(showLoadingText = true){
       collectionGrid.appendChild(card);
     });
 
-    // ── 가방 그리드: 12종 전부를 항상 같은 순서·같은 칸에 보여줍니다 ──
+    // ── 가방 그리드: 모든 아이템을 항상 같은 순서·같은 칸에 보여줍니다 ──
     // (자동 합성 등으로 0개가 돼도 칸이 사라지지 않아서, 누르려던 버튼 위치가 바뀌지 않음)
     {
       runGrid.innerHTML = '';
@@ -1085,7 +1085,7 @@ function renderItemEffects(effects){
   const box = document.getElementById('itemEffectsBox');
   if (!box) return;
   if (!effects || effects.length === 0) {
-    box.innerHTML = '<span class="item-effects-empty">✨ 특별한 아이템을 모으면 효과가 생겨요 (🍀🧚🐉✨⏳🧭)</span>';
+    box.innerHTML = '<span class="item-effects-empty">✨ 특별한 아이템을 모으면 효과가 생겨요 (✨⏳🧭👑🌌🐲)</span>';
     return;
   }
   box.innerHTML = effects

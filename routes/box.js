@@ -393,7 +393,7 @@ router.post('/open', handle('서버 오류로 상자를 열지 못했습니다.'
   return withSave(userId, async (client, mode, save) => {
     assertCanOpen(save, 1);
 
-    const roll = rollWithPity(save.claim.mythic_pity, save.stats.luckPercent, save.stats.pityLimit);
+    const roll = rollWithPity(save.claim.mythic_pity, save.stats.luckPercent, save.stats.pityLimit, save.owned);
     await store.updateClaim(client, userId, mode, {
       box_charges: save.chargeInfo.charges - 1,
       mythic_pity: roll.pity,
@@ -427,7 +427,7 @@ router.post('/bulk-open', handle('서버 오류로 일괄 열기에 실패했습
   return withSave(userId, async (client, mode, save) => {
     assertCanOpen(save, quantity);
 
-    const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, save.stats.luckPercent, save.stats.pityLimit);
+    const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, save.stats.luckPercent, save.stats.pityLimit, save.owned);
     await store.updateClaim(client, userId, mode, {
       box_charges: save.chargeInfo.charges - quantity,
       mythic_pity: pity,
@@ -469,7 +469,7 @@ router.post('/buy-boxes', handle('서버 오류로 구매에 실패했습니다.
       });
     }
 
-    const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, save.stats.luckPercent, save.stats.pityLimit);
+    const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, save.stats.luckPercent, save.stats.pityLimit, save.owned);
     await store.addItems(client, userId, mode, counts);
     await store.saveStats(client, userId, mode, save.claim, store.boxStatDeltas(quantity, counts));
 
@@ -728,7 +728,7 @@ router.post('/golden-box', handle('서버 오류로 황금 상자를 열지 못�
     let gold = claim.total_treasure;
     const statDeltas = { golden: 1 };
 
-    // 요정의 날개: 황금 상자 보상 +N%
+    // 은하의 구슬: 황금 상자 보상 +N%
     const bonus = (value) => Math.floor(value * (100 + save.stats.goldenBonusPercent) / 100);
     const goldenBoxes = bonus(GOLDEN_BOXES);
     const giveGold = () => {
@@ -742,7 +742,7 @@ router.post('/golden-box', handle('서버 오류로 황금 상자를 열지 못�
     };
 
     if (result.reward === 'boxes') {
-      const { counts, pity, pityTriggered } = rollBoxes(claim.mythic_pity, goldenBoxes, save.stats.luckPercent, save.stats.pityLimit);
+      const { counts, pity, pityTriggered } = rollBoxes(claim.mythic_pity, goldenBoxes, save.stats.luckPercent, save.stats.pityLimit, save.owned);
       await store.addItems(client, userId, mode, counts);
       fields.mythic_pity = pity;
       Object.assign(statDeltas, store.boxStatDeltas(goldenBoxes, counts));

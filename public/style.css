@@ -1154,7 +1154,7 @@ body.mode-collection .collection-mode-notice{ display:block; }
 }
 .season-picker select:focus{ outline:none; border-color:var(--gold); }
 
-/* 가방: 12종 고정 칸. 0개인 아이템은 흐리게, 합성 버튼은 카드 맨 아래에 고정 */
+/* 가방: 전 종류 고정 칸. 0개인 아이템은 흐리게, 합성 버튼은 카드 맨 아래에 고정 */
 #runInventoryGrid .item-card{ display:flex; flex-direction:column; align-items:center; }
 #runInventoryGrid .item-card .craft-btn{ margin-top:auto; }
 #runInventoryGrid .item-card.is-empty .item-emoji,

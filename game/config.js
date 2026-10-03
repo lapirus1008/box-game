@@ -74,8 +74,11 @@ const TREASURES = [
   // 전설 (legendary) - 매우 희귀, 갖고 있으면 초당 골드도 추가로 벌립니다
   { key: 'phoenix_feather', name: '불사조의 깃털', rarity: 'legendary', emoji: '🔥', amount: 500, weight: 0.3, flavor: '전설 속에서만 존재한다던 그 깃털.' },
   { key: 'hourglass_sand',  name: '시간의 모래',   rarity: 'legendary', emoji: '⏳', amount: 600, weight: 0.2, flavor: '만지는 순간 시간이 멈춘 듯한 착각이 든다.' },
-  // 신화 (mythic) - 극악의 확률, 전설보다도 훨씬 희귀하고 훨씬 많은 초당 골드를 줍니다
-  { key: 'astral_compass', name: '천체의 나침반', rarity: 'mythic', emoji: '🧭', amount: 5000, weight: 0.02, flavor: '전설조차 가리키지 못하는 곳을 가리킨다는, 전해지기만 하던 나침반.' },
+  // 신화 (mythic) - 극악의 확률. 4종이 신화 확률(합계 0.02)을 나눠 갖고, 저마다 강력한 고유 효과가 있습니다
+  { key: 'astral_compass', name: '천체의 나침반', rarity: 'mythic', emoji: '🧭', amount: 5000, weight: 0.005, flavor: '전설조차 가리키지 못하는 곳을 가리킨다는, 전해지기만 하던 나침반.' },
+  { key: 'ancient_crown',  name: '고대 왕의 왕관', rarity: 'mythic', emoji: '👑', amount: 5000, weight: 0.005, flavor: '이 왕관을 쓴 자의 손에는 언제나 귀한 것만 쥐어졌다고 한다.' },
+  { key: 'galaxy_orb',     name: '은하의 구슬',   rarity: 'mythic', emoji: '🌌', amount: 5000, weight: 0.005, flavor: '들여다보면 별들이 소용돌이친다. 황금빛 행운을 끌어당긴다.' },
+  { key: 'dragon_pearl',   name: '용왕의 여의주', rarity: 'mythic', emoji: '🐲', amount: 5000, weight: 0.005, flavor: '바라는 것을 이루어 준다는 용왕의 구슬. 값을 깎는 데도 쓸모가 있다.' },
 ];
 
 // key → 아이템 정보를 빠르게 찾기 위한 맵
@@ -96,13 +99,14 @@ const MASTERY_INCOME_BONUS_PERCENT_PER_STAR = 10; // ★ 1개당 그 아이템�
 // type: luck(희귀 이상 등장률 %) · golden(황금 상자 보상 %) · boxDiscount(상자 가격 할인 %)
 //       pity(신화 천장 감소 개수) · storageMinutes(보관 시간 분) · incomePercent(전체 수입 %)
 // 잠금(🔒)한 아이템은 합성 재료로 쓰이지 않아서 효과를 지킬 수 있습니다.
+// 희귀·영웅의 효과(행운·황금 상자·상자 할인)는 신화로 옮겨서, 신화를 뽑는 의미를 키웠습니다.
 const ITEM_EFFECTS = {
-  lucky_charm:    { type: 'luck',           perItem: 0.5, max: 20 },
-  fairy_wing:     { type: 'golden',         perItem: 2,   max: 50 },
-  dragon_scale:   { type: 'boxDiscount',    perItem: 0.5, max: 30 },
   star_fragment:  { type: 'pity',           perItem: 10,  max: 1000 },
   hourglass_sand: { type: 'storageMinutes', perItem: 10,  max: 240 },
   astral_compass: { type: 'incomePercent',  perItem: 10,  max: 200 },
+  ancient_crown:  { type: 'luck',           perItem: 5,   max: 30 },
+  galaxy_orb:     { type: 'golden',         perItem: 20,  max: 100 },
+  dragon_pearl:   { type: 'boxDiscount',    perItem: 5,   max: 30 },
 };
 
 // -------------------------------

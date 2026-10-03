@@ -68,11 +68,17 @@ function pickRandomFromRarity(rarity) {
   return pickWeighted(POOL_BY_RARITY[rarity]);
 }
 
+// 천장 보상: 아직 없는 신화가 있으면 그중에서, 모두 있으면 신화 전체에서 뽑습니다.
+function pickPityMythic(owned = {}) {
+  const missing = POOL_BY_RARITY.mythic.filter(e => !(owned[e.treasure.key] > 0));
+  return pickWeighted(missing.length > 0 ? missing : POOL_BY_RARITY.mythic);
+}
+
 // 상자 하나를 뽑되, 천장 카운터를 반영합니다.
 // pity = 지금까지 신화 없이 연 상자 수. 이번이 천장 번째 상자면 신화 확정.
-function rollWithPity(pity, luckPercent = 0, pityLimit = MYTHIC_PITY_LIMIT) {
+function rollWithPity(pity, luckPercent = 0, pityLimit = MYTHIC_PITY_LIMIT, owned = {}) {
   if (pity + 1 >= pityLimit) {
-    return { treasure: pickRandomFromRarity('mythic'), pity: 0, guaranteed: true };
+    return { treasure: pickPityMythic(owned), pity: 0, guaranteed: true };
   }
   const treasure = pickWeighted(getBoxPool(luckPercent));
   return { treasure, pity: treasure.rarity === 'mythic' ? 0 : pity + 1, guaranteed: false };
@@ -80,12 +86,15 @@ function rollWithPity(pity, luckPercent = 0, pityLimit = MYTHIC_PITY_LIMIT) {
 
 // 상자 여러 개를 연속으로 뽑습니다. 천장 카운터는 한 개씩 순서대로 반영됩니다.
 // 반환: { counts: { itemKey: 개수 }, pity: 최종 천장 카운터, pityTriggered: 천장 발동 여부 }
-function rollBoxes(startPity, quantity, luckPercent = 0, pityLimit = MYTHIC_PITY_LIMIT) {
+function rollBoxes(startPity, quantity, luckPercent = 0, pityLimit = MYTHIC_PITY_LIMIT, owned = {}) {
   let pity = startPity;
   let pityTriggered = false;
   const counts = {};
+  // 이번에 뽑은 것도 '보유'로 쳐서, 한 번에 여러 번 천장이 터져도 겹치지 않게 합니다.
+  const seen = { ...owned };
   for (let i = 0; i < quantity; i++) {
-    const roll = rollWithPity(pity, luckPercent, pityLimit);
+    const roll = rollWithPity(pity, luckPercent, pityLimit, seen);
+    seen[roll.treasure.key] = (seen[roll.treasure.key] || 0) + 1;
     pity = roll.pity;
     if (roll.guaranteed) pityTriggered = true;
     counts[roll.treasure.key] = (counts[roll.treasure.key] || 0) + 1;
@@ -265,7 +274,7 @@ function getClaimStats(claim, owned = {}) {
   };
 }
 
-// 골드 상자 1개 가격 = max(최소 가격, 분당 수입 × 0.25분) 에서 용의 비늘 할인
+// 골드 상자 1개 가격 = max(최소 가격, 분당 수입 × 0.25분) 에서 용왕의 여의주 할인
 function getBoxPrice(perMinuteIncome, discountPercent = 0) {
   const base = Math.max(GOLD_PER_BOX_PURCHASE, Math.floor(perMinuteIncome * BOX_PRICE_INCOME_MINUTES));
   return Math.max(1, Math.floor(base * (100 - discountPercent) / 100));
