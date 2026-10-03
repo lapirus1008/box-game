@@ -742,9 +742,12 @@ function triggerLegendaryEffect(){
 // 신화 천장 표시 갱신: 남은 개수, 진행바, 확정 임박 시 강조
 function updatePityUI(pity, limit){
   if (typeof pity !== 'number' || !limit) return;
-  const remaining = limit - pity; // 이 개수만큼 더 열면(=마지막 상자가) 신화 확정
-  document.getElementById('pityText').textContent = `${pity.toLocaleString()} / ${limit.toLocaleString()}`;
-  document.getElementById('pityBarFill').style.width = `${Math.min(100, (pity / limit) * 100)}%`;
+  // 자리 비운 동안 자동 개봉 중에 별의 파편을 얻으면 천장이 줄어서 진행도가 천장을 넘을 수 있습니다.
+  // 이때도 다음 상자는 신화 확정이므로, 표시는 천장에 맞춰 보여줍니다.
+  const shownPity = Math.min(pity, limit);
+  const remaining = limit - pity; // 이 개수만큼 더 열면(=마지막 상자가) 신화 확정 (0 이하면 다음 상자 확정)
+  document.getElementById('pityText').textContent = `${shownPity.toLocaleString()} / ${limit.toLocaleString()}`;
+  document.getElementById('pityBarFill').style.width = `${Math.min(100, (shownPity / limit) * 100)}%`;
   const box = document.getElementById('pityBox');
   const hint = document.getElementById('pityHint');
   const imminent = remaining <= 1;
