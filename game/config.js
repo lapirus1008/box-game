@@ -29,8 +29,9 @@ const COMPLETION_BONUS_GOLD = 2000;   // 도감 완성 보상
 const REBIRTH_GOLD_REQUIRED = 300000; // 환생에 필요한 골드 (기록모드 전용)
 // 랭킹 시즌: 환생 조건 등 규칙이 바뀌면 시즌을 올려서 랭킹을 새로 시작합니다.
 // 지난 시즌 기록은 지우지 않고 rebirth_history.season 으로 구분해 보관합니다.
-// (시즌 1: 환생 조건 10만 골드 / 시즌 2: 30만 골드)
 const RANKING_SEASON = 2;
+// 시즌별 환생 조건 (랭킹 화면에서 지난 시즌을 볼 때 안내 문구에 씁니다)
+const SEASON_GOLD_REQUIRED = { 1: 100000, 2: 300000 };
 // 골드로 상자를 즉시 구매할 때의 개당 가격 = max(최소 가격, 지금 분당 수입 × 0.25분(15초치))
 // 수입이 커질수록 상자도 비싸져서, "골드가 생기면 무조건 상자"가 정답이 되지 않게 합니다.
 const GOLD_PER_BOX_PURCHASE = 75;     // 최소 가격
@@ -239,6 +240,7 @@ module.exports = {
   COMPLETION_BONUS_GOLD,
   REBIRTH_GOLD_REQUIRED,
   RANKING_SEASON,
+  SEASON_GOLD_REQUIRED,
   GOLD_PER_BOX_PURCHASE,
   BOX_PRICE_INCOME_MINUTES,
   MAX_GOLD_BOX_PURCHASE,

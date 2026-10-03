@@ -292,7 +292,11 @@
       <h1 style="margin:0; font-size:20px;">🏆 랭킹</h1>
       <button id="backFromRankingBtn">← 돌아가기</button>
     </div>
-    <p style="font-size:12px; color:var(--ink-dim); margin-top:-10px; margin-bottom:16px;" id="rankingSubtitle">시즌 2 · 30만 골드까지 가장 빨리 도달한 환생 기록입니다</p>
+    <label class="season-picker">
+      <span class="season-picker-label">시즌</span>
+      <select id="seasonSelect"></select>
+    </label>
+    <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:16px;" id="rankingSubtitle">시즌 2 · 30만 골드까지 가장 빨리 도달한 환생 기록입니다</p>
     <div id="rankingList"></div>
     <div class="rank-pagination hidden" id="rankPagination">
       <button id="rankPrevBtn">← 이전</button>

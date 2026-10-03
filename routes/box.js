@@ -39,6 +39,7 @@ const {
   COMPLETION_BONUS_GOLD,
   REBIRTH_GOLD_REQUIRED,
   RANKING_SEASON,
+  SEASON_GOLD_REQUIRED,
   MAX_BOX_CHARGES,
   MAX_GOLD_BOX_PURCHASE,
   MASTERY_THRESHOLDS,
@@ -512,6 +513,7 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       totalTreasure: claim.total_treasure,
       mythicPity: claim.mythic_pity,
       mythicPityLimit: save.stats.pityLimit,
+      pityReduction: save.stats.effects.pity, // 별의 파편 효과로 줄어든 천장
       boxPrice: boxPriceOf(save),
       rebirthGoldRequired: REBIRTH_GOLD_REQUIRED,
       itemEffects: activeItemEffects(save),
@@ -1110,11 +1112,11 @@ router.get('/rebirth/history', handle('서버 오류가 발생했습니다.', as
 // 랭킹 조회: GET /api/box/leaderboard (페이지네이션, 기록모드 전용)
 // -------------------------------
 // 랭킹 화면에서 페이지에 내가 안 보일 때, 내 최고 기록과 전체 순위를 따로 계산합니다.
-async function findMyRank(userId) {
+async function findMyRank(userId, season) {
   const myBestResult = await db.query(
     `SELECT MIN(duration_ms) AS best_duration_ms FROM rebirth_history
      WHERE user_id = $1 AND mode = 'record' AND season = $2`,
-    [userId, RANKING_SEASON]
+    [userId, season]
   );
   const myBest = myBestResult.rows[0]?.best_duration_ms;
   if (!myBest) return null;
@@ -1124,7 +1126,7 @@ async function findMyRank(userId) {
        SELECT user_id, MIN(duration_ms) AS best FROM rebirth_history
        WHERE mode = 'record' AND season = $2 GROUP BY user_id
      ) t WHERE t.best < $1`,
-    [myBest, RANKING_SEASON]
+    [myBest, season]
   );
   return {
     rank: parseInt(rankResult.rows[0].rank, 10),
@@ -1139,13 +1141,16 @@ router.get('/leaderboard', handle('서버 오류가 발생했습니다.', async 
   const pageSize = LEADERBOARD_PAGE_SIZE;
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const offset = (page - 1) * pageSize;
+  // ?season=1 처럼 지난 시즌도 볼 수 있습니다 (없거나 잘못된 값이면 현재 시즌)
+  const requestedSeason = parseInt(req.query.season, 10);
+  const season = requestedSeason >= 1 && requestedSeason <= RANKING_SEASON ? requestedSeason : RANKING_SEASON;
 
   const [totalResult, result] = await Promise.all([
     db.query(
       `SELECT COUNT(*) AS total FROM (
          SELECT user_id FROM rebirth_history WHERE mode = 'record' AND season = $1 GROUP BY user_id
        ) t`,
-      [RANKING_SEASON]
+      [season]
     ),
     db.query(
       `SELECT u.id AS user_id, u.nickname, MIN(rh.duration_ms) AS best_duration_ms
@@ -1155,7 +1160,7 @@ router.get('/leaderboard', handle('서버 오류가 발생했습니다.', async 
        GROUP BY u.id, u.nickname
        ORDER BY best_duration_ms ASC
        LIMIT $1 OFFSET $2`,
-      [pageSize, offset, RANKING_SEASON]
+      [pageSize, offset, season]
     ),
   ]);
 
@@ -1169,12 +1174,13 @@ router.get('/leaderboard', handle('서버 오류가 발생했습니다.', async 
     isMe: row.user_id === userId,
   }));
 
-  const myRank = leaderboard.find(r => r.isMe) || await findMyRank(userId);
+  const myRank = leaderboard.find(r => r.isMe) || await findMyRank(userId, season);
 
   return {
     leaderboard, myRank, page, pageSize, totalPlayers, totalPages,
-    season: RANKING_SEASON,
-    goldRequired: REBIRTH_GOLD_REQUIRED,
+    season,
+    currentSeason: RANKING_SEASON,
+    goldRequired: SEASON_GOLD_REQUIRED[season] || REBIRTH_GOLD_REQUIRED,
   };
 }));
 

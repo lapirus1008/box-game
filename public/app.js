@@ -34,6 +34,8 @@ let cachedRunStartedAt = null;
 let cachedRebirthCount = 0;
 let serverTimeOffset = 0;
 let currentRankPage = 1;
+let currentRankSeason = null; // null이면 현재 시즌
+let cachedPityReduction = 0;
 
 const authScreen = document.getElementById('authScreen');
 const gameScreen = document.getElementById('gameScreen');
@@ -369,6 +371,7 @@ async function refreshStatus(){
     renderItemEffects(data.itemEffects);
     applyAutoOpen(data.autoOpen);
     applyChargeInfo(data);
+    if (typeof data.pityReduction === 'number') cachedPityReduction = data.pityReduction;
     updatePityUI(data.mythicPity, data.mythicPityLimit);
     document.getElementById('mainClaimBonusBtn')
       .classList.toggle('hidden', !(data.collectionComplete && !data.bonusClaimed));
@@ -725,9 +728,10 @@ function updatePityUI(pity, limit){
   const hint = document.getElementById('pityHint');
   const imminent = remaining <= 1;
   box.classList.toggle('imminent', imminent);
+  const reductionText = cachedPityReduction > 0 ? ` · ✨ 별의 파편 효과로 천장 -${cachedPityReduction.toLocaleString()}` : '';
   hint.textContent = imminent
     ? '🔥 다음 상자는 신화 확정!'
-    : `${remaining.toLocaleString()}개 더 열면 신화 확정`;
+    : `${remaining.toLocaleString()}개 더 열면 신화 확정${reductionText}`;
 }
 
 const mythicQueue = [];
@@ -1585,6 +1589,7 @@ document.getElementById('openRankingBtn').addEventListener('click', async () => 
   gameScreen.classList.add('hidden');
   rankingScreen.classList.remove('hidden');
   currentRankPage = 1;
+  currentRankSeason = null;
   await loadRanking();
 });
 document.getElementById('backFromRankingBtn').addEventListener('click', () => {
@@ -1596,6 +1601,26 @@ document.getElementById('rankPrevBtn').addEventListener('click', async () => {
 });
 document.getElementById('rankNextBtn').addEventListener('click', async () => {
   currentRankPage++;
+  await loadRanking();
+});
+
+// 랭킹 시즌 선택 (드롭다운: 시즌이 늘어나도 한 줄로 유지, 현재 시즌이 맨 위·기본값)
+function renderSeasonTabs(currentSeason, shownSeason){
+  const select = document.getElementById('seasonSelect');
+  select.innerHTML = '';
+  for (let s = currentSeason; s >= 1; s--) {
+    const option = document.createElement('option');
+    option.value = s;
+    option.textContent = s === currentSeason ? `시즌 ${s} (현재)` : `시즌 ${s}`;
+    option.selected = s === shownSeason;
+    select.appendChild(option);
+  }
+}
+document.getElementById('seasonSelect').addEventListener('change', async (e) => {
+  const picked = parseInt(e.target.value, 10);
+  const isCurrent = picked === parseInt(e.target.options[0].value, 10);
+  currentRankSeason = isCurrent ? null : picked;
+  currentRankPage = 1;
   await loadRanking();
 });
 
@@ -1626,11 +1651,14 @@ async function loadRanking(){
   paginationEl.classList.add('hidden');
 
   try {
-    const res = await authFetch(`/api/box/leaderboard?page=${currentRankPage}`);
+    const seasonQuery = currentRankSeason ? `&season=${currentRankSeason}` : '';
+    const res = await authFetch(`/api/box/leaderboard?page=${currentRankPage}${seasonQuery}`);
     const data = await res.json();
     if (data.season) {
+      const isCurrent = data.season === data.currentSeason;
       document.getElementById('rankingSubtitle').textContent =
-        `시즌 ${data.season} · ${(data.goldRequired / 10000).toLocaleString()}만 골드까지 가장 빨리 도달한 환생 기록입니다`;
+        `시즌 ${data.season}${isCurrent ? '' : ' (지난 시즌)'} · ${(data.goldRequired / 10000).toLocaleString()}만 골드까지 가장 빨리 도달한 환생 기록입니다`;
+      renderSeasonTabs(data.currentSeason, data.season);
     }
     if (!res.ok) {
       listEl.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
@@ -1664,7 +1692,10 @@ async function loadRanking(){
         renderRankRow(data.myRank.rank, '나', data.myRank.bestDurationMs, true);
     } else if (!data.myRank) {
       footerEl.classList.remove('hidden');
-      footerEl.innerHTML = `<p style="text-align:center; font-size:12px; color:var(--ink-dim);">아직 환생 기록이 없어 순위에 없습니다.</p>`;
+      const noRecordText = data.season === data.currentSeason
+        ? '아직 환생 기록이 없어 순위에 없습니다.'
+        : `시즌 ${data.season}에는 내 기록이 없어요.`;
+      footerEl.innerHTML = `<p style="text-align:center; font-size:12px; color:var(--ink-dim);">${noRecordText}</p>`;
     }
   } catch (err) {
     listEl.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
