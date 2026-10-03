@@ -905,12 +905,7 @@ async function performRebirth(btnEl){
 
     if (!res.ok) {
       if (onMainScreen) alert(data.message);
-      else {
-        const craftResult = document.getElementById('craftResult');
-        craftResult.style.display = 'block';
-        craftResult.style.color = 'var(--danger)';
-        craftResult.textContent = data.message;
-      }
+      else showToast(data.message, true);
     } else {
       const recordText = `기록: ${formatDuration(Math.floor(data.durationMs / 1000))} · 환생 포인트 +${data.prestigeGained} (보유 ${data.prestigePoints}개, 강화 → 환생 상점에서 사용)`;
       const msg = `✨ ${data.rebirthNumber}번째 환생! ${recordText}`;
@@ -920,10 +915,7 @@ async function performRebirth(btnEl){
         document.getElementById('treasureDetail').textContent = recordText;
         document.getElementById('resultBox').style.display = 'block';
       } else {
-        const craftResult = document.getElementById('craftResult');
-        craftResult.style.display = 'block';
-        craftResult.style.color = 'var(--gold)';
-        craftResult.textContent = msg;
+        showToast(msg);
       }
       cachedRunStartedAt = new Date(data.runStartedAt);
       cachedRebirthCount = data.rebirthNumber;
@@ -1022,16 +1014,16 @@ async function loadCollection(showLoadingText = true){
       collectionGrid.appendChild(card);
     });
 
-    // ── 기록모드 그리드: 이번 판에 실제로 들고 있는 아이템만 (없으면 안내 문구) ──
-    const heldItems = data.collection.filter(item => item.count > 0);
-    if (heldItems.length === 0) {
-      runGrid.innerHTML = '<p style="color:var(--ink-dim); font-size:13px; grid-column:1/-1; text-align:center; padding:20px 0;">이번 판에 모은 아이템이 아직 없어요.<br>상자를 열어보세요!</p>';
-    } else {
+    // ── 가방 그리드: 12종 전부를 항상 같은 순서·같은 칸에 보여줍니다 ──
+    // (자동 합성 등으로 0개가 돼도 칸이 사라지지 않아서, 누르려던 버튼 위치가 바뀌지 않음)
+    {
       runGrid.innerHTML = '';
-      heldItems.forEach(item => {
+      data.collection.forEach(item => {
         const card = document.createElement('div');
-        card.className = `item-card ${item.rarity}`;
-        card.title = item.flavor;
+        const isEmpty = item.count === 0;
+        const known = item.obtained || item.count > 0; // 한 번도 발견 못 한 아이템은 이름을 가립니다
+        card.className = `item-card ${item.rarity} ${isEmpty ? 'is-empty' : ''}`;
+        card.title = known ? item.flavor : '아직 발견하지 못한 아이템입니다';
 
         // 신화는 상자에서만 나오므로 전설도 합성 재료가 될 수 없음 (일반/희귀/영웅만 합성 가능)
         const isMaxRarity = item.rarity === 'mythic';
@@ -1040,15 +1032,16 @@ async function loadCollection(showLoadingText = true){
         const craftLabel = isMaxRarity ? '최고 등급' : (isCraftLocked ? '합성 불가' : (item.locked ? '🔒 잠김' : `합성(-${CRAFT_COST})`));
         if (item.locked) card.classList.add('is-locked');
 
+        // 개수와 상관없이 줄 구성을 똑같이 유지해서 카드 높이가 바뀌지 않게 합니다
         card.innerHTML = `
-          <button class="lock-btn ${item.locked ? 'on' : ''}" data-lock="${item.key}" data-locked="${item.locked}"
-            title="${item.locked ? '잠금 해제' : '잠그면 합성 재료로 쓰이지 않아요'}">${item.locked ? '🔒' : '🔓'}</button>
-          <span class="item-emoji">${item.emoji}</span>
-          <div class="item-name">${item.name}</div>
+          ${known ? `<button class="lock-btn ${item.locked ? 'on' : ''}" data-lock="${item.key}" data-locked="${item.locked}"
+            title="${item.locked ? '잠금 해제' : '잠그면 합성 재료로 쓰이지 않아요'}">${item.locked ? '🔒' : '🔓'}</button>` : ''}
+          <span class="item-emoji">${known ? item.emoji : '❔'}</span>
+          <div class="item-name">${known ? item.name : '???'}</div>
           <div class="item-count">x${item.count}</div>
           <div class="item-stars">${renderStars(item.stars, item.maxStars)}</div>
-          ${item.incomePerMinute ? `<div class="item-income">분당 +${formatGold(item.incomePerMinute)}G</div>` : ''}
-          ${item.effect ? `<div class="item-effect">${escapeHtml(item.effect.now || item.effect.per)}</div>` : ''}
+          <div class="item-income">분당 +${formatGold(item.incomePerMinute || 0)}G</div>
+          ${item.effect ? `<div class="item-effect">${known ? escapeHtml(item.effect.now || item.effect.per) : '???'}</div>` : ''}
           <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${craftLabel}</button>
         `;
         runGrid.appendChild(card);
@@ -1153,15 +1146,8 @@ document.getElementById('claimBonusBtn').addEventListener('click', async functio
   try {
     const res = await authFetch('/api/box/collection/claim-bonus', { method: 'POST' });
     const data = await res.json();
-    const craftResult = document.getElementById('craftResult');
-    craftResult.style.display = 'block';
-    if (!res.ok) {
-      craftResult.style.color = 'var(--danger)';
-      craftResult.textContent = data.message;
-    } else {
-      craftResult.style.color = 'var(--gold)';
-      craftResult.textContent = `🎉 도감 완성! +${data.bonusGold}G 획득!`;
-    }
+    // 결과는 화면 위 짧은 알림으로 (가방 칸이 밀리지 않도록)
+    showToast(res.ok ? `🎉 도감 완성! +${data.bonusGold}G 획득!` : data.message, !res.ok);
     await loadCollection(false);
     refreshStatus();
   } finally {
@@ -1176,21 +1162,15 @@ document.getElementById('craftAllBtn').addEventListener('click', async function(
   try {
     const res = await authFetch('/api/box/craft-all', { method: 'POST' });
     const data = await res.json();
-    const craftResult = document.getElementById('craftResult');
-    craftResult.style.display = 'block';
-    if (!res.ok) {
-      craftResult.style.color = 'var(--danger)';
-      craftResult.textContent = data.message;
-    } else if (data.totalCrafts === 0) {
-      craftResult.style.color = 'var(--ink-dim)';
-      craftResult.textContent = data.message;
+    // 결과는 화면 위 짧은 알림으로 (가방 칸이 밀리지 않도록)
+    if (!res.ok || data.totalCrafts === 0) {
+      showToast(data.message, !res.ok);
     } else {
-      craftResult.style.color = 'var(--gold)';
       const summary = data.results.map(r => {
         const obtainedText = r.obtained.map(o => `${o.emoji}${o.name}${o.count > 1 ? `x${o.count}` : ''}`).join(', ');
         return `${r.consumedName} ${r.craftCount}세트 → ${obtainedText}`;
       }).join(' / ');
-      craftResult.textContent = `⚡ 총 ${data.totalCrafts}번 합성! (${summary})`;
+      showToast(`⚡ 총 ${data.totalCrafts}번 합성! (${summary})`);
     }
     await loadCollection(false);
   } finally {
@@ -1209,15 +1189,10 @@ async function craftItem(itemKey, btnEl){
       body: JSON.stringify({ itemKey }),
     });
     const data = await res.json();
-    const craftResult = document.getElementById('craftResult');
-    craftResult.style.display = 'block';
-    if (!res.ok) {
-      craftResult.style.color = 'var(--danger)';
-      craftResult.textContent = data.message;
-    } else {
-      craftResult.style.color = 'var(--ink)';
-      craftResult.innerHTML = `${data.consumed.name} x${data.consumed.amount} <span class="arrow">→</span> ${data.result.emoji} ${data.result.name} 획득!`;
-    }
+    // 결과는 화면 위 짧은 알림으로 (연달아 눌러도 가방 칸이 밀리지 않도록)
+    showToast(res.ok
+      ? `${data.consumed.name} x${data.consumed.amount} → ${data.result.emoji} ${data.result.name} 획득!`
+      : data.message, !res.ok);
     await loadCollection(false);
   } finally {
     btnEl.disabled = false;

@@ -1153,3 +1153,22 @@ body.mode-collection .collection-mode-notice{ display:block; }
   cursor:pointer;
 }
 .season-picker select:focus{ outline:none; border-color:var(--gold); }
+
+/* 가방: 12종 고정 칸. 0개인 아이템은 흐리게, 합성 버튼은 카드 맨 아래에 고정 */
+#runInventoryGrid .item-card{ display:flex; flex-direction:column; align-items:center; }
+#runInventoryGrid .item-card .craft-btn{ margin-top:auto; }
+#runInventoryGrid .item-card.is-empty .item-emoji,
+#runInventoryGrid .item-card.is-empty .item-name,
+#runInventoryGrid .item-card.is-empty .item-count,
+#runInventoryGrid .item-card.is-empty .item-stars,
+#runInventoryGrid .item-card.is-empty .item-income,
+#runInventoryGrid .item-card.is-empty .item-effect{ opacity:0.35; }
+#runInventoryGrid .item-card > :nth-last-child(2){ margin-bottom:8px; }
+/* 효과 문구는 항상 두 줄 높이로 고정 (개수에 따라 줄 수가 바뀌어 카드가 밀리지 않게) */
+#runInventoryGrid .item-card .item-effect{
+  height:2.7em;
+  overflow:hidden;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+}
