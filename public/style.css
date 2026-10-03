@@ -327,6 +327,7 @@ body.mode-collection .collection-mode-notice{ display:block; }
 #mythicEventOverlay{
   position:fixed;
   inset:0;
+  overflow:hidden;
   z-index:1200;
   display:none;
   align-items:center;
@@ -340,16 +341,24 @@ body.mode-collection .collection-mode-notice{ display:block; }
   0%{ opacity:0; }
   100%{ opacity:1; }
 }
+/* 빛줄기: 화면보다 큰 정사각형을 가운데에 두고 돌리되, 가장자리는 원형으로 투명하게 사라지게 해서
+   가로로 긴 화면에서도 회전하는 사각형의 테두리가 보이지 않게 합니다. */
 .mythic-rays{
   position:absolute;
-  inset:0;
-  background:conic-gradient(from 0deg, rgba(240,98,146,0.18), transparent 20%, rgba(240,98,146,0.18) 40%, transparent 60%, rgba(240,98,146,0.18) 80%, transparent 100%);
+  left:50%;
+  top:50%;
+  width:160vmax;
+  height:160vmax;
+  border-radius:50%;
+  background:repeating-conic-gradient(from 0deg, rgba(240,98,146,0.2) 0deg, transparent 15deg, rgba(240,98,146,0.2) 30deg);
+  -webkit-mask-image:radial-gradient(circle, #000 0%, #000 30%, transparent 62%);
+  mask-image:radial-gradient(circle, #000 0%, #000 30%, transparent 62%);
   animation:mythicRayRotate 6s linear infinite;
   pointer-events:none;
 }
 @keyframes mythicRayRotate{
-  0%{ transform:rotate(0deg); }
-  100%{ transform:rotate(360deg); }
+  0%{ transform:translate(-50%, -50%) rotate(0deg); }
+  100%{ transform:translate(-50%, -50%) rotate(360deg); }
 }
 .mythic-card{
   position:relative;
@@ -1083,3 +1092,35 @@ body.mode-collection .collection-mode-notice{ display:block; }
 .golden-chance{ flex-shrink:0; color:var(--gold); font-weight:700; }
 .golden-info-note{ font-size:11px; color:var(--ink-dim); margin:-6px 0 14px; text-align:left; }
 #goldenInfoCloseBtn{ background:var(--gold); color:#1A1305; }
+
+/* 아이템 효과 요약 (가방·도감 화면) */
+.item-effects-box{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; }
+.item-effect-chip{
+  font-size:11px;
+  padding:4px 8px;
+  border-radius:999px;
+  background:var(--surface-2);
+  border:1px solid #2C3F6B;
+  color:var(--ink);
+}
+.item-effect-chip.maxed{ border-color:var(--gold); color:var(--gold); }
+.item-effects-empty{ font-size:11px; color:var(--ink-dim); }
+
+/* 아이템 카드: 고유 효과 / 잠금 */
+.item-card{ position:relative; }
+.item-card .item-effect{ font-size:10px; color:var(--rarity-rare); margin-top:3px; line-height:1.35; }
+.item-card.is-locked{ box-shadow:inset 0 0 0 1px var(--gold-dim); }
+.lock-btn{
+  position:absolute;
+  top:4px;
+  right:4px;
+  width:auto;
+  padding:2px 4px;
+  font-size:13px;
+  line-height:1;
+  background:transparent;
+  border-radius:6px;
+  opacity:0.45;
+}
+.lock-btn.on{ opacity:1; background:rgba(227,178,60,0.15); }
+.lock-hint{ font-size:11px; color:var(--ink-dim); margin:0 0 6px; }

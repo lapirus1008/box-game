@@ -27,6 +27,9 @@ const {
   PRESTIGE_GOLD_PER_POINT,
   PERK_INCOME_PERCENT,
   PERK_STORAGE_MS,
+  ITEM_EFFECTS,
+  GOLD_PER_BOX_PURCHASE,
+  BOX_PRICE_INCOME_MINUTES,
 } = require('./config');
 
 // weight 기반으로 목록 중 하나를 랜덤하게 뽑습니다. (pool 원소는 { treasure, weight })
@@ -40,17 +43,17 @@ function pickWeighted(pool) {
   return pool[0].treasure;
 }
 
-// 행운 레벨별 뽑기 풀: 희귀 이상 아이템의 weight를 레벨당 +5%씩 키웁니다. (레벨별로 한 번만 계산)
+// 행운 보너스(%)별 뽑기 풀: 희귀 이상 아이템의 weight를 그만큼 키웁니다. (값별로 한 번만 계산)
 const poolCache = new Map();
-function getBoxPool(luckLevel = 0) {
-  if (!poolCache.has(luckLevel)) {
-    const luckPercent = 100 + luckLevel * LUCK_PERCENT_PER_LEVEL;
-    poolCache.set(luckLevel, TREASURES.map(t => ({
+function getBoxPool(luckPercent = 0) {
+  if (!poolCache.has(luckPercent)) {
+    const multiplier = 100 + luckPercent;
+    poolCache.set(luckPercent, TREASURES.map(t => ({
       treasure: t,
-      weight: t.rarity === 'common' ? t.weight : t.weight * luckPercent / 100,
+      weight: t.rarity === 'common' ? t.weight : t.weight * multiplier / 100,
     })));
   }
-  return poolCache.get(luckLevel);
+  return poolCache.get(luckPercent);
 }
 
 // 등급별 아이템 목록은 바뀌지 않으므로 미리 나눠둡니다 (합성 결과/천장용).
@@ -66,22 +69,22 @@ function pickRandomFromRarity(rarity) {
 
 // 상자 하나를 뽑되, 천장 카운터를 반영합니다.
 // pity = 지금까지 신화 없이 연 상자 수. 이번이 천장 번째 상자면 신화 확정.
-function rollWithPity(pity, luckLevel = 0) {
-  if (pity + 1 >= MYTHIC_PITY_LIMIT) {
+function rollWithPity(pity, luckPercent = 0, pityLimit = MYTHIC_PITY_LIMIT) {
+  if (pity + 1 >= pityLimit) {
     return { treasure: pickRandomFromRarity('mythic'), pity: 0, guaranteed: true };
   }
-  const treasure = pickWeighted(getBoxPool(luckLevel));
+  const treasure = pickWeighted(getBoxPool(luckPercent));
   return { treasure, pity: treasure.rarity === 'mythic' ? 0 : pity + 1, guaranteed: false };
 }
 
 // 상자 여러 개를 연속으로 뽑습니다. 천장 카운터는 한 개씩 순서대로 반영됩니다.
 // 반환: { counts: { itemKey: 개수 }, pity: 최종 천장 카운터, pityTriggered: 천장 발동 여부 }
-function rollBoxes(startPity, quantity, luckLevel = 0) {
+function rollBoxes(startPity, quantity, luckPercent = 0, pityLimit = MYTHIC_PITY_LIMIT) {
   let pity = startPity;
   let pityTriggered = false;
   const counts = {};
   for (let i = 0; i < quantity; i++) {
-    const roll = rollWithPity(pity, luckLevel);
+    const roll = rollWithPity(pity, luckPercent, pityLimit);
     pity = roll.pity;
     if (roll.guaranteed) pityTriggered = true;
     counts[roll.treasure.key] = (counts[roll.treasure.key] || 0) + 1;
@@ -107,8 +110,9 @@ function rollCraftResults(rarity, craftCount) {
 
 // 보유 개수(owned: { itemKey: 개수 })로 가능한 만큼 전부 합성합니다.
 // 일반 → 희귀 → 영웅 순서로 처리해서, 합성으로 새로 생긴 아이템도 바로 다음 단계 재료가 됩니다.
+// locked(Set)에 든 아이템은 재료로 쓰지 않습니다 (🔒 잠금).
 // 반환: { deltas: { itemKey: 증감 }, results: [{ sourceKey, craftCount, obtained }], totalCrafts }
-function craftCascade(owned) {
+function craftCascade(owned, locked = new Set()) {
   const counts = { ...owned };
   const deltas = {};
   const results = [];
@@ -117,6 +121,7 @@ function craftCascade(owned) {
 
   for (const rarity of CRAFTABLE_RARITIES) {
     for (const item of TREASURES.filter(t => t.rarity === rarity)) {
+      if (locked.has(item.key)) continue;
       const craftCount = Math.floor((counts[item.key] || 0) / CRAFT_COST);
       if (craftCount === 0) continue;
 
@@ -217,17 +222,52 @@ function describeUpgradeEffect(key, level) {
   }
 }
 
-// box_claims 한 줄(claim)에서 업그레이드·환생 특성이 반영된 현재 능력치를 계산합니다.
-function getClaimStats(claim) {
+// 보유 아이템의 고유 효과 합계: { luck, golden, boxDiscount, pity, storageMinutes, incomePercent }
+function getItemEffects(owned = {}) {
+  const effects = { luck: 0, golden: 0, boxDiscount: 0, pity: 0, storageMinutes: 0, incomePercent: 0 };
+  for (const [key, effect] of Object.entries(ITEM_EFFECTS)) {
+    const count = owned[key] || 0;
+    if (count > 0) effects[effect.type] = Math.min(effect.max, count * effect.perItem);
+  }
+  return effects;
+}
+
+// 효과 하나를 화면용 문구로 (value = 지금 적용 중인 값)
+function describeItemEffect(type, value) {
+  switch (type) {
+    case 'luck':           return `희귀 이상 등장률 +${value}%`;
+    case 'golden':         return `황금 상자 보상 +${value}%`;
+    case 'boxDiscount':    return `상자 구매가 -${value}%`;
+    case 'pity':           return `신화 천장 -${value}개`;
+    case 'storageMinutes': return `보관 시간 +${formatHours(value * 60000)}`;
+    case 'incomePercent':  return `전체 수입 +${value}%`;
+    default:               return '';
+  }
+}
+
+// box_claims 한 줄(claim)과 보유 아이템(owned)에서 업그레이드·환생 특성·아이템 효과가 반영된 능력치를 계산합니다.
+function getClaimStats(claim, owned = {}) {
+  const effects = getItemEffects(owned);
   return {
     chargeIntervalMs: getChargeIntervalMs(claim.upgrade_charge_speed + getPerkLevel(claim, 'chargeSpeed')),
     maxCharges: MAX_BOX_CHARGES,
-    storageMs: getStorageMs(claim.upgrade_capacity, getPerkLevel(claim, 'storage')),
-    luckLevel: claim.upgrade_luck + getPerkLevel(claim, 'luck'),
+    storageMs: getStorageMs(claim.upgrade_capacity, getPerkLevel(claim, 'storage')) + effects.storageMinutes * 60000,
+    luckPercent: (claim.upgrade_luck + getPerkLevel(claim, 'luck')) * LUCK_PERCENT_PER_LEVEL + effects.luck,
+    pityLimit: MYTHIC_PITY_LIMIT - effects.pity,
+    goldenBonusPercent: effects.golden,
+    boxDiscountPercent: effects.boxDiscount,
+    mythicIncomePercent: effects.incomePercent,
+    effects,
     // 수입 배율은 퍼센트 정수 두 개로 들고 다닙니다 (부동소수점 오차 방지)
     upgradeIncomePercent: 100 + claim.upgrade_income * INCOME_BONUS_PERCENT_PER_LEVEL,
     prestigeIncomePercent: 100 + getPerkLevel(claim, 'income') * PERK_INCOME_PERCENT,
   };
+}
+
+// 골드 상자 1개 가격 = max(최소 가격, 분당 수입 × 0.25분) 에서 용의 비늘 할인
+function getBoxPrice(perMinuteIncome, discountPercent = 0) {
+  const base = Math.max(GOLD_PER_BOX_PURCHASE, Math.floor(perMinuteIncome * BOX_PRICE_INCOME_MINUTES));
+  return Math.max(1, Math.floor(base * (100 - discountPercent) / 100));
 }
 
 // 자동 개봉 1시간 가격: 최소 가격과 "지금 분당 수입 × N분" 중 큰 값
@@ -253,6 +293,9 @@ module.exports = {
   getUpgradeCost,
   describeUpgradeEffect,
   getClaimStats,
+  getItemEffects,
+  describeItemEffect,
+  getBoxPrice,
   getPerkLevel,
   getAutoOpenCostPerHour,
   formatHours,

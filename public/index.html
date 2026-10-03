@@ -206,6 +206,7 @@
     </div>
     <p class="screen-sub">💰 <strong id="shopGold">0</strong>G · <span id="collectionModeSubtext"></span></p>
     <div class="rank-badge hidden" id="collectorRankCollection"></div>
+    <div class="item-effects-box" id="itemEffectsBox"></div>
 
     <div class="rebirth-box record-only">
       <p class="rebirth-top"><span>🌀 환생 진행도</span><span id="rebirthProgressText" style="color:var(--gold);">0 / 100,000G</span></p>
@@ -243,6 +244,7 @@
 
     <!-- 가방: 지금 실제로 들고 있는 아이템 (합성 가능) -->
     <div id="runModeView">
+      <p class="lock-hint">🔓 버튼으로 아이템을 잠그면 합성(자동 합성 포함) 재료로 쓰이지 않아요. 효과가 있는 아이템을 지킬 때 쓰세요!</p>
       <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:8px;" id="runModeHint">같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (전설까지만, 신화는 상자에서만!)</p>
       <button class="collection-link" id="craftAllBtn" style="margin-bottom:16px; background:var(--surface-2); border:1px solid var(--gold-dim); border-radius:10px; padding:10px; color:var(--gold); text-decoration:none;">⚡ 전체 합성 (가능한 만큼 한번에)</button>
       <div class="collection-grid" id="runInventoryGrid"></div>

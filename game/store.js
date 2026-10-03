@@ -33,7 +33,13 @@ const CLAIM_COLUMNS = [
   'auto_open_enabled', 'auto_open_remaining_ms', 'auto_craft_unlocked', 'auto_craft_enabled',
   'prestige_points', 'prestige_perks', 'run_gold_earned', 'last_active_at',
   'golden_box_next_at', 'income_boost_until', 'lifetime_stats', 'achievements_claimed',
+  'locked_items',
 ];
+
+// 잠금(🔒)된 아이템 key 목록 → Set
+function lockedSet(claim) {
+  return new Set(Array.isArray(claim.locked_items) ? claim.locked_items : []);
+}
 
 // 이 요청 시점에 유저가 어떤 모드(기록/수집)를 쓰고 있는지 확인합니다.
 async function getActiveMode(runner, userId) {
@@ -75,10 +81,10 @@ async function getOwnedCounts(runner, userId, mode, { forUpdate = false } = {}) 
 
 // 보유 아이템과 업그레이드/환생 포인트를 반영해서 분당 골드 수입을 계산합니다.
 // - 아이템마다 자기 보유 개수에 맞는 ★ 보너스를 받고 (★당 +10%)
-// - 전체 합계에 수입 업그레이드와 환생 포인트 배율이 곱해집니다.
+// - 전체 합계에 수입 업그레이드, 환생 특성, 신화 아이템(천체의 나침반) 배율이 곱해집니다.
 // 모든 값은 정수로 내림합니다.
 function computeIncome(ownedCounts, claim) {
-  const stats = getClaimStats(claim);
+  const stats = getClaimStats(claim, ownedCounts);
   const items = [];
   let itemIncome = 0;
 
@@ -103,7 +109,9 @@ function computeIncome(ownedCounts, claim) {
   }
 
   const baseTotal = BASE_INCOME_PER_MINUTE + itemIncome;
-  const perMinuteIncome = Math.floor(baseTotal * stats.upgradeIncomePercent * stats.prestigeIncomePercent / 10000);
+  const perMinuteIncome = Math.floor(
+    baseTotal * stats.upgradeIncomePercent * stats.prestigeIncomePercent * (100 + stats.mythicIncomePercent) / 1000000
+  );
 
   return {
     perMinuteIncome,
@@ -111,6 +119,7 @@ function computeIncome(ownedCounts, claim) {
     itemIncome,
     upgradeBonusPercent: stats.upgradeIncomePercent - 100,
     prestigeBonusPercent: stats.prestigeIncomePercent - 100,
+    mythicBonusPercent: stats.mythicIncomePercent,
     items, // 아이템별 개수/★/수입 상세 (가방·도감 화면 표시용)
   };
 }
@@ -206,8 +215,9 @@ async function settle(client, userId, mode) {
   if (!claim) return null;
 
   const now = new Date();
-  const stats = getClaimStats(claim);
   let owned = await getOwnedCounts(client, userId, mode, { forUpdate: true });
+  // 능력치(보관 시간·행운·천장 등)는 정산 시작 시점의 보유 아이템 기준으로 계산합니다.
+  const stats = getClaimStats(claim, owned);
   const itemDeltas = {};
   const statDeltas = {};
   const addStats = (deltas) => {
@@ -264,7 +274,7 @@ async function settle(client, userId, mode) {
     autoOpenRemainingMs -= autoMs;
     charges = Math.min(stats.maxCharges, gained - autoGained);
     if (toOpen > 0) {
-      const rolled = rollBoxes(pity, toOpen, stats.luckLevel);
+      const rolled = rollBoxes(pity, toOpen, stats.luckPercent, stats.pityLimit);
       pity = rolled.pity;
       applyDeltas(rolled.counts);
       addStats(boxStatDeltas(toOpen, rolled.counts));
@@ -283,7 +293,7 @@ async function settle(client, userId, mode) {
   // 3. 자동 합성
   let autoCrafted = null;
   if (claim.auto_craft_enabled) {
-    const crafted = craftCascade(owned);
+    const crafted = craftCascade(owned, lockedSet(claim));
     if (crafted.totalCrafts > 0) {
       applyDeltas(crafted.deltas);
       addStats({ crafts: crafted.totalCrafts, ...countRareGains(crafted.deltas) });
@@ -322,7 +332,8 @@ async function settle(client, userId, mode) {
 
   return {
     claim: updatedClaim,
-    stats,
+    // 정산으로 아이템이 바뀌었을 수 있으니 능력치도 정산 후 보유 기준으로 다시 계산합니다.
+    stats: getClaimStats(updatedClaim, owned),
     owned,
     now,
     earned,
@@ -383,6 +394,7 @@ function isPrestigeMode(mode) {
 }
 
 module.exports = {
+  lockedSet,
   bumpStats,
   saveStats,
   boxStatDeltas,

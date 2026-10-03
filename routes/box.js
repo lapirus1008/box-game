@@ -39,9 +39,7 @@ const {
   COMPLETION_BONUS_GOLD,
   REBIRTH_GOLD_REQUIRED,
   MAX_BOX_CHARGES,
-  GOLD_PER_BOX_PURCHASE,
   MAX_GOLD_BOX_PURCHASE,
-  MYTHIC_PITY_LIMIT,
   MASTERY_THRESHOLDS,
   UPGRADES,
   AUTO_CRAFT,
@@ -60,6 +58,7 @@ const {
   INCOME_BOOST_MS,
   INCOME_BOOST_MULTIPLIER,
   ACHIEVEMENTS,
+  ITEM_EFFECTS,
 } = require('../game/config');
 const {
   rollWithPity,
@@ -73,6 +72,8 @@ const {
   getUpgradeCost,
   describeUpgradeEffect,
   getPerkLevel,
+  getBoxPrice,
+  describeItemEffect,
   getAutoOpenCostPerHour,
   formatHours,
   getPrestigePointsForRun,
@@ -110,8 +111,26 @@ function withSave(userId, fn) {
   });
 }
 
-function pityResponse(pity, triggered) {
-  return { mythicPity: pity, mythicPityLimit: MYTHIC_PITY_LIMIT, mythicPityTriggered: triggered };
+function pityResponse(save, pity, triggered) {
+  return { mythicPity: pity, mythicPityLimit: save.stats.pityLimit, mythicPityTriggered: triggered };
+}
+
+function boxPriceOf(save) {
+  return getBoxPrice(save.income.perMinuteIncome, save.stats.boxDiscountPercent);
+}
+
+// 지금 적용 중인 아이템 효과 목록 (화면 표시용)
+function activeItemEffects(save) {
+  const effects = save.stats.effects;
+  return Object.entries(ITEM_EFFECTS)
+    .filter(([key]) => (save.owned[key] || 0) > 0)
+    .map(([key, effect]) => ({
+      key,
+      emoji: TREASURE_BY_KEY.get(key).emoji,
+      name: TREASURE_BY_KEY.get(key).name,
+      text: describeItemEffect(effect.type, effects[effect.type]),
+      maxed: effects[effect.type] >= effect.max,
+    }));
 }
 
 function chargeResponse(chargeInfo, chargesUsed = 0) {
@@ -353,7 +372,7 @@ router.post('/open', handle('서버 오류로 상자를 열지 못했습니다.'
   return withSave(userId, async (client, mode, save) => {
     assertCanOpen(save, 1);
 
-    const roll = rollWithPity(save.claim.mythic_pity, save.stats.luckLevel);
+    const roll = rollWithPity(save.claim.mythic_pity, save.stats.luckPercent, save.stats.pityLimit);
     await store.updateClaim(client, userId, mode, {
       box_charges: save.chargeInfo.charges - 1,
       mythic_pity: roll.pity,
@@ -365,7 +384,7 @@ router.post('/open', handle('서버 오류로 상자를 열지 못했습니다.'
       message: '상자를 열었습니다!',
       mode,
       treasure: roll.treasure,
-      ...pityResponse(roll.pity, roll.guaranteed),
+      ...pityResponse(save, roll.pity, roll.guaranteed),
       totalTreasure: save.claim.total_treasure,
       ...chargeResponse(save.chargeInfo, 1),
       ...autoEventResponse(save),
@@ -387,7 +406,7 @@ router.post('/bulk-open', handle('서버 오류로 일괄 열기에 실패했습
   return withSave(userId, async (client, mode, save) => {
     assertCanOpen(save, quantity);
 
-    const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, save.stats.luckLevel);
+    const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, save.stats.luckPercent, save.stats.pityLimit);
     await store.updateClaim(client, userId, mode, {
       box_charges: save.chargeInfo.charges - quantity,
       mythic_pity: pity,
@@ -399,7 +418,7 @@ router.post('/bulk-open', handle('서버 오류로 일괄 열기에 실패했습
       message: `상자 ${quantity}개를 열었습니다!`,
       mode,
       quantity,
-      ...pityResponse(pity, pityTriggered),
+      ...pityResponse(save, pity, pityTriggered),
       totalTreasure: save.claim.total_treasure,
       obtained: toObtainedList(counts),
       ...chargeResponse(save.chargeInfo, quantity),
@@ -421,14 +440,15 @@ router.post('/buy-boxes', handle('서버 오류로 구매에 실패했습니다.
 
   return withSave(userId, async (client, mode, save) => {
     const currentGold = save.claim.total_treasure;
-    const totalCost = GOLD_PER_BOX_PURCHASE * quantity;
+    const boxPrice = boxPriceOf(save);
+    const totalCost = boxPrice * quantity;
     if (currentGold < totalCost) {
-      throw new HttpError(400, `골드가 부족합니다. (필요: ${totalCost}, 보유: ${currentGold})`, {
-        maxAffordable: Math.floor(currentGold / GOLD_PER_BOX_PURCHASE),
+      throw new HttpError(400, `골드가 부족합니다. (필요: ${totalCost.toLocaleString()}G, 보유: ${currentGold.toLocaleString()}G)`, {
+        maxAffordable: Math.floor(currentGold / boxPrice),
       });
     }
 
-    const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, save.stats.luckLevel);
+    const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, save.stats.luckPercent, save.stats.pityLimit);
     await store.addItems(client, userId, mode, counts);
     await store.saveStats(client, userId, mode, save.claim, store.boxStatDeltas(quantity, counts));
 
@@ -440,7 +460,8 @@ router.post('/buy-boxes', handle('서버 오류로 구매에 실패했습니다.
       mode,
       quantity,
       totalCost,
-      ...pityResponse(pity, pityTriggered),
+      boxPrice,
+      ...pityResponse(save, pity, pityTriggered),
       totalTreasure: remainingGold,
       obtained: toObtainedList(counts),
       ...autoEventResponse(save),
@@ -489,7 +510,9 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       chargeIntervalMs: save.stats.chargeIntervalMs,
       totalTreasure: claim.total_treasure,
       mythicPity: claim.mythic_pity,
-      mythicPityLimit: MYTHIC_PITY_LIMIT,
+      mythicPityLimit: save.stats.pityLimit,
+      boxPrice: boxPriceOf(save),
+      itemEffects: activeItemEffects(save),
       income: incomeResponse(save),
       collectorRank: getCollectorRank(obtainedCount),
       rebirthCount: claim.rebirth_count,
@@ -626,6 +649,31 @@ router.post('/auto-craft', handle('서버 오류로 자동 합성 설정에 실�
 }));
 
 // -------------------------------
+// 아이템 잠금: POST /api/box/lock { itemKey, locked }
+// -------------------------------
+// 잠근 아이템은 수동 합성·전체 합성·자동 합성의 재료로 쓰이지 않습니다. (모드별, 환생해도 유지)
+router.post('/lock', handle('서버 오류로 잠금 설정에 실패했습니다.', async (req) => {
+  const userId = req.user.userId;
+  const { itemKey } = req.body;
+  const item = typeof itemKey === 'string' ? TREASURE_BY_KEY.get(itemKey) : undefined;
+  if (!item) throw new HttpError(400, '존재하지 않는 아이템입니다.');
+
+  return withSave(userId, async (client, mode, save) => {
+    const locked = store.lockedSet(save.claim);
+    const lock = Boolean(req.body.locked);
+    if (lock) locked.add(item.key);
+    else locked.delete(item.key);
+    await store.updateClaim(client, userId, mode, { locked_items: JSON.stringify([...locked]) });
+    return {
+      message: lock ? `🔒 ${item.name}을(를) 잠갔어요. 합성 재료로 쓰이지 않아요.` : `🔓 ${item.name} 잠금을 풀었어요.`,
+      mode,
+      itemKey: item.key,
+      locked: lock,
+    };
+  });
+}));
+
+// -------------------------------
 // 황금 상자 열기: POST /api/box/golden-box
 // -------------------------------
 function pickGoldenReward() {
@@ -655,8 +703,11 @@ router.post('/golden-box', handle('서버 오류로 황금 상자를 열지 못�
     let gold = claim.total_treasure;
     const statDeltas = { golden: 1 };
 
+    // 요정의 날개: 황금 상자 보상 +N%
+    const bonus = (value) => Math.floor(value * (100 + save.stats.goldenBonusPercent) / 100);
+    const goldenBoxes = bonus(GOLDEN_BOXES);
     const giveGold = () => {
-      const amount = Math.max(GOLDEN_GOLD_MIN, save.income.perMinuteIncome * GOLDEN_GOLD_MINUTES);
+      const amount = bonus(Math.max(GOLDEN_GOLD_MIN, save.income.perMinuteIncome * GOLDEN_GOLD_MINUTES));
       gold += amount;
       fields.total_treasure = gold;
       fields.run_gold_earned = claim.run_gold_earned + amount;
@@ -666,19 +717,20 @@ router.post('/golden-box', handle('서버 오류로 황금 상자를 열지 못�
     };
 
     if (result.reward === 'boxes') {
-      const { counts, pity, pityTriggered } = rollBoxes(claim.mythic_pity, GOLDEN_BOXES, save.stats.luckLevel);
+      const { counts, pity, pityTriggered } = rollBoxes(claim.mythic_pity, goldenBoxes, save.stats.luckPercent, save.stats.pityLimit);
       await store.addItems(client, userId, mode, counts);
       fields.mythic_pity = pity;
-      Object.assign(statDeltas, store.boxStatDeltas(GOLDEN_BOXES, counts));
+      Object.assign(statDeltas, store.boxStatDeltas(goldenBoxes, counts));
       result.obtained = toObtainedList(counts);
       result.mythicPityTriggered = pityTriggered;
-      result.message = `📦 황금 상자! 상자 ${GOLDEN_BOXES}개를 열었어요`;
+      result.message = `📦 황금 상자! 상자 ${goldenBoxes}개를 열었어요`;
     } else if (result.reward === 'boost') {
       const current = claim.income_boost_until ? new Date(claim.income_boost_until) : now;
-      const until = new Date(Math.max(now.getTime(), current.getTime()) + INCOME_BOOST_MS);
+      const boostMs = bonus(INCOME_BOOST_MS);
+      const until = new Date(Math.max(now.getTime(), current.getTime()) + boostMs);
       fields.income_boost_until = until;
       result.boostUntil = until;
-      result.message = `⚡ 황금 상자! ${INCOME_BOOST_MS / 60000}분간 수입 ${INCOME_BOOST_MULTIPLIER}배`;
+      result.message = `⚡ 황금 상자! ${Math.round(boostMs / 60000)}분간 수입 ${INCOME_BOOST_MULTIPLIER}배`;
     } else if (result.reward === 'autoOpen') {
       const remaining = Number(claim.auto_open_remaining_ms);
       const add = Math.min(HOUR_MS, save.stats.storageMs - remaining);
@@ -797,6 +849,9 @@ router.post('/craft', handle('서버 오류로 합성에 실패했습니다.', a
   }
 
   return withSave(userId, async (client, mode, save) => {
+    if (store.lockedSet(save.claim).has(itemKey)) {
+      throw new HttpError(400, `🔒 ${sourceItem.name}은(는) 잠겨 있어서 합성할 수 없어요. 잠금을 풀어주세요.`);
+    }
     const ownedCount = save.owned[itemKey] || 0;
     if (ownedCount < CRAFT_COST) {
       throw new HttpError(400, `합성하려면 ${sourceItem.name}이(가) ${CRAFT_COST}개 필요합니다. (현재 ${ownedCount}개)`);
@@ -821,7 +876,7 @@ router.post('/craft', handle('서버 오류로 합성에 실패했습니다.', a
 // 일반 → 희귀 → 영웅 순서로 처리해서, 합성으로 새로 생긴 아이템도 이어서 합성합니다.
 router.post('/craft-all', handle('서버 오류로 일괄 합성에 실패했습니다.', async (req) => {
   return withSave(req.user.userId, async (client, mode, save) => {
-    const { deltas, results, totalCrafts } = craftCascade(save.owned);
+    const { deltas, results, totalCrafts } = craftCascade(save.owned, store.lockedSet(save.claim));
     if (totalCrafts === 0) {
       return { message: '합성 가능한 아이템이 없습니다.', mode, totalCrafts: 0, results: [] };
     }
@@ -860,9 +915,18 @@ router.get('/collection', handle('서버 오류가 발생했습니다.', async (
     save.income.items.forEach(item => { incomeByKey[item.key] = item.incomePerMinute; });
 
     // 아이템 숙련도(★): 같은 아이템을 많이 모을수록 붙고, 그 아이템의 수입이 올라갑니다.
+    const locked = store.lockedSet(save.claim);
     const collection = TREASURES.map(item => {
       const count = save.owned[item.key] || 0;
+      const effect = ITEM_EFFECTS[item.key];
       return {
+        locked: locked.has(item.key),
+        // 고유 효과: 1개당 효과(per) / 지금 적용 중인 효과(now) / 최대치(max)
+        effect: effect ? {
+          per: describeItemEffect(effect.type, effect.perItem),
+          now: count > 0 ? describeItemEffect(effect.type, Math.min(effect.max, count * effect.perItem)) : null,
+          max: describeItemEffect(effect.type, effect.max),
+        } : null,
         key: item.key,
         name: item.name,
         rarity: item.rarity,

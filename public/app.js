@@ -364,6 +364,8 @@ async function refreshStatus(){
     applyIncome(data.income);
     setGold(data.totalTreasure, data.income && data.income.lastCollectedAt);
     if (data.chargeIntervalMs) cachedChargeIntervalMs = data.chargeIntervalMs;
+    if (data.boxPrice) cachedBoxPrice = data.boxPrice;
+    renderItemEffects(data.itemEffects);
     applyAutoOpen(data.autoOpen);
     applyChargeInfo(data);
     updatePityUI(data.mythicPity, data.mythicPityLimit);
@@ -536,6 +538,7 @@ function renderTick(){
     const bonuses = [];
     if (cachedIncome.upgradeBonusPercent > 0) bonuses.push(`강화 +${cachedIncome.upgradeBonusPercent}%`);
     if (cachedIncome.prestigeBonusPercent > 0) bonuses.push(`환생 +${cachedIncome.prestigeBonusPercent}%`);
+    if (cachedIncome.mythicBonusPercent > 0) bonuses.push(`신화 +${cachedIncome.mythicBonusPercent}%`);
     breakdownText = `${parts.join(' + ')}${bonuses.length ? ` · ${bonuses.join(' · ')}` : ''}`;
   }
   document.querySelectorAll('[data-income="pending"]').forEach(el => { el.textContent = rateText; });
@@ -570,12 +573,13 @@ function renderTick(){
   renderGoldenBox();
 }
 
-const GOLD_PER_BOX_PURCHASE = 75; // 서버의 GOLD_PER_BOX_PURCHASE와 반드시 일치시켜야 함
+// 골드 상자 가격은 수입에 따라 바뀌므로 서버가 알려준 값을 씁니다 (상태 조회 때마다 갱신)
+let cachedBoxPrice = 75;
 const MAX_GOLD_BOX_PURCHASE = 2000; // 서버의 MAX_GOLD_BOX_PURCHASE와 반드시 일치시켜야 함
 
 function getMaxBuyableQty(){
   const gold = liveGold();
-  return Math.min(MAX_GOLD_BOX_PURCHASE, Math.max(0, Math.floor(gold / GOLD_PER_BOX_PURCHASE)));
+  return Math.min(MAX_GOLD_BOX_PURCHASE, Math.max(0, Math.floor(gold / cachedBoxPrice)));
 }
 
 function clampBuyBoxQty(){
@@ -586,9 +590,9 @@ function clampBuyBoxQty(){
   if (value > max) value = max;
   input.value = max === 0 ? 0 : value;
 
-  const cost = value * GOLD_PER_BOX_PURCHASE;
+  const cost = value * cachedBoxPrice;
   document.getElementById('buyBoxCostText').textContent =
-    `개당 ${GOLD_PER_BOX_PURCHASE}G · 총 ${cost}G · 최대 ${max}개 구매 가능 (충전과 무관)`;
+    `개당 ${formatGold(cachedBoxPrice)}G (수입이 늘면 올라요) · 총 ${formatGold(cost)}G · 최대 ${max}개`;
 
   document.getElementById('buyBoxBtn').disabled = max === 0 || value < 1 || isOpening;
   document.getElementById('maxBuyQtyBtn').disabled = max === 0;
@@ -978,6 +982,7 @@ async function loadCollection(showLoadingText = true){
         ${item.obtained ? `
           <div class="item-stars">${renderStars(item.stars, item.maxStars)}</div>
           <div class="item-next-star">${item.nextStarAt ? `다음 ★ ${item.count}/${item.nextStarAt}` : '★ 최대'}</div>
+          ${item.effect ? `<div class="item-effect">1개당 ${escapeHtml(item.effect.per)}<br>최대 ${escapeHtml(item.effect.max.replace(/^.*?([+-][^ ]+)$/, '$1'))}</div>` : ''}
         ` : ''}
       `;
       collectionGrid.appendChild(card);
@@ -997,26 +1002,65 @@ async function loadCollection(showLoadingText = true){
         // 신화는 상자에서만 나오므로 전설도 합성 재료가 될 수 없음 (일반/희귀/영웅만 합성 가능)
         const isMaxRarity = item.rarity === 'mythic';
         const isCraftLocked = item.rarity === 'legendary' || isMaxRarity;
-        const canCraft = item.count >= CRAFT_COST && !isCraftLocked;
+        const canCraft = item.count >= CRAFT_COST && !isCraftLocked && !item.locked;
+        const craftLabel = isMaxRarity ? '최고 등급' : (isCraftLocked ? '합성 불가' : (item.locked ? '🔒 잠김' : `합성(-${CRAFT_COST})`));
+        if (item.locked) card.classList.add('is-locked');
 
         card.innerHTML = `
+          <button class="lock-btn ${item.locked ? 'on' : ''}" data-lock="${item.key}" data-locked="${item.locked}"
+            title="${item.locked ? '잠금 해제' : '잠그면 합성 재료로 쓰이지 않아요'}">${item.locked ? '🔒' : '🔓'}</button>
           <span class="item-emoji">${item.emoji}</span>
           <div class="item-name">${item.name}</div>
           <div class="item-count">x${item.count}</div>
           <div class="item-stars">${renderStars(item.stars, item.maxStars)}</div>
           ${item.incomePerMinute ? `<div class="item-income">분당 +${formatGold(item.incomePerMinute)}G</div>` : ''}
-          <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${isMaxRarity ? '최고 등급' : (isCraftLocked ? '합성 불가' : `합성(-${CRAFT_COST})`)}</button>
+          ${item.effect ? `<div class="item-effect">${escapeHtml(item.effect.now || item.effect.per)}</div>` : ''}
+          <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${craftLabel}</button>
         `;
         runGrid.appendChild(card);
       });
     }
 
+    runGrid.querySelectorAll('[data-lock]').forEach(btn => {
+      btn.addEventListener('click', () => toggleItemLock(btn.dataset.lock, btn.dataset.locked !== 'true', btn));
+    });
     runGrid.querySelectorAll('.craft-btn').forEach(btn => {
       btn.addEventListener('click', () => craftItem(btn.dataset.key, btn));
     });
   } catch (err) {
     collectionGrid.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
   }
+}
+
+// 아이템 잠금 켜기/끄기
+async function toggleItemLock(itemKey, locked, btn){
+  btn.disabled = true;
+  try {
+    const res = await authFetch('/api/box/lock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemKey, locked }),
+    });
+    const data = await res.json();
+    showToast(data.message, !res.ok);
+  } catch (err) {
+    showToast('서버에 연결할 수 없습니다.', true);
+  } finally {
+    await loadCollection(false);
+  }
+}
+
+// 가방·도감 화면 위쪽: 지금 적용 중인 아이템 효과 요약
+function renderItemEffects(effects){
+  const box = document.getElementById('itemEffectsBox');
+  if (!box) return;
+  if (!effects || effects.length === 0) {
+    box.innerHTML = '<span class="item-effects-empty">✨ 특별한 아이템을 모으면 효과가 생겨요 (🍀🧚🐉✨⏳🧭)</span>';
+    return;
+  }
+  box.innerHTML = effects
+    .map(e => `<span class="item-effect-chip ${e.maxed ? 'maxed' : ''}">${e.emoji} ${escapeHtml(e.text)}${e.maxed ? ' (최대)' : ''}</span>`)
+    .join('');
 }
 
 // 가방/도감 탭 전환 (기본은 가방)

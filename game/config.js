@@ -16,7 +16,7 @@ const INCOME_PER_MINUTE_BY_RARITY = {
   rare: 5,
   epic: 20,
   legendary: 80,
-  mythic: 300,
+  mythic: 500,
 };
 
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic'];
@@ -27,7 +27,10 @@ const CRAFT_COST = 3;                 // 합성에 필요한 같은 아이템 �
 
 const COMPLETION_BONUS_GOLD = 2000;   // 도감 완성 보상
 const REBIRTH_GOLD_REQUIRED = 100000; // 환생에 필요한 골드 (기록모드 전용)
-const GOLD_PER_BOX_PURCHASE = 75;     // 충전과 별개로, 골드를 내고 상자를 즉시 구매할 때의 개당 가격
+// 골드로 상자를 즉시 구매할 때의 개당 가격 = max(최소 가격, 지금 분당 수입 × 0.25분(15초치))
+// 수입이 커질수록 상자도 비싸져서, "골드가 생기면 무조건 상자"가 정답이 되지 않게 합니다.
+const GOLD_PER_BOX_PURCHASE = 75;     // 최소 가격
+const BOX_PRICE_INCOME_MINUTES = 0.25;
 const MAX_GOLD_BOX_PURCHASE = 2000;
 const INITIAL_GOLD = 2000;            // 회원가입 시 지급하는 시작 골드
 const RESET_GOLD = 2000;              // 초심으로 돌아가기 / 환생 후 시작 골드
@@ -81,6 +84,21 @@ const TREASURE_BY_KEY = new Map(TREASURES.map(t => [t.key, t]));
 // 도감을 채운 뒤에도 "같은 아이템을 더 모을 이유"가 생깁니다.
 const MASTERY_THRESHOLDS = [10, 30, 100, 300]; // 이 개수를 넘길 때마다 ★ +1 (최대 4개)
 const MASTERY_INCOME_BONUS_PERCENT_PER_STAR = 10; // ★ 1개당 그 아이템의 수입 +10%
+
+// -------------------------------
+// 아이템 고유 효과 (보유 개수에 비례, 상한 있음)
+// -------------------------------
+// type: luck(희귀 이상 등장률 %) · golden(황금 상자 보상 %) · boxDiscount(상자 가격 할인 %)
+//       pity(신화 천장 감소 개수) · storageMinutes(보관 시간 분) · incomePercent(전체 수입 %)
+// 잠금(🔒)한 아이템은 합성 재료로 쓰이지 않아서 효과를 지킬 수 있습니다.
+const ITEM_EFFECTS = {
+  lucky_charm:    { type: 'luck',           perItem: 0.5, max: 20 },
+  fairy_wing:     { type: 'golden',         perItem: 2,   max: 50 },
+  dragon_scale:   { type: 'boxDiscount',    perItem: 0.5, max: 30 },
+  star_fragment:  { type: 'pity',           perItem: 10,  max: 1000 },
+  hourglass_sand: { type: 'storageMinutes', perItem: 10,  max: 240 },
+  astral_compass: { type: 'incomePercent',  perItem: 10,  max: 200 },
+};
 
 // -------------------------------
 // 골드 업그레이드 (모드별로 따로, 기록모드는 환생/초기화 때 0으로 돌아갑니다)
@@ -217,7 +235,9 @@ module.exports = {
   COMPLETION_BONUS_GOLD,
   REBIRTH_GOLD_REQUIRED,
   GOLD_PER_BOX_PURCHASE,
+  BOX_PRICE_INCOME_MINUTES,
   MAX_GOLD_BOX_PURCHASE,
+  ITEM_EFFECTS,
   INITIAL_GOLD,
   RESET_GOLD,
   MYTHIC_PITY_LIMIT,
