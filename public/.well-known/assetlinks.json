@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.lapirus.boxgame",
+      "sha256_cert_fingerprints": [
+        "E3:2D:FA:50:FF:A7:3A:8A:95:E3:07:79:D3:EF:64:86:78:11:10:4C:D0:BF:AD:DE:D0:6A:ED:04:38:FE:C8:01"
+      ]
+    }
+  }
+]
