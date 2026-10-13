@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<title>은화 주머니</title>
+<defs>
+<linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e9b98a"/><stop offset=".45" stop-color="#9b5f2e"/><stop offset="1" stop-color="#47250c"/></linearGradient>
+<linearGradient id="v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9b5f2e"/><stop offset="1" stop-color="#47250c"/></linearGradient>
+<radialGradient id="s" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#f4dcc5"/><stop offset=".35" stop-color="#9b5f2e"/><stop offset="1" stop-color="#47250c"/></radialGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f1f4f8"/><stop offset=".5" stop-color="#dfe6f0"/><stop offset="1" stop-color="#91969c"/></linearGradient>
+<radialGradient id="as" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#f1f4f8"/><stop offset="1" stop-color="#91969c"/></radialGradient>
+<linearGradient id="mt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#c3cbd8"/><stop offset="1" stop-color="#656e83"/></linearGradient>
+<linearGradient id="blade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#e9b98a"/><stop offset="1" stop-color="#9b5f2e"/></linearGradient>
+<radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#4fa3ff" stop-opacity=".6"/><stop offset=".6" stop-color="#4fa3ff" stop-opacity=".18"/><stop offset="1" stop-color="#4fa3ff" stop-opacity="0"/></radialGradient>
+<radialGradient id="lamp" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#e9b98a"/><stop offset="1" stop-color="#9b5f2e"/></radialGradient>
+</defs>
+<circle cx="64" cy="64" r="62" fill="url(#glow)"/>
+<path d="M40 50 C 22 64, 18 102, 38 110 L 90 110 C 110 102, 106 64, 88 50 Z" fill="url(#m)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<path d="M42 50 C 36 40, 40 30, 50 34 C 56 26, 72 26, 78 34 C 88 30, 92 40, 86 50 Z" fill="url(#v)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<rect x="38" y="46" width="52" height="9" rx="4" fill="url(#mt)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="64" cy="82" r="15" fill="url(#mt)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<text x="64" y="89" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="18" fill="#1c1631" opacity=".6">G</text>
+<path d="M32 72 C 30 84, 32 96, 38 104" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
+</svg>

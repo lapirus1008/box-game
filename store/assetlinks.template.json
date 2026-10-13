@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.lapirus.boxgame",
+      "sha256_cert_fingerprints": [
+        "여기에_플레이콘솔_앱서명키_SHA256",
+        "여기에_업로드키_SHA256"
+      ]
+    }
+  }
+]

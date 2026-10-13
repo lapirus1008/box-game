@@ -1,0 +1,18 @@
+{
+  "name": "시간의 상자 - 신화 수집 방치 게임",
+  "short_name": "시간의 상자",
+  "description": "상자를 열어 신화 아이템 100종을 모으는 방치형 수집 게임. 매주 목요일 새 시즌!",
+  "lang": "ko",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B1220",
+  "theme_color": "#0B1220",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "icons/app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/app/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

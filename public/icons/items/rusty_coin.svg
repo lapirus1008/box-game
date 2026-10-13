@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<title>녹슨 동전</title>
+<defs>
+<linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0c39a"/><stop offset=".45" stop-color="#b5652d"/><stop offset="1" stop-color="#4f230c"/></linearGradient>
+<linearGradient id="v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b5652d"/><stop offset="1" stop-color="#4f230c"/></linearGradient>
+<radialGradient id="s" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#f8e1cd"/><stop offset=".35" stop-color="#b5652d"/><stop offset="1" stop-color="#4f230c"/></radialGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c5eae0"/><stop offset=".5" stop-color="#7fd1b9"/><stop offset="1" stop-color="#538878"/></linearGradient>
+<radialGradient id="as" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#c5eae0"/><stop offset="1" stop-color="#538878"/></radialGradient>
+<linearGradient id="mt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a3a7bd"/><stop offset=".5" stop-color="#4a4d66"/><stop offset="1" stop-color="#17182a"/></linearGradient>
+<linearGradient id="blade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#f0c39a"/><stop offset="1" stop-color="#b5652d"/></linearGradient>
+<radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#9aa3b5" stop-opacity=".6"/><stop offset=".6" stop-color="#9aa3b5" stop-opacity=".18"/><stop offset="1" stop-color="#9aa3b5" stop-opacity="0"/></radialGradient>
+<radialGradient id="lamp" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#f0c39a"/><stop offset="1" stop-color="#b5652d"/></radialGradient>
+</defs>
+<circle cx="64" cy="64" r="62" fill="url(#glow)"/>
+<circle cx="64" cy="64" r="42" fill="url(#m)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="64" cy="64" r="33" fill="none" stroke="#4f230c" stroke-width="3" opacity=".55"/>
+<rect x="54" y="54" width="20" height="20" rx="2" fill="#1c1631"/>
+<circle cx="40" cy="80" r="6" fill="#7fd1b9" opacity=".55"/><circle cx="86" cy="46" r="4" fill="#7fd1b9" opacity=".5"/>
+<path d="M30 52 A36 36 0 0 1 50 28" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.5"/>
+</svg>

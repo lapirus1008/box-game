@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계정 삭제 요청 - 시간의 상자</title>
+<meta name="theme-color" content="#0B1220">
+<link rel="stylesheet" href="style.css">
+<style>
+  .doc{ font-size:14px; line-height:1.6; }
+  .doc h1{ font-size:22px; margin-top:0; }
+  .doc ul{ padding-left:18px; color:var(--ink-dim); font-size:13px; }
+  .done{ color:var(--teal); font-weight:600; display:none; }
+</style>
+</head>
+<body>
+<div class="card doc">
+  <h1>계정 삭제 요청</h1>
+  <p>「시간의 상자」 계정을 삭제합니다. 삭제하면 아래 정보가 <strong>즉시, 영구히</strong> 지워지며 되돌릴 수 없어요.</p>
+  <ul>
+    <li>계정 정보 (이메일, 닉네임, 비밀번호)</li>
+    <li>기록모드·수집모드 세이브, 아이템, 도감, 신화 도감</li>
+    <li>강화·업적·환생 기록과 랭킹 기록</li>
+  </ul>
+  <p style="font-size:12px; color:var(--ink-dim);">게임 안에서도 메인 화면 맨 아래 <strong>계정 삭제</strong>로 지울 수 있어요.</p>
+
+  <div class="error-msg" id="error"></div>
+  <p class="done" id="done">계정과 모든 게임 데이터를 삭제했습니다.</p>
+  <form id="form">
+    <label for="email">이메일</label>
+    <input type="email" id="email" autocomplete="username" required>
+    <label for="password">비밀번호</label>
+    <input type="password" id="password" autocomplete="current-password" required>
+    <button type="submit" class="btn-danger" id="submitBtn">계정 영구 삭제</button>
+  </form>
+  <p class="legal-links"><a href="privacy.html">개인정보처리방침</a> · <a href="./">게임으로 돌아가기</a></p>
+</div>
+<script>
+  const API_BASE = 'https://box-game-6y1g.onrender.com';
+  document.getElementById('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('error');
+    errorEl.style.display = 'none';
+    if (!confirm('정말 계정을 삭제할까요? 되돌릴 수 없어요.')) return;
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = '삭제 중... (서버가 잠들어 있으면 최대 1분 걸릴 수 있어요)';
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/delete-account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('email').value.trim(),
+          password: document.getElementById('password').value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      document.getElementById('form').style.display = 'none';
+      document.getElementById('done').style.display = 'block';
+      try { localStorage.removeItem('boxGameToken'); } catch (err) { /* 무시 */ }
+    } catch (err) {
+      errorEl.textContent = err.message || '서버에 연결할 수 없습니다.';
+      errorEl.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '계정 영구 삭제';
+    }
+  });
+</script>
+</body>
+</html>

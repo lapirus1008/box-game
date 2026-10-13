@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>시간의 상자</title>
+<meta name="description" content="상자를 열어 신화 아이템 100종을 모으는 방치형 수집 게임. 매주 목요일 새 시즌!">
+<meta name="theme-color" content="#0B1220">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/app/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
@@ -29,6 +34,33 @@
   </div>
 </div>
 
+<!-- 새 시즌 안내 -->
+<div id="seasonOverlay" class="info-overlay">
+  <div class="away-card season-card">
+    <p class="away-eyebrow">🗓 매주 목요일 오전 9시 새 시즌</p>
+    <p class="season-title" id="seasonOverlayTitle">시즌 3 시작!</p>
+    <p class="away-time" id="seasonOverlayText"></p>
+    <p class="season-sub-title">이번 주에만 나오는 신화 10종</p>
+    <div class="season-icon-grid" id="seasonOverlayIcons"></div>
+    <button id="seasonOverlayCloseBtn">확인</button>
+  </div>
+</div>
+
+<!-- 계정 삭제 -->
+<div id="deleteAccountOverlay" class="info-overlay">
+  <div class="away-card">
+    <p class="away-eyebrow">⚠️ 계정 삭제</p>
+    <p class="away-time">계정과 모든 게임 기록(세이브·신화 도감·랭킹)이 즉시 삭제되며 되돌릴 수 없어요.</p>
+    <form id="deleteAccountForm">
+      <label for="deleteAccountPassword">비밀번호 확인</label>
+      <input type="password" id="deleteAccountPassword" autocomplete="current-password" required>
+      <div class="error-msg" id="deleteAccountError"></div>
+      <button type="submit" class="btn-danger" id="deleteAccountSubmitBtn">계정 영구 삭제</button>
+    </form>
+    <button class="link-btn" id="deleteAccountCancelBtn">취소</button>
+  </div>
+</div>
+
 <!-- 짧은 알림 -->
 <div class="toast" id="toast"></div>
 
@@ -47,7 +79,8 @@
   <div class="mythic-rays"></div>
   <div class="mythic-card">
     <p class="mythic-eyebrow">✦ 신화 등급 발견 ✦</p>
-    <span class="mythic-emoji" id="mythicEventEmoji">🧭</span>
+    <img class="mythic-icon" id="mythicEventIcon" src="icons/items/astral_compass.svg" alt="">
+    <p class="mythic-effect" id="mythicEventEffect"></p>
     <div class="mythic-name" id="mythicEventName">천체의 나침반</div>
     <p class="mythic-flavor" id="mythicEventFlavor"></p>
     <button id="mythicEventCloseBtn">✨ 확인</button>
@@ -83,6 +116,7 @@
       <span id="switchToSignupLine">계정이 없으신가요? <button id="switchToSignup">회원가입</button></span>
       <span id="switchToLoginLine" class="hidden">이미 계정이 있으신가요? <button id="switchToLogin">로그인</button></span>
     </div>
+    <p class="legal-links"><a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a> · <a href="delete-account.html" target="_blank" rel="noopener">계정 삭제 요청</a></p>
   </div>
 
   <!-- 게임 화면 -->
@@ -101,6 +135,16 @@
     </div>
 
     <div class="rank-chip hidden" id="collectorRankMain"></div>
+
+    <!-- 이번 시즌: 남은 시간 + 이번 주 신화 10종 (누르면 신화 도감) -->
+    <button class="season-banner hidden" id="seasonBanner">
+      <span class="season-banner-top">
+        <span>🗓 <strong id="seasonBannerNo">시즌</strong> 신화 10종</span>
+        <span class="season-countdown" id="seasonCountdown"></span>
+      </span>
+      <span class="season-banner-icons" id="seasonBannerIcons"></span>
+      <span class="season-banner-sub" id="seasonBannerSub"></span>
+    </button>
 
     <button class="claim-banner hidden" id="mainClaimBonusBtn">
       <span class="claim-banner-icon">🎉</span>
@@ -128,6 +172,7 @@
     </div>
 
     <div class="result-box" id="resultBox">
+      <img class="result-icon hidden" id="treasureIcon" alt="">
       <div class="rarity-badge" id="rarityBadge"></div>
       <div class="treasure-name" id="treasureName"></div>
       <div id="treasureDetail" style="font-size:13px; color:var(--ink-dim);"></div>
@@ -196,6 +241,7 @@
       <button class="nav-tile record-only" id="openRankingBtn">🏆 랭킹</button>
     </div>
     <button class="reset-link record-only" id="resetRunBtn">🔄 초심으로 돌아가기</button>
+    <p class="legal-links"><a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a> · <button class="link-btn" id="openDeleteAccountBtn">계정 삭제</button></p>
   </div>
 
   <!-- 도감 화면 -->
@@ -222,17 +268,18 @@
       </div>
     </div>
 
-    <!-- 탭: 가방(지금 들고 있는 아이템, 기본) / 도감(발견 기록) -->
+    <!-- 탭: 가방(지금 들고 있는 아이템, 기본) / 시즌 도감(발견 기록) / 신화 도감(계정 전체, 영구) -->
     <div class="mode-tabs">
       <button class="mode-tab active" id="modeTabRun">🎒 가방</button>
       <button class="mode-tab" id="modeTabCollection">📖 도감</button>
+      <button class="mode-tab" id="modeTabCodex">🌟 신화도감</button>
     </div>
 
     <div class="craft-result" id="craftResult"></div>
 
     <!-- 도감: 발견 기록 (기록모드는 이번 판 한정, 수집모드는 영구) -->
     <div id="collectionModeView" class="hidden">
-      <p style="font-size:13px; color:var(--ink-dim); margin:0 0 4px;">수집 진행도: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong></p>
+      <p style="font-size:13px; color:var(--ink-dim); margin:0 0 4px;">시즌 도감: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong> <span style="font-size:11px;">(일반~전설 전부 + 이번 주 신화 10종)</span></p>
       <p class="mastery-hint">같은 아이템을 10·30·100·300개 모으면 ★ · ★당 그 아이템 수입 +10%</p>
       <button class="claim-banner hidden" id="claimBonusBtn">
         <span class="claim-banner-icon">🎉</span>
@@ -240,6 +287,12 @@
         <span class="claim-banner-cta">보상 받기</span>
       </button>
       <div class="collection-grid" id="collectionGrid"></div>
+    </div>
+
+    <!-- 신화 도감: 신화 100종, 시즌마다 10종씩 등장 (계정 전체 · 영구) -->
+    <div id="codexView" class="hidden">
+      <div class="codex-head" id="codexHead"></div>
+      <div id="codexGroups"></div>
     </div>
 
     <!-- 가방: 지금 실제로 들고 있는 아이템 (합성 가능) -->
@@ -307,6 +360,12 @@
   </div>
 
 <script src="app.js"></script>
+<script>
+  // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+</script>
 
 </body>
 </html>

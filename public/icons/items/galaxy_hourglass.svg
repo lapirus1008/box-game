@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<title>영겁의 모래시계</title>
+<defs>
+<linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd6f5"/><stop offset=".45" stop-color="#b06cff"/><stop offset="1" stop-color="#352595"/></linearGradient>
+<linearGradient id="v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b06cff"/><stop offset="1" stop-color="#352595"/></linearGradient>
+<radialGradient id="s" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffebfa"/><stop offset=".35" stop-color="#b06cff"/><stop offset="1" stop-color="#352595"/></radialGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#bef8ff"/><stop offset=".5" stop-color="#6ff0ff"/><stop offset="1" stop-color="#489ca6"/></linearGradient>
+<radialGradient id="as" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#bef8ff"/><stop offset="1" stop-color="#489ca6"/></radialGradient>
+<linearGradient id="mt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff0a6"/><stop offset=".5" stop-color="#e3ac2a"/><stop offset="1" stop-color="#875608"/></linearGradient>
+<linearGradient id="blade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#ffd6f5"/><stop offset="1" stop-color="#b06cff"/></linearGradient>
+<radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ff5fc8" stop-opacity=".6"/><stop offset=".6" stop-color="#ff5fc8" stop-opacity=".18"/><stop offset="1" stop-color="#ff5fc8" stop-opacity="0"/></radialGradient>
+<radialGradient id="lamp" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#ffd6f5"/><stop offset="1" stop-color="#b06cff"/></radialGradient>
+</defs>
+<circle cx="64" cy="64" r="62" fill="url(#glow)"/><line x1="75.5" y1="36.3" x2="88.5" y2="4.9" stroke="#ffe6f9" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="91.7" y1="52.5" x2="123.1" y2="39.5" stroke="#ffe6f9" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="91.7" y1="75.5" x2="123.1" y2="88.5" stroke="#ffe6f9" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="75.5" y1="91.7" x2="88.5" y2="123.1" stroke="#ffe6f9" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="52.5" y1="91.7" x2="39.5" y2="123.1" stroke="#ffe6f9" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="36.3" y1="75.5" x2="4.9" y2="88.5" stroke="#ffe6f9" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="36.3" y1="52.5" x2="4.9" y2="39.5" stroke="#ffe6f9" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="52.5" y1="36.3" x2="39.5" y2="4.9" stroke="#ffe6f9" stroke-width="3" stroke-linecap="round" opacity=".35"/>
+<path d="M44 28 C44 52, 60 58, 60 64 C60 70, 44 76, 44 100 L84 100 C84 76, 68 70, 68 64 C68 58, 84 52, 84 28 Z" fill="#eaf7ff" opacity=".55" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<path d="M50 44 C52 54, 62 58, 64 62 C66 58, 76 54, 78 44 Z" fill="url(#a)"/>
+<line x1="64" y1="62" x2="64" y2="88" stroke="#6ff0ff" stroke-width="2.5"/>
+<path d="M47 100 C51 88, 59 84, 64 84 C69 84, 77 88, 81 100 Z" fill="url(#a)"/>
+<path d="M44 28 C44 52, 60 58, 60 64 C60 70, 44 76, 44 100 L84 100 C84 76, 68 70, 68 64 C68 58, 84 52, 84 28 Z" fill="none" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<path d="M50 34 C50 46, 56 52, 58 56" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+<rect x="33" y="24" width="7" height="80" rx="3" fill="url(#m)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<rect x="88" y="24" width="7" height="80" rx="3" fill="url(#m)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<rect x="26" y="14" width="76" height="14" rx="5" fill="url(#m)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<rect x="26" y="100" width="76" height="14" rx="5" fill="url(#v)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="64" cy="21" r="3.5" fill="url(#as)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/><circle cx="64" cy="107" r="3.5" fill="url(#as)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="14,9 15.4,14.6 21,16 15.4,17.4 14,23 12.6,17.4 7,16 12.6,14.6" fill="#ffd6f2" opacity="1"/><polygon points="116,110 117.2,114.8 122,116 117.2,117.2 116,122 114.8,117.2 110,116 114.8,114.8" fill="#ffffff" opacity="0.9"/><polygon points="116,8 116.8,11.2 120,12 116.8,12.8 116,16 115.2,12.8 112,12 115.2,11.2" fill="#ffffff" opacity="0.8"/>
+</svg>

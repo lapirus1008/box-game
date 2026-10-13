@@ -22,8 +22,10 @@ const {
   PERK_START_AUTO_OPEN_MS,
   INCOME_BOOST_MULTIPLIER,
   TREASURE_BY_KEY,
+  SEASON_RESET_PRESTIGE,
 } = require('./config');
-const { getItemStars, getClaimStats, getPerkLevel, rollBoxes, craftCascade } = require('./logic');
+const { getItemStars, getClaimStats, getPerkLevel, rollBoxes, craftCascade, makeRollContext } = require('./logic');
+const { getSeason, getRotation } = require('./season');
 
 // box_claims에서 게임 진행에 필요한 컬럼 전체
 const CLAIM_COLUMNS = [
@@ -33,7 +35,7 @@ const CLAIM_COLUMNS = [
   'auto_open_enabled', 'auto_open_remaining_ms', 'auto_craft_unlocked', 'auto_craft_enabled',
   'prestige_points', 'prestige_perks', 'run_gold_earned', 'last_active_at',
   'golden_box_next_at', 'income_boost_until', 'lifetime_stats', 'achievements_claimed',
-  'locked_items',
+  'locked_items', 'season',
 ];
 
 // 잠금(🔒)된 아이템 key 목록 → Set
@@ -81,7 +83,7 @@ async function getOwnedCounts(runner, userId, mode, { forUpdate = false } = {}) 
 
 // 보유 아이템과 업그레이드/환생 포인트를 반영해서 분당 골드 수입을 계산합니다.
 // - 아이템마다 자기 보유 개수에 맞는 ★ 보너스를 받고 (★당 +10%)
-// - 전체 합계에 수입 업그레이드, 환생 특성, 신화 아이템(천체의 나침반) 배율이 곱해집니다.
+// - 전체 합계에 수입 업그레이드, 환생 특성, 신화(전체 수입 효과 + 신화 도감 보너스) 배율이 곱해집니다.
 // 모든 값은 정수로 내림합니다.
 function computeIncome(ownedCounts, claim) {
   const stats = getClaimStats(claim, ownedCounts);
@@ -110,7 +112,7 @@ function computeIncome(ownedCounts, claim) {
 
   const baseTotal = BASE_INCOME_PER_MINUTE + itemIncome;
   const perMinuteIncome = Math.floor(
-    baseTotal * stats.upgradeIncomePercent * stats.prestigeIncomePercent * (100 + stats.mythicIncomePercent) / 1000000
+    baseTotal * stats.upgradeIncomePercent * stats.prestigeIncomePercent * stats.itemIncomePercent / 1000000
   );
 
   return {
@@ -120,6 +122,7 @@ function computeIncome(ownedCounts, claim) {
     upgradeBonusPercent: stats.upgradeIncomePercent - 100,
     prestigeBonusPercent: stats.prestigeIncomePercent - 100,
     mythicBonusPercent: stats.mythicIncomePercent,
+    codexBonusPercent: stats.codexIncomePercent,
     items, // 아이템별 개수/★/수입 상세 (가방·도감 화면 표시용)
   };
 }
@@ -202,6 +205,64 @@ async function addItems(client, userId, mode, deltas) {
      ON CONFLICT (user_id, mode, item_key) DO NOTHING`,
     [userId, mode, gainedKeys]
   );
+
+  // 신화는 계정 전체의 영구 신화 도감(mythic_codex)에도 남깁니다. (어느 모드에서 얻든, 시즌이 바뀌어도 유지)
+  const mythicKeys = gainedKeys.filter(key => TREASURE_BY_KEY.get(key)?.rarity === 'mythic');
+  if (mythicKeys.length > 0) {
+    await client.query(
+      `INSERT INTO mythic_codex (user_id, item_key, first_obtained_at, season)
+       SELECT $1, t.item_key, NOW(), $3
+       FROM unnest($2::text[]) AS t(item_key)
+       ON CONFLICT (user_id, item_key) DO NOTHING`,
+      [userId, mythicKeys, getSeason()]
+    );
+  }
+}
+
+// 신화 도감: 지금까지 한 번이라도 얻은 신화 key Set
+async function getCodexKeys(runner, userId) {
+  const result = await runner.query('SELECT item_key FROM mythic_codex WHERE user_id = $1', [userId]);
+  return new Set(result.rows.map(r => r.item_key));
+}
+
+// 상자 뽑기 조건 (행운·천장·이번 시즌 신화 묶음·이미 가져본 신화)
+// 천장은 신화 도감에 없는 이번 시즌 신화를 우선으로 줍니다.
+function rollContextOf(save) {
+  const have = new Set(save.codex);
+  for (const [key, count] of Object.entries(save.owned)) {
+    if (count > 0 && TREASURE_BY_KEY.get(key)?.rarity === 'mythic') have.add(key);
+  }
+  return makeRollContext({
+    luckPercent: save.stats.luckPercent,
+    pityLimit: save.stats.pityLimit,
+    rotation: save.rotation,
+    have,
+  });
+}
+
+// 새 시즌 적용. 시즌이 바뀐 뒤 처음 정산할 때 한 번만 실행됩니다.
+// - 기록모드: 세이브를 처음부터 다시 시작합니다. (SEASON_RESET_PRESTIGE면 환생 포인트·특성·업적·기록까지)
+//   지난 시즌 랭킹 기록(rebirth_history)은 그대로 남아서 랭킹 화면에서 볼 수 있습니다.
+// - 수집모드: 아무것도 지우지 않고, 시즌 도감이 바뀌므로 도감 완성 보상만 다시 받을 수 있게 합니다.
+async function applyNewSeason(client, userId, mode, claim, season, now) {
+  if (mode !== MODES.RECORD) {
+    await updateClaim(client, userId, mode, { season, completion_bonus_claimed: false });
+    return;
+  }
+  const keepClaim = SEASON_RESET_PRESTIGE ? {} : claim;
+  await resetSave(client, userId, mode, now, { claim: keepClaim });
+  const fields = { season, golden_box_next_at: null, income_boost_until: null };
+  if (SEASON_RESET_PRESTIGE) {
+    Object.assign(fields, {
+      prestige_points: 0,
+      prestige_perks: '{}',
+      rebirth_count: 0,
+      achievements_claimed: '{}',
+      lifetime_stats: '{}',
+      locked_items: '[]',
+    });
+  }
+  await updateClaim(client, userId, mode, fields);
 }
 
 // 세이브를 "지금 시각" 기준으로 정산합니다. (동시 요청 안전성을 위해 FOR UPDATE 사용)
@@ -211,10 +272,22 @@ async function addItems(client, userId, mode, deltas) {
 // 흐른 시간은 창고의 보관 시간까지만 인정합니다. (오래 비우면 그 뒤로는 쌓이지 않음)
 // 세이브가 없으면 null을 돌려줍니다.
 async function settle(client, userId, mode) {
-  const claim = await getClaim(client, userId, mode, CLAIM_COLUMNS, { forUpdate: true });
+  let claim = await getClaim(client, userId, mode, CLAIM_COLUMNS, { forUpdate: true });
   if (!claim) return null;
 
   const now = new Date();
+  // 0. 시즌이 바뀌었으면 새 시즌을 먼저 적용합니다.
+  const season = getSeason(now);
+  const rotation = getRotation(season);
+  let seasonChange = null;
+  if ((Number(claim.season) || 0) < season) {
+    seasonChange = { from: Number(claim.season) || null, to: season, reset: mode === MODES.RECORD };
+    await applyNewSeason(client, userId, mode, claim, season, now);
+    claim = await getClaim(client, userId, mode, CLAIM_COLUMNS, { forUpdate: true });
+  }
+  const codex = await getCodexKeys(client, userId);
+  claim.codex_count = codex.size;
+
   let owned = await getOwnedCounts(client, userId, mode, { forUpdate: true });
   // 능력치(보관 시간·행운·천장 등)는 정산 시작 시점의 보유 아이템 기준으로 계산합니다.
   const stats = getClaimStats(claim, owned);
@@ -274,7 +347,7 @@ async function settle(client, userId, mode) {
     autoOpenRemainingMs -= autoMs;
     charges = Math.min(stats.maxCharges, gained - autoGained);
     if (toOpen > 0) {
-      const rolled = rollBoxes(pity, toOpen, stats.luckPercent, stats.pityLimit, owned);
+      const rolled = rollBoxes(pity, toOpen, rollContextOf({ codex, owned, stats, rotation }));
       pity = rolled.pity;
       applyDeltas(rolled.counts);
       addStats(boxStatDeltas(toOpen, rolled.counts));
@@ -302,6 +375,10 @@ async function settle(client, userId, mode) {
   }
 
   await addItems(client, userId, mode, itemDeltas);
+  for (const [key, amount] of Object.entries(itemDeltas)) {
+    if (amount > 0 && TREASURE_BY_KEY.get(key)?.rarity === 'mythic') codex.add(key);
+  }
+  claim.codex_count = codex.size;
   const lifetimeStats = bumpStats(claim, statDeltas);
   await updateClaim(client, userId, mode, {
     lifetime_stats: JSON.stringify(lifetimeStats),
@@ -335,6 +412,10 @@ async function settle(client, userId, mode) {
     // 정산으로 아이템이 바뀌었을 수 있으니 능력치도 정산 후 보유 기준으로 다시 계산합니다.
     stats: getClaimStats(updatedClaim, owned),
     owned,
+    codex,
+    season,
+    rotation,
+    seasonChange,
     now,
     earned,
     previousActiveAt: claim.last_active_at ? new Date(claim.last_active_at) : null,
@@ -403,6 +484,8 @@ module.exports = {
   getClaim,
   updateClaim,
   getOwnedCounts,
+  getCodexKeys,
+  rollContextOf,
   computeIncome,
   addItems,
   settle,

@@ -9,6 +9,8 @@ box-game/                    ← GitHub 저장소 루트
 │   └── box.js                 상자 열기 / 상태 조회 API
 ├── game/
 │   ├── config.js              게임 수치(충전, 골드, 천장 등) + 아이템 목록 + 수집가 등급
+│   ├── mythics.js             신화 100종 (25가지 모양 × 4테마, 시즌마다 10종씩 등장)
+│   ├── season.js              주간 시즌 계산 (매주 목요일 오전 9시 KST)
 │   ├── logic.js               DB와 무관한 순수 로직 (뽑기, 천장, 숙련도, 등급 계산)
 │   └── store.js               게임 데이터 DB 읽기/쓰기 함수
 ├── lib/
@@ -21,13 +23,24 @@ box-game/                    ← GitHub 저장소 루트
 │   ├── 002_auto_open_time_and_prestige_shop.sql  자동 개봉 시간·환생 상점 컬럼 추가
 │   ├── 003_golden_box_and_achievements.sql  황금 상자·수입 2배·누적 기록·업적 컬럼 추가
 │   ├── 004_item_locks.sql  아이템 잠금 컬럼 추가
-│   └── 005_ranking_season.sql  랭킹 시즌 컬럼 추가 (기존 기록은 시즌 1)
+│   ├── 005_ranking_season.sql  랭킹 시즌 컬럼 추가 (기존 기록은 시즌 1)
+│   └── 006_weekly_season_and_mythic_codex.sql  세이브별 시즌 컬럼 + 신화 도감 테이블 (기존 신화 기록 이전)
+├── scripts/
+│   ├── generate-icons.js      아이템 아이콘 SVG 생성 → public/icons/items/  (node scripts/generate-icons.js)
+│   └── render-store-assets.js 앱 아이콘 PNG · 스토어 그래픽 생성 (Playwright 필요)
+├── store/                     플레이스토어 등록 자료 (아이콘·그래픽·스크린샷·설명 문구)
+├── docs/PLAY_STORE.md         플레이스토어 출시 가이드
 ├── middleware/
 │   └── auth.js                로그인 토큰(JWT) 검증
 └── public/
     ├── index.html              프론트엔드 화면 구조 (HTML)
     ├── style.css               스타일
-    └── app.js                  화면 동작 스크립트
+    ├── app.js                  화면 동작 스크립트
+    ├── icons/items/            아이템 아이콘 (111종, 스크립트로 생성)
+    ├── icons/app/              앱 아이콘
+    ├── manifest.webmanifest, sw.js   앱 설치(PWA·TWA)용
+    ├── privacy.html            개인정보처리방침
+    └── delete-account.html     계정 삭제 요청 페이지
 
 구성요소								|  실행위치		|	역할
 server.js, routes/, middleware/, db.js	|	Render	|	항상 켜져있는 백엔드 서버

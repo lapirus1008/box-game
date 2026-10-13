@@ -1,6 +1,8 @@
 // game/config.js
 // 게임 밸런스와 관련된 상수, 아이템 목록, 수집가 등급을 한곳에 모아둔 파일입니다.
-// 숫자를 조정하고 싶을 때는 이 파일만 고치면 됩니다.
+// 숫자를 조정하고 싶을 때는 이 파일만 고치면 됩니다. (신화 100종은 game/mythics.js)
+
+const { MYTHICS, MYTHIC_EFFECT_STACK, ROTATION_SIZE } = require('./mythics');
 
 // -------------------------------
 // 충전 / 골드 / 합성 / 환생
@@ -29,9 +31,13 @@ const COMPLETION_BONUS_GOLD = 2000;   // 도감 완성 보상
 const REBIRTH_GOLD_REQUIRED = 300000; // 환생에 필요한 골드 (기록모드 전용)
 // 랭킹 시즌: 환생 조건 등 규칙이 바뀌면 시즌을 올려서 랭킹을 새로 시작합니다.
 // 지난 시즌 기록은 지우지 않고 rebirth_history.season 으로 구분해 보관합니다.
-const RANKING_SEASON = 2;
-// 시즌별 환생 조건 (랭킹 화면에서 지난 시즌을 볼 때 안내 문구에 씁니다)
-const SEASON_GOLD_REQUIRED = { 1: 100000, 2: 300000 };
+// 시즌 번호는 game/season.js 가 날짜로 계산합니다. (시즌 3부터 매주 목요일 오전 9시에 새 시즌)
+// 시즌별 환생 조건 (랭킹 화면에서 지난 시즌을 볼 때 안내 문구에 씁니다. 없으면 REBIRTH_GOLD_REQUIRED)
+const SEASON_GOLD_REQUIRED = { 1: 100000 };
+// 새 시즌이 시작되면 기록모드 세이브를 처음부터 다시 시작합니다.
+// true면 환생 포인트·상점 특성·업적·누적 기록까지 모두 초기화해서, 매주 모두가 같은 출발선에서 경쟁합니다.
+// (신화 도감과 수집모드는 시즌과 상관없이 영구히 남습니다)
+const SEASON_RESET_PRESTIGE = true;
 // 골드로 상자를 즉시 구매할 때의 개당 가격 = max(최소 가격, 지금 분당 수입 × 0.25분(15초치))
 // 수입이 커질수록 상자도 비싸져서, "골드가 생기면 무조건 상자"가 정답이 되지 않게 합니다.
 const GOLD_PER_BOX_PURCHASE = 75;     // 최소 가격
@@ -74,11 +80,8 @@ const TREASURES = [
   // 전설 (legendary) - 매우 희귀, 갖고 있으면 초당 골드도 추가로 벌립니다
   { key: 'phoenix_feather', name: '불사조의 깃털', rarity: 'legendary', emoji: '🔥', amount: 500, weight: 0.3, flavor: '전설 속에서만 존재한다던 그 깃털.' },
   { key: 'hourglass_sand',  name: '시간의 모래',   rarity: 'legendary', emoji: '⏳', amount: 600, weight: 0.2, flavor: '만지는 순간 시간이 멈춘 듯한 착각이 든다.' },
-  // 신화 (mythic) - 극악의 확률. 4종이 신화 확률(합계 0.02)을 나눠 갖고, 저마다 강력한 고유 효과가 있습니다
-  { key: 'astral_compass', name: '천체의 나침반', rarity: 'mythic', emoji: '🧭', amount: 5000, weight: 0.005, flavor: '전설조차 가리키지 못하는 곳을 가리킨다는, 전해지기만 하던 나침반.' },
-  { key: 'ancient_crown',  name: '고대 왕의 왕관', rarity: 'mythic', emoji: '👑', amount: 5000, weight: 0.005, flavor: '이 왕관을 쓴 자의 손에는 언제나 귀한 것만 쥐어졌다고 한다.' },
-  { key: 'galaxy_orb',     name: '은하의 구슬',   rarity: 'mythic', emoji: '🌌', amount: 5000, weight: 0.005, flavor: '들여다보면 별들이 소용돌이친다. 황금빛 행운을 끌어당긴다.' },
-  { key: 'dragon_pearl',   name: '용왕의 여의주', rarity: 'mythic', emoji: '🐲', amount: 5000, weight: 0.005, flavor: '바라는 것을 이루어 준다는 용왕의 구슬. 값을 깎는 데도 쓸모가 있다.' },
+  // 신화 (mythic) 100종은 game/mythics.js 에 있습니다. 시즌마다 10종씩만 상자에서 나옵니다.
+  ...MYTHICS,
 ];
 
 // key → 아이템 정보를 빠르게 찾기 위한 맵
@@ -100,14 +103,32 @@ const MASTERY_INCOME_BONUS_PERCENT_PER_STAR = 10; // ★ 1개당 그 아이템�
 //       pity(신화 천장 감소 개수) · storageMinutes(보관 시간 분) · incomePercent(전체 수입 %)
 // 잠금(🔒)한 아이템은 합성 재료로 쓰이지 않아서 효과를 지킬 수 있습니다.
 // 희귀·영웅의 효과(행운·황금 상자·상자 할인)는 신화로 옮겨서, 신화를 뽑는 의미를 키웠습니다.
+// 신화는 모양마다 효과가 정해져 있고 단계(1~4)에 따라 수치만 다릅니다. 같은 신화는 3개까지 겹칩니다.
+// 여러 아이템의 같은 효과는 더해지되, 효과 종류마다 아래 EFFECT_TYPE_CAPS 를 넘지 않습니다.
+// 추가 효과: upgradeDiscount(강화 비용 -%) · autoOpenDiscount(자동 개봉 가격 -%) · chargeSpeed(충전 속도 +%)
 const ITEM_EFFECTS = {
   star_fragment:  { type: 'pity',           perItem: 10,  max: 1000 },
   hourglass_sand: { type: 'storageMinutes', perItem: 10,  max: 240 },
-  astral_compass: { type: 'incomePercent',  perItem: 10,  max: 200 },
-  ancient_crown:  { type: 'luck',           perItem: 5,   max: 30 },
-  galaxy_orb:     { type: 'golden',         perItem: 20,  max: 100 },
-  dragon_pearl:   { type: 'boxDiscount',    perItem: 5,   max: 30 },
+  ...Object.fromEntries(MYTHICS.map(m => [m.key, {
+    type: m.effect.type, perItem: m.effect.perItem, max: m.effect.perItem * MYTHIC_EFFECT_STACK,
+  }])),
 };
+// 효과 종류별 최대치 (모든 아이템 합계)
+const EFFECT_TYPE_CAPS = {
+  incomePercent: 300,
+  luck: 60,
+  golden: 200,
+  boxDiscount: 40,
+  pity: 1500,
+  storageMinutes: 480,
+  upgradeDiscount: 50,
+  autoOpenDiscount: 60,
+  chargeSpeed: 40,
+};
+const MIN_ITEM_CHARGE_INTERVAL_MS = 3 * 1000; // 충전 속도 효과로도 3초보다 빨라지지 않습니다
+
+// 신화 도감(계정 전체·영구): 지금까지 한 번이라도 얻은 신화 1종마다 전체 수입 +1% (두 모드 모두)
+const CODEX_INCOME_PERCENT_PER_MYTHIC = 1;
 
 // -------------------------------
 // 골드 업그레이드 (모드별로 따로, 기록모드는 환생/초기화 때 0으로 돌아갑니다)
@@ -223,14 +244,17 @@ const ACHIEVEMENTS = [
 // 이 시간 이상 접속하지 않았다가 돌아오면 "자리 비운 동안" 요약을 보여줍니다.
 const AWAY_SUMMARY_MIN_MS = 5 * 60 * 1000;
 
-// 도감 발견 개수를 기준으로 한 수집가 등급입니다. 기록모드는 환생/초기화 때마다
-// 도감이 비워지므로 사실상 수집모드에서 의미가 있는 시스템입니다.
+// 시즌 도감 = 일반~전설 아이템 전부 + 이번 시즌 신화 10종. (지난 시즌 신화는 신화 도감에서 따로 모읍니다)
+const NON_MYTHIC_TREASURES = TREASURES.filter(t => t.rarity !== 'mythic');
+const SEASON_DEX_SIZE = NON_MYTHIC_TREASURES.length + ROTATION_SIZE;
+
+// 시즌 도감 발견 개수를 기준으로 한 수집가 등급입니다.
 const COLLECTOR_RANKS = [
   { key: 'novice', name: '초보 수집가',   emoji: '🌱', minObtained: 0 },
-  { key: 'bronze', name: '브론즈 수집가', emoji: '🥉', minObtained: Math.ceil(TREASURES.length * 0.25) },
-  { key: 'silver', name: '실버 수집가',   emoji: '🥈', minObtained: Math.ceil(TREASURES.length * 0.5) },
-  { key: 'gold',   name: '골드 수집가',   emoji: '🥇', minObtained: Math.ceil(TREASURES.length * 0.75) },
-  { key: 'master', name: '신화 마스터',   emoji: '👑', minObtained: TREASURES.length },
+  { key: 'bronze', name: '브론즈 수집가', emoji: '🥉', minObtained: Math.ceil(SEASON_DEX_SIZE * 0.25) },
+  { key: 'silver', name: '실버 수집가',   emoji: '🥈', minObtained: Math.ceil(SEASON_DEX_SIZE * 0.5) },
+  { key: 'gold',   name: '골드 수집가',   emoji: '🥇', minObtained: Math.ceil(SEASON_DEX_SIZE * 0.75) },
+  { key: 'master', name: '신화 마스터',   emoji: '👑', minObtained: SEASON_DEX_SIZE },
 ];
 
 module.exports = {
@@ -243,12 +267,17 @@ module.exports = {
   CRAFT_COST,
   COMPLETION_BONUS_GOLD,
   REBIRTH_GOLD_REQUIRED,
-  RANKING_SEASON,
   SEASON_GOLD_REQUIRED,
+  SEASON_RESET_PRESTIGE,
   GOLD_PER_BOX_PURCHASE,
   BOX_PRICE_INCOME_MINUTES,
   MAX_GOLD_BOX_PURCHASE,
   ITEM_EFFECTS,
+  EFFECT_TYPE_CAPS,
+  MIN_ITEM_CHARGE_INTERVAL_MS,
+  CODEX_INCOME_PERCENT_PER_MYTHIC,
+  NON_MYTHIC_TREASURES,
+  SEASON_DEX_SIZE,
   INITIAL_GOLD,
   RESET_GOLD,
   MYTHIC_PITY_LIMIT,

@@ -9,6 +9,7 @@ const { signToken } = require('../lib/token');
 const { createLimiter } = require('../lib/rateLimit');
 const { HttpError, withTransaction, handle } = require('../lib/http');
 const { INITIAL_GOLD } = require('../game/config');
+const { getSeason } = require('../game/season');
 
 const router = express.Router();
 
@@ -112,10 +113,11 @@ router.post('/signup', signupLimiter, handle('서버 오류로 회원가입에 �
       //    last_opened_at을 아주 예전으로 넣어서 가입 직후 바로 상자를 열 수 있게 합니다.
       // 기록모드/수집모드는 완전히 독립된 세이브라, 가입 시점에 둘 다 만들어둡니다.
       // (기본 활성 모드는 users.active_mode 컬럼의 DEFAULT 'record'를 따릅니다.)
+      // season: 지금 시즌으로 시작해야 첫 접속 때 "새 시즌 초기화"가 일어나지 않습니다.
       await client.query(
-        `INSERT INTO box_claims (user_id, mode, last_opened_at, total_treasure)
-         VALUES ($1, 'record', $2, $3), ($1, 'collection', $2, $3)`,
-        [user.id, new Date(0), INITIAL_GOLD]
+        `INSERT INTO box_claims (user_id, mode, last_opened_at, total_treasure, season)
+         VALUES ($1, 'record', $2, $3, $4), ($1, 'collection', $2, $3, $4)`,
+        [user.id, new Date(0), INITIAL_GOLD, getSeason()]
       );
       return user;
     });
@@ -188,6 +190,41 @@ router.get('/me', verifyToken, handle('서버 오류가 발생했습니다.', as
   if (result.rows.length === 0) throw new HttpError(404, '사용자를 찾을 수 없습니다.');
 
   return { user: result.rows[0] };
+}));
+
+// -------------------------------
+// 계정 삭제: POST /api/auth/delete-account
+// -------------------------------
+// 요청 형태: { "email": "...", "password": "..." }
+// 앱 스토어 정책상 계정을 만들 수 있는 앱은 앱 안(과 웹)에서 계정을 지울 수 있어야 합니다.
+// 로그인 없이도(웹 페이지에서) 쓸 수 있도록 이메일+비밀번호로 본인 확인을 합니다.
+// 랭킹 기록·세이브·신화 도감 등 이 계정의 모든 데이터를 즉시 지우며, 되돌릴 수 없습니다.
+const deleteLimiter = createLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: '시도가 너무 많습니다. 잠시 후 다시 시도해주세요.',
+});
+
+router.post('/delete-account', deleteLimiter, handle('서버 오류로 계정을 삭제하지 못했습니다.', async (req) => {
+  const { email, password } = req.body;
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
+    throw new HttpError(400, '이메일과 비밀번호를 입력해주세요.');
+  }
+
+  const result = await db.query('SELECT id, password_hash FROM users WHERE email = $1', [email]);
+  const user = result.rows[0];
+  const isMatch = await bcrypt.compare(password, user ? user.password_hash : DUMMY_PASSWORD_HASH);
+  if (!user || !isMatch) throw new HttpError(401, '이메일 또는 비밀번호가 올바르지 않습니다.');
+
+  await withTransaction(async (client) => {
+    // users를 참조하는 테이블부터 지웁니다.
+    for (const table of ['mythic_codex', 'user_items', 'user_discoveries', 'rebirth_history', 'box_claims']) {
+      await client.query(`DELETE FROM ${table} WHERE user_id = $1`, [user.id]);
+    }
+    await client.query('DELETE FROM users WHERE id = $1', [user.id]);
+  });
+
+  return { message: '계정과 모든 게임 데이터를 삭제했습니다.' };
 }));
 
 module.exports = router;

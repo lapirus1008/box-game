@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<title>요정의 날개</title>
+<defs>
+<linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#bfe8ff"/><stop offset="1" stop-color="#7d8de8"/></linearGradient>
+<linearGradient id="v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bfe8ff"/><stop offset="1" stop-color="#7d8de8"/></linearGradient>
+<radialGradient id="s" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#bfe8ff"/><stop offset="1" stop-color="#7d8de8"/></radialGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffddf4"/><stop offset=".5" stop-color="#ffb3e6"/><stop offset="1" stop-color="#a67496"/></linearGradient>
+<radialGradient id="as" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#ffddf4"/><stop offset="1" stop-color="#a67496"/></radialGradient>
+<linearGradient id="mt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#c3cbd8"/><stop offset="1" stop-color="#656e83"/></linearGradient>
+<linearGradient id="blade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#ffffff"/><stop offset="1" stop-color="#bfe8ff"/></linearGradient>
+<radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#4fa3ff" stop-opacity=".6"/><stop offset=".6" stop-color="#4fa3ff" stop-opacity=".18"/><stop offset="1" stop-color="#4fa3ff" stop-opacity="0"/></radialGradient>
+<radialGradient id="lamp" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#ffffff"/><stop offset="1" stop-color="#bfe8ff"/></radialGradient>
+</defs>
+<circle cx="64" cy="64" r="62" fill="url(#glow)"/>
+<path d="M64 70 C 40 30, 8 22, 10 50 C 12 70, 36 76, 64 70 Z" fill="url(#m)" opacity=".9" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<path d="M64 70 C 88 30, 120 22, 118 50 C 116 70, 92 76, 64 70 Z" fill="url(#m)" opacity=".9" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<path d="M64 72 C 46 82, 28 104, 42 112 C 54 118, 62 96, 64 72 Z" fill="url(#m)" opacity=".85" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<path d="M64 72 C 82 82, 100 104, 86 112 C 74 118, 66 96, 64 72 Z" fill="url(#m)" opacity=".85" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="34" cy="48" r="6" fill="#ffb3e6" opacity=".7"/><circle cx="94" cy="48" r="6" fill="#ffb3e6" opacity=".7"/>
+<ellipse cx="64" cy="72" rx="4" ry="12" fill="#7d8de8" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="24,86 25.2,90.8 30,92 25.2,93.2 24,98 22.8,93.2 18,92 22.8,90.8" fill="#ffffff" opacity="1"/><polygon points="104,87 105,91 109,92 105,93 104,97 103,93 99,92 103,91" fill="#ffffff" opacity="1"/><polygon points="64,17 65.4,22.6 71,24 65.4,25.4 64,31 62.6,25.4 57,24 62.6,22.6" fill="#ffffff" opacity="1"/>
+</svg>

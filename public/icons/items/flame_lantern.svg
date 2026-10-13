@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<title>도깨비불 등불</title>
+<defs>
+<linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe3a3"/><stop offset=".45" stop-color="#ff7a2f"/><stop offset="1" stop-color="#a8200d"/></linearGradient>
+<linearGradient id="v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff7a2f"/><stop offset="1" stop-color="#a8200d"/></linearGradient>
+<radialGradient id="s" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff1d1"/><stop offset=".35" stop-color="#ff7a2f"/><stop offset="1" stop-color="#a8200d"/></radialGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffeba9"/><stop offset=".5" stop-color="#ffd23f"/><stop offset="1" stop-color="#a68929"/></linearGradient>
+<radialGradient id="as" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#ffeba9"/><stop offset="1" stop-color="#a68929"/></radialGradient>
+<linearGradient id="mt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff0a6"/><stop offset=".5" stop-color="#e3ac2a"/><stop offset="1" stop-color="#875608"/></linearGradient>
+<linearGradient id="blade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#ffe3a3"/><stop offset="1" stop-color="#ff7a2f"/></linearGradient>
+<radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ff5fc8" stop-opacity=".6"/><stop offset=".6" stop-color="#ff5fc8" stop-opacity=".18"/><stop offset="1" stop-color="#ff5fc8" stop-opacity="0"/></radialGradient>
+<radialGradient id="lamp" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#ffe3a3"/><stop offset="1" stop-color="#ff7a2f"/></radialGradient>
+</defs>
+<circle cx="64" cy="64" r="62" fill="url(#glow)"/><line x1="75.5" y1="36.3" x2="88.5" y2="4.9" stroke="#ffeec8" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="91.7" y1="52.5" x2="123.1" y2="39.5" stroke="#ffeec8" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="91.7" y1="75.5" x2="123.1" y2="88.5" stroke="#ffeec8" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="75.5" y1="91.7" x2="88.5" y2="123.1" stroke="#ffeec8" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="52.5" y1="91.7" x2="39.5" y2="123.1" stroke="#ffeec8" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="36.3" y1="75.5" x2="4.9" y2="88.5" stroke="#ffeec8" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="36.3" y1="52.5" x2="4.9" y2="39.5" stroke="#ffeec8" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="52.5" y1="36.3" x2="39.5" y2="4.9" stroke="#ffeec8" stroke-width="3" stroke-linecap="round" opacity=".35"/>
+<path d="M50 24 C 50 8, 78 8, 78 24" fill="none" stroke="#1c1631" stroke-width="10" stroke-linecap="round"/><path d="M50 24 C 50 8, 78 8, 78 24" fill="none" stroke="url(#mt)" stroke-width="4" stroke-linecap="round"/>
+<path d="M38 36 L90 36 L80 22 L48 22 Z" fill="url(#mt)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<rect x="40" y="34" width="48" height="56" rx="10" fill="url(#lamp)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<path d="M0 -24 C 6.3 -13.200000000000001 9 -3.6 9 0 A 9 9 0 0 1 -9 0 C -9 -3.6 -6.3 -13.200000000000001 0 -24 Z" transform="translate(64 74)" fill="#ffd23f" stroke="#1c1631" stroke-width="2"/>
+<path d="M0 -14 C 3.5 -7.700000000000001 5 -2 5 0 A 5 5 0 0 1 -5 0 C -5 -2 -3.5 -7.700000000000001 0 -14 Z" transform="translate(64 76)" fill="#ffffff"/>
+<line x1="52" y1="36" x2="52" y2="88" stroke="#1c1631" stroke-width="7"/><line x1="52" y1="36" x2="52" y2="88" stroke="url(#mt)" stroke-width="3"/>
+<line x1="76" y1="36" x2="76" y2="88" stroke="#1c1631" stroke-width="7"/><line x1="76" y1="36" x2="76" y2="88" stroke="url(#mt)" stroke-width="3"/>
+<path d="M36 88 L92 88 L82 102 L46 102 Z" fill="url(#mt)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<line x1="64" y1="102" x2="64" y2="114" stroke="#1c1631" stroke-width="3"/>
+<path d="M58 112 L70 112 L67 122 L61 122 Z" fill="url(#a)" stroke="#1c1631" stroke-width="2"/>
+<polygon points="14,9 15.4,14.6 21,16 15.4,17.4 14,23 12.6,17.4 7,16 12.6,14.6" fill="#ffd6f2" opacity="1"/><polygon points="116,110 117.2,114.8 122,116 117.2,117.2 116,122 114.8,117.2 110,116 114.8,114.8" fill="#ffffff" opacity="0.9"/><polygon points="116,8 116.8,11.2 120,12 116.8,12.8 116,16 115.2,12.8 112,12 115.2,11.2" fill="#ffffff" opacity="0.8"/>
+</svg>

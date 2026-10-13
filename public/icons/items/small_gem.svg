@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<title>작은 보석</title>
+<defs>
+<linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e6fffd"/><stop offset=".45" stop-color="#3fd6e8"/><stop offset="1" stop-color="#0f6f93"/></linearGradient>
+<linearGradient id="v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3fd6e8"/><stop offset="1" stop-color="#0f6f93"/></linearGradient>
+<radialGradient id="s" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#f3fffe"/><stop offset=".35" stop-color="#3fd6e8"/><stop offset="1" stop-color="#0f6f93"/></radialGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#ffffff"/><stop offset="1" stop-color="#a6a6a6"/></linearGradient>
+<radialGradient id="as" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#ffffff"/><stop offset="1" stop-color="#a6a6a6"/></radialGradient>
+<linearGradient id="mt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#c3cbd8"/><stop offset="1" stop-color="#656e83"/></linearGradient>
+<linearGradient id="blade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#e6fffd"/><stop offset="1" stop-color="#3fd6e8"/></linearGradient>
+<radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#9aa3b5" stop-opacity=".6"/><stop offset=".6" stop-color="#9aa3b5" stop-opacity=".18"/><stop offset="1" stop-color="#9aa3b5" stop-opacity="0"/></radialGradient>
+<radialGradient id="lamp" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#e6fffd"/><stop offset="1" stop-color="#3fd6e8"/></radialGradient>
+</defs>
+<circle cx="64" cy="64" r="62" fill="url(#glow)"/>
+<polygon points="40,30 88,30 108,52 64,110 20,52" fill="url(#m)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="40,30 52,52 20,52" fill="#ffffff" opacity=".45"/>
+<polygon points="52,52 76,52 64,30 40,30 88,30" fill="#ffffff" opacity=".25"/>
+<polygon points="76,52 108,52 88,30" fill="#0f6f93" opacity=".25"/>
+<polygon points="20,52 52,52 64,110" fill="#ffffff" opacity=".2"/>
+<polygon points="76,52 108,52 64,110" fill="#0f6f93" opacity=".35"/>
+<polyline points="20,52 108,52" fill="none" stroke="#1c1631" stroke-width="2"/>
+<polyline points="40,30 52,52 64,110 76,52 88,30" fill="none" stroke="#1c1631" stroke-width="2"/>
+<polyline points="52,52 64,30 76,52" fill="none" stroke="#1c1631" stroke-width="2"/>
+<polygon points="96,17 97.8,24.2 105,26 97.8,27.8 96,35 94.2,27.8 87,26 94.2,24.2" fill="#ffffff" opacity="1"/>
+</svg>

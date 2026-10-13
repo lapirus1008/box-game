@@ -1172,3 +1172,105 @@ body.mode-collection .collection-mode-notice{ display:block; }
   -webkit-line-clamp:2;
   -webkit-box-orient:vertical;
 }
+
+/* -------------------------------
+   아이템 아이콘 (public/icons/items/*.svg)
+   ------------------------------- */
+.item-card .item-icon{ width:56px; height:56px; display:block; margin:0 auto 4px; }
+/* 아직 발견하지 못한 아이템: 어둡게 가려서 모양만 살짝 보이게 */
+img.unknown{ filter:grayscale(1) brightness(0.55) contrast(1.1); opacity:0.6; }
+#runInventoryGrid .item-card.is-empty .item-icon{ opacity:0.35; }
+.item-card.past-season::after{
+  content:'지난 시즌';
+  position:absolute; top:4px; left:4px;
+  font-size:9px; padding:1px 5px; border-radius:6px;
+  background:rgba(240,98,146,0.18); color:var(--rarity-mythic);
+}
+.result-icon{ width:76px; height:76px; display:block; margin:0 auto 4px; animation:resultIconPop .35s ease-out; }
+.result-icon.hidden{ display:none; }
+@keyframes resultIconPop{ from{ transform:scale(.6); opacity:0; } to{ transform:scale(1); opacity:1; } }
+#treasureDetail{ line-height:1.9; }
+.obtained-chip{
+  display:inline-flex; align-items:center; gap:3px;
+  margin:2px 3px 2px 0; padding:1px 7px 1px 2px;
+  font-size:11px; color:var(--ink);
+  background:var(--surface-2); border:1px solid #2C3F6B; border-radius:999px;
+  white-space:nowrap;
+}
+.obtained-chip.rare{ border-color:rgba(76,140,240,0.55); }
+.obtained-chip.epic{ border-color:rgba(177,92,240,0.6); }
+.obtained-chip.legendary{ border-color:var(--rarity-legendary); color:var(--rarity-legendary); }
+.obtained-chip.mythic{ border-color:var(--rarity-mythic); color:#ffd1e3; box-shadow:0 0 8px rgba(240,98,146,0.35); }
+.chip-icon{ width:22px; height:22px; flex-shrink:0; }
+.away-details li.with-icon{ display:flex; align-items:center; gap:6px; }
+.mythic-icon{
+  width:132px; height:132px; display:block; margin:0 auto 10px;
+  animation:mythicEmojiFloat 2.2s ease-in-out infinite;
+  filter:drop-shadow(0 0 18px rgba(240,98,146,0.7));
+}
+.mythic-effect{ font-size:13px; color:var(--gold); margin:0 0 8px; font-weight:600; }
+
+/* -------------------------------
+   주간 시즌 배너 / 새 시즌 안내
+   ------------------------------- */
+.season-banner{
+  display:flex; flex-direction:column; gap:6px;
+  width:100%; margin:0 0 12px; padding:10px 12px;
+  text-align:left; color:var(--ink);
+  background:linear-gradient(135deg, rgba(240,98,146,0.16), rgba(120,90,240,0.12));
+  border:1px solid rgba(240,98,146,0.45); border-radius:12px;
+  cursor:pointer;
+}
+.season-banner.hidden{ display:none; }
+.season-banner-top{ display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:12px; }
+.season-banner-top strong{ color:var(--rarity-mythic); }
+.season-countdown{ font-size:11px; color:var(--gold); font-weight:600; white-space:nowrap; }
+.season-banner-icons{ display:grid; grid-template-columns:repeat(10, 1fr); gap:2px; }
+.season-slot{ display:block; aspect-ratio:1; border-radius:8px; background:rgba(5,9,18,0.35); }
+.season-slot.have{ background:rgba(240,98,146,0.18); }
+.season-icon{ width:100%; height:100%; display:block; }
+.season-banner-sub{ font-size:11px; color:var(--ink-dim); }
+.season-card{ border-color:rgba(240,98,146,0.6); max-width:360px; }
+.season-title{ font-family:'Fraunces', serif; font-size:24px; color:var(--rarity-mythic); margin:0 0 6px; }
+.season-sub-title{ font-size:12px; color:var(--gold); margin:0 0 8px; font-weight:600; }
+.season-icon-grid{ display:grid; grid-template-columns:repeat(5, 1fr); gap:6px; margin-bottom:16px; }
+.season-overlay-item{ display:flex; flex-direction:column; align-items:center; gap:2px; padding:4px 2px; border-radius:10px; background:var(--surface-2); }
+.season-overlay-item.have{ box-shadow:inset 0 0 0 1px var(--rarity-mythic); }
+.season-overlay-item .season-icon{ width:46px; height:46px; }
+.season-overlay-item small{ font-size:9px; line-height:1.25; color:var(--ink-dim); }
+#seasonOverlayCloseBtn{ background:var(--rarity-mythic); color:#1A0F1E; font-weight:700; }
+
+/* -------------------------------
+   신화 도감
+   ------------------------------- */
+.mode-tab{ padding:10px 4px; font-size:12px; }
+.codex-head{ margin-bottom:12px; }
+.codex-progress{ display:flex; justify-content:space-between; align-items:center; font-size:13px; margin-bottom:6px; }
+.codex-progress strong{ color:var(--rarity-mythic); font-size:16px; }
+.codex-bonus{ font-size:12px; color:var(--teal); font-weight:600; }
+.codex-bar{ background:linear-gradient(90deg, var(--rarity-mythic), #b15cf0); }
+.codex-rule{ font-size:11px; color:var(--ink-dim); line-height:1.5; margin:8px 0 0; }
+.codex-group{ margin:0 0 14px; padding:10px; border-radius:12px; background:var(--surface-2); border:1px solid #2C3F6B; }
+.codex-group.current{ border-color:var(--rarity-mythic); box-shadow:0 0 12px rgba(240,98,146,0.2); }
+.codex-group-head{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; font-size:12px; }
+.codex-group-head strong{ color:var(--ink); }
+.codex-when{ font-size:11px; color:var(--ink-dim); }
+.codex-when.now{ color:var(--rarity-mythic); font-weight:600; }
+.codex-grid{ display:grid; grid-template-columns:repeat(5, 1fr); gap:6px; }
+.codex-card{ position:relative; padding:4px 2px 6px; border-radius:10px; background:var(--bg); text-align:center; }
+.codex-card.have{ box-shadow:inset 0 0 0 1px rgba(240,98,146,0.6); }
+.codex-icon{ width:100%; max-width:56px; aspect-ratio:1; display:block; margin:0 auto; }
+.codex-name{ font-size:9px; line-height:1.25; min-height:2.5em; color:var(--ink); }
+.codex-effect{ font-size:8.5px; line-height:1.25; color:var(--rarity-rare); }
+.tier-badge{ position:absolute; top:3px; left:3px; z-index:1; padding:0 4px; font-size:9px; line-height:14px; color:var(--gold); background:rgba(5,9,18,0.85); border-radius:6px; }
+
+/* -------------------------------
+   기타: 할인 안내 · 약관 링크 · 계정 삭제
+   ------------------------------- */
+.discount-note{ font-size:11px; color:var(--teal); margin:0 0 6px; }
+.legal-links{ margin:14px 0 0; text-align:center; font-size:11px; color:var(--ink-dim); }
+.legal-links a{ color:var(--ink-dim); }
+.link-btn{ width:auto; padding:0; margin:0; background:none; border:none; color:var(--ink-dim); font-size:inherit; text-decoration:underline; cursor:pointer; }
+#deleteAccountOverlay .away-card{ border-color:var(--danger); text-align:left; }
+#deleteAccountOverlay .link-btn{ display:block; margin:10px auto 0; font-size:12px; }
+.btn-danger{ background:var(--danger); color:#fff; font-weight:700; }

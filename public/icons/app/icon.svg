@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="512" height="512">
+<defs>
+  <linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff3b0"/><stop offset=".45" stop-color="#f2c230"/><stop offset="1" stop-color="#9a640a"/></linearGradient>
+  <linearGradient id="v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2c230"/><stop offset="1" stop-color="#9a640a"/></linearGradient>
+  <radialGradient id="s" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff9d8"/><stop offset=".35" stop-color="#f2c230"/><stop offset="1" stop-color="#9a640a"/></radialGradient>
+  <linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f5a5b0"/><stop offset=".5" stop-color="#e8364f"/><stop offset="1" stop-color="#972333"/></linearGradient>
+  <radialGradient id="as" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#f5a5b0"/><stop offset="1" stop-color="#972333"/></radialGradient>
+  <linearGradient id="mt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#c3cbd8"/><stop offset="1" stop-color="#656e83"/></linearGradient>
+  <linearGradient id="blade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#fff3b0"/><stop offset="1" stop-color="#f2c230"/></linearGradient>
+  <radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ff5fc8" stop-opacity=".6"/><stop offset=".6" stop-color="#ff5fc8" stop-opacity=".18"/><stop offset="1" stop-color="#ff5fc8" stop-opacity="0"/></radialGradient>
+  <radialGradient id="lamp" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#fff3b0"/><stop offset="1" stop-color="#f2c230"/></radialGradient>
+</defs>
+<defs>
+  <radialGradient id="bg" cx=".5" cy=".42" r=".75"><stop offset="0" stop-color="#3a2a86"/><stop offset=".55" stop-color="#1a1c45"/><stop offset="1" stop-color="#0b1220"/></radialGradient>
+  <radialGradient id="halo" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ff5fc8" stop-opacity=".75"/><stop offset=".55" stop-color="#ff5fc8" stop-opacity=".2"/><stop offset="1" stop-color="#ff5fc8" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="128" height="128" fill="url(#bg)"/>
+<circle cx="64" cy="66" r="45.919999999999995" fill="url(#halo)"/>
+<g transform="translate(11.520000000000003 13.520000000000003) scale(0.82)">
+    <path d="M16 58 L16 44 C16 26, 40 16, 64 16 C88 16, 112 26, 112 44 L112 58 Z" fill="url(#m)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M30 58 L30 24 M98 58 L98 24" stroke="#1c1631" stroke-width="10"/>
+    <path d="M30 58 L30 24 M98 58 L98 24" stroke="url(#mt)" stroke-width="5"/>
+    <rect x="16" y="56" width="96" height="54" rx="4" fill="url(#v)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+    <rect x="25" y="56" width="10" height="54" fill="url(#mt)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+    <rect x="93" y="56" width="10" height="54" fill="url(#mt)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+    <rect x="12" y="52" width="104" height="10" rx="3" fill="url(#mt)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+    <rect x="54" y="50" width="20" height="24" rx="4" fill="url(#a)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+    <circle cx="64" cy="59" r="3.5" fill="#1c1631"/><rect x="62.5" y="60" width="3" height="8" fill="#1c1631"/>
+    <path d="M24 40 C 28 30, 40 24, 52 22" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+    <polygon points="108,11 109.4,16.6 115,18 109.4,19.4 108,25 106.6,19.4 101,18 106.6,16.6" fill="#ffffff" opacity="1"/></g>
+<polygon points="31.2,27.1 32.3,31.7 36.9,32.8 32.3,34 31.2,38.6 30.1,34 25.5,32.8 30.1,31.7" fill="#ffd6f2" opacity="1"/>
+<polygon points="98.4,89.4 99.3,92.7 102.5,93.5 99.3,94.3 98.4,97.6 97.6,94.3 94.3,93.5 97.6,92.7" fill="#ffffff" opacity="1"/>
+</svg>

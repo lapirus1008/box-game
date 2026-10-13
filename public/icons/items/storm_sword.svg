@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<title>뇌광검</title>
+<defs>
+<linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e9f1ff"/><stop offset=".45" stop-color="#7f9cff"/><stop offset="1" stop-color="#26338f"/></linearGradient>
+<linearGradient id="v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7f9cff"/><stop offset="1" stop-color="#26338f"/></linearGradient>
+<radialGradient id="s" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#f4f8ff"/><stop offset=".35" stop-color="#7f9cff"/><stop offset="1" stop-color="#26338f"/></radialGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff5ae"/><stop offset=".5" stop-color="#ffe94a"/><stop offset="1" stop-color="#a69730"/></linearGradient>
+<radialGradient id="as" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#fff5ae"/><stop offset="1" stop-color="#a69730"/></radialGradient>
+<linearGradient id="mt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#c3cbd8"/><stop offset="1" stop-color="#656e83"/></linearGradient>
+<linearGradient id="blade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#e9f1ff"/><stop offset="1" stop-color="#7f9cff"/></linearGradient>
+<radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ff5fc8" stop-opacity=".6"/><stop offset=".6" stop-color="#ff5fc8" stop-opacity=".18"/><stop offset="1" stop-color="#ff5fc8" stop-opacity="0"/></radialGradient>
+<radialGradient id="lamp" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#e9f1ff"/><stop offset="1" stop-color="#7f9cff"/></radialGradient>
+</defs>
+<circle cx="64" cy="64" r="62" fill="url(#glow)"/><line x1="75.5" y1="36.3" x2="88.5" y2="4.9" stroke="#f2f7ff" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="91.7" y1="52.5" x2="123.1" y2="39.5" stroke="#f2f7ff" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="91.7" y1="75.5" x2="123.1" y2="88.5" stroke="#f2f7ff" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="75.5" y1="91.7" x2="88.5" y2="123.1" stroke="#f2f7ff" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="52.5" y1="91.7" x2="39.5" y2="123.1" stroke="#f2f7ff" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="36.3" y1="75.5" x2="4.9" y2="88.5" stroke="#f2f7ff" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="36.3" y1="52.5" x2="4.9" y2="39.5" stroke="#f2f7ff" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="52.5" y1="36.3" x2="39.5" y2="4.9" stroke="#f2f7ff" stroke-width="3" stroke-linecap="round" opacity=".35"/>
+<g transform="rotate(40 64 64)">
+<path d="M64 2 L73 16 L73 84 L55 84 L55 16 Z" fill="url(#blade)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<line x1="64" y1="18" x2="64" y2="80" stroke="#26338f" stroke-width="3" opacity=".45"/>
+<rect x="38" y="82" width="52" height="11" rx="5" fill="url(#mt)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="38" cy="87" r="5" fill="url(#as)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/><circle cx="90" cy="87" r="5" fill="url(#as)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<rect x="58" y="93" width="12" height="22" rx="3" fill="url(#v)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<line x1="58" y1="98" x2="70" y2="101" stroke="#1c1631" stroke-width="1.8" opacity=".6"/><line x1="58" y1="104" x2="70" y2="107" stroke="#1c1631" stroke-width="1.8" opacity=".6"/><line x1="58" y1="110" x2="70" y2="113" stroke="#1c1631" stroke-width="1.8" opacity=".6"/>
+<circle cx="64" cy="119" r="7" fill="url(#as)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="64" cy="87.5" r="3.5" fill="url(#as)" stroke="#1c1631" stroke-width="1.5"/>
+</g>
+<polygon points="14,9 15.4,14.6 21,16 15.4,17.4 14,23 12.6,17.4 7,16 12.6,14.6" fill="#ffd6f2" opacity="1"/><polygon points="116,110 117.2,114.8 122,116 117.2,117.2 116,122 114.8,117.2 110,116 114.8,114.8" fill="#ffffff" opacity="0.9"/><polygon points="116,8 116.8,11.2 120,12 116.8,12.8 116,16 115.2,12.8 112,12 115.2,11.2" fill="#ffffff" opacity="0.8"/>
+</svg>

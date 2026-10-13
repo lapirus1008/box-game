@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<title>영원의 성배</title>
+<defs>
+<linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff3b0"/><stop offset=".45" stop-color="#f2c230"/><stop offset="1" stop-color="#9a640a"/></linearGradient>
+<linearGradient id="v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2c230"/><stop offset="1" stop-color="#9a640a"/></linearGradient>
+<radialGradient id="s" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff9d8"/><stop offset=".35" stop-color="#f2c230"/><stop offset="1" stop-color="#9a640a"/></radialGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f5a5b0"/><stop offset=".5" stop-color="#e8364f"/><stop offset="1" stop-color="#972333"/></linearGradient>
+<radialGradient id="as" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#f5a5b0"/><stop offset="1" stop-color="#972333"/></radialGradient>
+<linearGradient id="mt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#c3cbd8"/><stop offset="1" stop-color="#656e83"/></linearGradient>
+<linearGradient id="blade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#fff3b0"/><stop offset="1" stop-color="#f2c230"/></linearGradient>
+<radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ff5fc8" stop-opacity=".6"/><stop offset=".6" stop-color="#ff5fc8" stop-opacity=".18"/><stop offset="1" stop-color="#ff5fc8" stop-opacity="0"/></radialGradient>
+<radialGradient id="lamp" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#fff3b0"/><stop offset="1" stop-color="#f2c230"/></radialGradient>
+</defs>
+<circle cx="64" cy="64" r="62" fill="url(#glow)"/><line x1="75.5" y1="36.3" x2="88.5" y2="4.9" stroke="#fff8d0" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="91.7" y1="52.5" x2="123.1" y2="39.5" stroke="#fff8d0" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="91.7" y1="75.5" x2="123.1" y2="88.5" stroke="#fff8d0" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="75.5" y1="91.7" x2="88.5" y2="123.1" stroke="#fff8d0" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="52.5" y1="91.7" x2="39.5" y2="123.1" stroke="#fff8d0" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="36.3" y1="75.5" x2="4.9" y2="88.5" stroke="#fff8d0" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="36.3" y1="52.5" x2="4.9" y2="39.5" stroke="#fff8d0" stroke-width="3" stroke-linecap="round" opacity=".35"/><line x1="52.5" y1="36.3" x2="39.5" y2="4.9" stroke="#fff8d0" stroke-width="3" stroke-linecap="round" opacity=".35"/>
+<path d="M28 22 L100 22 C100 52, 86 72, 64 74 C42 72, 28 52, 28 22 Z" fill="url(#m)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<ellipse cx="64" cy="23" rx="35" ry="7" fill="url(#a)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<ellipse cx="54" cy="21" rx="10" ry="2.5" fill="#ffffff" opacity=".6"/>
+<path d="M64 38 L72 48 L64 58 L56 48 Z" fill="url(#as)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<rect x="57" y="72" width="14" height="24" rx="3" fill="url(#mt)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<ellipse cx="64" cy="84" rx="12" ry="6" fill="url(#mt)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<path d="M34 112 C36 100, 54 96, 64 96 C74 96, 92 100, 94 112 Z" fill="url(#m)" stroke="#1c1631" stroke-width="3" stroke-linejoin="round"/>
+<path d="M36 32 C38 46, 44 56, 50 62" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+<polygon points="14,9 15.4,14.6 21,16 15.4,17.4 14,23 12.6,17.4 7,16 12.6,14.6" fill="#ffd6f2" opacity="1"/><polygon points="116,110 117.2,114.8 122,116 117.2,117.2 116,122 114.8,117.2 110,116 114.8,114.8" fill="#ffffff" opacity="0.9"/><polygon points="116,8 116.8,11.2 120,12 116.8,12.8 116,16 115.2,12.8 112,12 115.2,11.2" fill="#ffffff" opacity="0.8"/>
+</svg>
