@@ -2,7 +2,7 @@
 // 게임 밸런스와 관련된 상수, 아이템 목록, 수집가 등급을 한곳에 모아둔 파일입니다.
 // 숫자를 조정하고 싶을 때는 이 파일만 고치면 됩니다. (신화 100종은 game/mythics.js)
 
-const { MYTHICS, MYTHIC_EFFECT_STACK, ROTATION_SIZE } = require('./mythics');
+const { MYTHICS, MYTHIC_EFFECT_STACK } = require('./mythics');
 
 // -------------------------------
 // 충전 / 골드 / 합성 / 환생
@@ -27,7 +27,6 @@ const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic'];
 const CRAFTABLE_RARITIES = ['common', 'rare', 'epic'];
 const CRAFT_COST = 3;                 // 합성에 필요한 같은 아이템 개수
 
-const COMPLETION_BONUS_GOLD = 2000;   // 도감 완성 보상
 const REBIRTH_GOLD_REQUIRED = 300000; // 환생에 필요한 골드 (기록모드 전용)
 // 랭킹 시즌: 환생 조건 등 규칙이 바뀌면 시즌을 올려서 랭킹을 새로 시작합니다.
 // 지난 시즌 기록은 지우지 않고 rebirth_history.season 으로 구분해 보관합니다.
@@ -127,8 +126,25 @@ const EFFECT_TYPE_CAPS = {
 };
 const MIN_ITEM_CHARGE_INTERVAL_MS = 3 * 1000; // 충전 속도 효과로도 3초보다 빨라지지 않습니다
 
-// 신화 도감(계정 전체·영구): 지금까지 한 번이라도 얻은 신화 1종마다 전체 수입 +1% (두 모드 모두)
-const CODEX_INCOME_PERCENT_PER_MYTHIC = 1;
+// -------------------------------
+// 이번 주 규칙 (시즌마다 하나씩 돌아가며 적용, 두 모드 공통)
+// -------------------------------
+// 매주 최적의 공략법이 달라지도록, 효과 하나를 크게 올려줍니다. (아이템 효과 최대치와 별개로 더해짐)
+// 순서: 시즌 번호 % 개수. 효과 종류는 ITEM_EFFECTS 와 같습니다.
+const SEASON_RULES = [
+  { key: 'luck',      emoji: '🍀', name: '행운의 주', type: 'luck',             value: 25 },
+  { key: 'craftsman', emoji: '🔨', name: '장인의 주', type: 'upgradeDiscount',  value: 25 },
+  { key: 'mythic',    emoji: '🌸', name: '신화의 주', type: 'pity',             value: 800 },
+  { key: 'swift',     emoji: '⚡', name: '쾌속의 주', type: 'chargeSpeed',      value: 20 },
+  { key: 'golden',    emoji: '🎁', name: '황금의 주', type: 'golden',           value: 100 },
+  { key: 'market',    emoji: '🏷️', name: '시장의 주', type: 'boxDiscount',      value: 20 },
+  { key: 'plenty',    emoji: '💰', name: '풍요의 주', type: 'incomePercent',    value: 50 },
+  { key: 'clockwork', emoji: '⏳', name: '태엽의 주', type: 'autoOpenDiscount', value: 40 },
+];
+
+// 기록모드 구간 기록(스플릿): 환생 목표 골드의 10%, 20%, … 90%에 처음 닿은 시각을 남기고
+// 시즌 최고 기록의 같은 구간과 비교해서 "빠름/느림" 페이스를 보여줍니다. (마지막 구간은 환생 시각)
+const SPLIT_STEPS = 10;
 
 // -------------------------------
 // 골드 업그레이드 (모드별로 따로, 기록모드는 환생/초기화 때 0으로 돌아갑니다)
@@ -244,17 +260,16 @@ const ACHIEVEMENTS = [
 // 이 시간 이상 접속하지 않았다가 돌아오면 "자리 비운 동안" 요약을 보여줍니다.
 const AWAY_SUMMARY_MIN_MS = 5 * 60 * 1000;
 
-// 시즌 도감 = 일반~전설 아이템 전부 + 이번 시즌 신화 10종. (지난 시즌 신화는 신화 도감에서 따로 모읍니다)
 const NON_MYTHIC_TREASURES = TREASURES.filter(t => t.rarity !== 'mythic');
-const SEASON_DEX_SIZE = NON_MYTHIC_TREASURES.length + ROTATION_SIZE;
 
-// 시즌 도감 발견 개수를 기준으로 한 수집가 등급입니다.
+// 수집가 칭호: 수집모드 신화 도감(100종)에 모은 신화 수로 정합니다. 랭킹에서 닉네임 옆에 보입니다.
 const COLLECTOR_RANKS = [
-  { key: 'novice', name: '초보 수집가',   emoji: '🌱', minObtained: 0 },
-  { key: 'bronze', name: '브론즈 수집가', emoji: '🥉', minObtained: Math.ceil(SEASON_DEX_SIZE * 0.25) },
-  { key: 'silver', name: '실버 수집가',   emoji: '🥈', minObtained: Math.ceil(SEASON_DEX_SIZE * 0.5) },
-  { key: 'gold',   name: '골드 수집가',   emoji: '🥇', minObtained: Math.ceil(SEASON_DEX_SIZE * 0.75) },
-  { key: 'master', name: '신화 마스터',   emoji: '👑', minObtained: SEASON_DEX_SIZE },
+  { key: 'novice',  name: '초보 수집가',   emoji: '🌱', minObtained: 0 },
+  { key: 'bronze',  name: '브론즈 수집가', emoji: '🥉', minObtained: 10 },
+  { key: 'silver',  name: '실버 수집가',   emoji: '🥈', minObtained: 30 },
+  { key: 'gold',    name: '골드 수집가',   emoji: '🥇', minObtained: 60 },
+  { key: 'diamond', name: '다이아 수집가', emoji: '💎', minObtained: 90 },
+  { key: 'master',  name: '신화 마스터',   emoji: '👑', minObtained: MYTHICS.length },
 ];
 
 module.exports = {
@@ -265,7 +280,6 @@ module.exports = {
   RARITY_ORDER,
   CRAFTABLE_RARITIES,
   CRAFT_COST,
-  COMPLETION_BONUS_GOLD,
   REBIRTH_GOLD_REQUIRED,
   SEASON_GOLD_REQUIRED,
   SEASON_RESET_PRESTIGE,
@@ -275,9 +289,9 @@ module.exports = {
   ITEM_EFFECTS,
   EFFECT_TYPE_CAPS,
   MIN_ITEM_CHARGE_INTERVAL_MS,
-  CODEX_INCOME_PERCENT_PER_MYTHIC,
+  SEASON_RULES,
+  SPLIT_STEPS,
   NON_MYTHIC_TREASURES,
-  SEASON_DEX_SIZE,
   INITIAL_GOLD,
   RESET_GOLD,
   MYTHIC_PITY_LIMIT,

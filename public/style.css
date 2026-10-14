@@ -1245,7 +1245,7 @@ img.unknown{ filter:grayscale(1) brightness(0.55) contrast(1.1); opacity:0.6; }
    ------------------------------- */
 .mode-tab{ padding:10px 4px; font-size:12px; }
 .codex-head{ margin-bottom:12px; }
-.codex-progress{ display:flex; justify-content:space-between; align-items:center; font-size:13px; margin-bottom:6px; }
+.codex-progress{ display:flex; flex-wrap:wrap; gap:4px 8px; justify-content:space-between; align-items:center; font-size:13px; margin-bottom:6px; }
 .codex-progress strong{ color:var(--rarity-mythic); font-size:16px; }
 .codex-bonus{ font-size:12px; color:var(--teal); font-weight:600; }
 .codex-bar{ background:linear-gradient(90deg, var(--rarity-mythic), #b15cf0); }
@@ -1274,3 +1274,16 @@ img.unknown{ filter:grayscale(1) brightness(0.55) contrast(1.1); opacity:0.6; }
 #deleteAccountOverlay .away-card{ border-color:var(--danger); text-align:left; }
 #deleteAccountOverlay .link-btn{ display:block; margin:10px auto 0; font-size:12px; }
 .btn-danger{ background:var(--danger); color:#fff; font-weight:700; }
+
+/* -------------------------------
+   모드별 표시 · 이번 주 규칙 · 기록모드 페이스 · 랭킹 칭호
+   ------------------------------- */
+body:not(.mode-collection) .collection-only{ display:none !important; }
+.season-rule{ font-size:11px; color:var(--gold); font-weight:600; }
+.pace-line{ font-size:12px; margin:6px 0 2px; color:var(--ink); font-weight:600; }
+.pace-line.ahead{ color:#5ed6a0; }
+.pace-line.behind{ color:#ff8a7a; }
+.pace-line.hidden{ display:none; }
+.season-best{ font-size:11px; color:var(--ink-dim); margin:4px 0 0; }
+.dex-heading{ font-size:14px; margin:16px 0 8px; color:var(--ink); }
+.rank-title{ margin-right:4px; }

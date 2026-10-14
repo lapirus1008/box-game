@@ -8,7 +8,7 @@
 // - 매주 시즌마다 10종씩만 상자에서 나옵니다. (rotation 0~9, game/season.js 참고)
 //   10주 동안 매주 열심히 하면 100종 신화 도감을 모두 채울 수 있습니다.
 //
-// [주의] key는 DB(user_items, mythic_codex)에 저장되는 고유 식별자라 절대 바꾸면 안 됩니다.
+// [주의] key는 DB(user_items, user_discoveries)에 저장되는 고유 식별자라 절대 바꾸면 안 됩니다.
 // 이름·설명·테마는 바꿔도 괜찮습니다. 아이콘은 scripts/generate-icons.js 로 다시 만듭니다.
 
 // 효과 종류별 단계 수치 (1개당). 단계는 아래 MOTIFS 순서로 자동으로 정해집니다.

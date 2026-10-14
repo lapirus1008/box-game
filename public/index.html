@@ -136,20 +136,15 @@
 
     <div class="rank-chip hidden" id="collectorRankMain"></div>
 
-    <!-- 이번 시즌: 남은 시간 + 이번 주 신화 10종 (누르면 신화 도감) -->
+    <!-- 이번 시즌: 남은 시간 + 이번 주 규칙 + 이번 주 신화 10종 (누르면 수집모드는 도감, 기록모드는 가방) -->
     <button class="season-banner hidden" id="seasonBanner">
       <span class="season-banner-top">
-        <span>🗓 <strong id="seasonBannerNo">시즌</strong> 신화 10종</span>
+        <span>🗓 <strong id="seasonBannerNo">시즌</strong> · 이번 주</span>
         <span class="season-countdown" id="seasonCountdown"></span>
       </span>
+      <span class="season-rule" id="seasonRule"></span>
       <span class="season-banner-icons" id="seasonBannerIcons"></span>
       <span class="season-banner-sub" id="seasonBannerSub"></span>
-    </button>
-
-    <button class="claim-banner hidden" id="mainClaimBonusBtn">
-      <span class="claim-banner-icon">🎉</span>
-      <span class="claim-banner-text"><strong>도감 완성!</strong><small>전부 모았어요</small></span>
-      <span class="claim-banner-cta">보상 받기</span>
     </button>
 
     <div class="chest-wrap">
@@ -217,7 +212,9 @@
     <div class="goal-box record-only" id="rebirthGoalBox">
       <p class="goal-top"><span>🎯 환생까지</span><span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 300,000G</span></p>
       <div class="goal-bar-wrap"><div class="goal-bar-fill" id="rebirthGoalBar"></div></div>
+      <p class="pace-line hidden" id="paceLine"></p>
       <p class="prestige-hint" id="prestigeHint"></p>
+      <p class="season-best" id="seasonBestLine"></p>
     </div>
 
     <button class="btn-primary record-only hidden" id="mainRebirthBtn" disabled style="margin:10px 0 12px;">✨ 환생하기! (300,000G)</button>
@@ -238,7 +235,7 @@
       <button class="nav-tile" id="openCollectionBtn">🎒 가방·도감</button>
       <button class="nav-tile" id="openUpgradeBtn">🛠 강화</button>
       <button class="nav-tile" id="openAchievementBtn">🏅 업적<span class="nav-badge hidden" id="achievementBadge"></span></button>
-      <button class="nav-tile record-only" id="openRankingBtn">🏆 랭킹</button>
+      <button class="nav-tile" id="openRankingBtn">🏆 랭킹</button>
     </div>
     <button class="reset-link record-only" id="resetRunBtn">🔄 초심으로 돌아가기</button>
     <p class="legal-links"><a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a> · <button class="link-btn" id="openDeleteAccountBtn">계정 삭제</button></p>
@@ -268,31 +265,22 @@
       </div>
     </div>
 
-    <!-- 탭: 가방(지금 들고 있는 아이템, 기본) / 시즌 도감(발견 기록) / 신화 도감(계정 전체, 영구) -->
-    <div class="mode-tabs">
+    <!-- 탭: 가방(지금 들고 있는 아이템, 기본) / 도감(수집모드 전용, 영구) -->
+    <div class="mode-tabs collection-only">
       <button class="mode-tab active" id="modeTabRun">🎒 가방</button>
       <button class="mode-tab" id="modeTabCollection">📖 도감</button>
-      <button class="mode-tab" id="modeTabCodex">🌟 신화도감</button>
     </div>
 
     <div class="craft-result" id="craftResult"></div>
 
-    <!-- 도감: 발견 기록 (기록모드는 이번 판 한정, 수집모드는 영구) -->
+    <!-- 도감 (수집모드 전용, 영구): 신화 100종(매주 10종씩 등장) + 일반~전설 -->
     <div id="collectionModeView" class="hidden">
-      <p style="font-size:13px; color:var(--ink-dim); margin:0 0 4px;">시즌 도감: <strong id="collectionProgress" style="color:var(--ink);">0/0</strong> <span style="font-size:11px;">(일반~전설 전부 + 이번 주 신화 10종)</span></p>
-      <p class="mastery-hint">같은 아이템을 10·30·100·300개 모으면 ★ · ★당 그 아이템 수입 +10%</p>
-      <button class="claim-banner hidden" id="claimBonusBtn">
-        <span class="claim-banner-icon">🎉</span>
-        <span class="claim-banner-text"><strong>도감 완성!</strong><small>전부 모았어요</small></span>
-        <span class="claim-banner-cta">보상 받기</span>
-      </button>
-      <div class="collection-grid" id="collectionGrid"></div>
-    </div>
-
-    <!-- 신화 도감: 신화 100종, 시즌마다 10종씩 등장 (계정 전체 · 영구) -->
-    <div id="codexView" class="hidden">
       <div class="codex-head" id="codexHead"></div>
+      <h3 class="dex-heading">🌟 신화 100종</h3>
       <div id="codexGroups"></div>
+      <h3 class="dex-heading">📦 일반 ~ 전설</h3>
+      <p class="mastery-hint">같은 아이템을 10·30·100·300개 모으면 ★ · ★당 그 아이템 수입 +10%</p>
+      <div class="collection-grid" id="collectionGrid"></div>
     </div>
 
     <!-- 가방: 지금 실제로 들고 있는 아이템 (합성 가능) -->
@@ -342,14 +330,14 @@
   <!-- 랭킹 화면 -->
   <div class="card hidden" id="rankingScreen">
     <div class="top-row">
-      <h1 style="margin:0; font-size:20px;">🏆 랭킹</h1>
+      <h1 style="margin:0; font-size:20px;" id="rankingTitle">🏆 랭킹</h1>
       <button id="backFromRankingBtn">← 돌아가기</button>
     </div>
-    <label class="season-picker">
+    <label class="season-picker" id="seasonPicker">
       <span class="season-picker-label">시즌</span>
       <select id="seasonSelect"></select>
     </label>
-    <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:16px;" id="rankingSubtitle">시즌 2 · 30만 골드까지 가장 빨리 도달한 환생 기록입니다</p>
+    <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:16px;" id="rankingSubtitle">이번 시즌 30만 골드까지 가장 빨리 도달한 환생 기록입니다</p>
     <div id="rankingList"></div>
     <div class="rank-pagination hidden" id="rankPagination">
       <button id="rankPrevBtn">← 이전</button>

@@ -24,7 +24,8 @@ box-game/                    ← GitHub 저장소 루트
 │   ├── 003_golden_box_and_achievements.sql  황금 상자·수입 2배·누적 기록·업적 컬럼 추가
 │   ├── 004_item_locks.sql  아이템 잠금 컬럼 추가
 │   ├── 005_ranking_season.sql  랭킹 시즌 컬럼 추가 (기존 기록은 시즌 1)
-│   └── 006_weekly_season_and_mythic_codex.sql  세이브별 시즌 컬럼 + 신화 도감 테이블 (기존 신화 기록 이전)
+│   ├── 006_weekly_season_and_mythic_codex.sql  세이브별 시즌 컬럼
+│   └── 007_codex_from_collection_and_run_splits.sql  신화 도감을 수집모드 발견 기록으로 계산 + 기록모드 구간 기록
 ├── scripts/
 │   ├── generate-icons.js      아이템 아이콘 SVG 생성 → public/icons/items/  (node scripts/generate-icons.js)
 │   └── render-store-assets.js 앱 아이콘 PNG · 스토어 그래픽 생성 (Playwright 필요)

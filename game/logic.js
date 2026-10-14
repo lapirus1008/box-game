@@ -33,9 +33,8 @@ const {
   INCOME_PER_MINUTE_BY_RARITY,
   EFFECT_TYPE_CAPS,
   MIN_ITEM_CHARGE_INTERVAL_MS,
-  CODEX_INCOME_PERCENT_PER_MYTHIC,
   NON_MYTHIC_TREASURES,
-  SEASON_DEX_SIZE,
+  SEASON_RULES,
 } = require('./config');
 const { MYTHICS } = require('./mythics');
 
@@ -59,7 +58,7 @@ function getRotationMythics(rotation) {
   return MYTHICS_BY_ROTATION[rotation] || [];
 }
 
-// 시즌 도감에 들어가는 아이템: 일반~전설 전부 + 이번 시즌 신화 10종
+// 이번 시즌 상자에서 나오는 아이템: 일반~전설 전부 + 이번 시즌 신화 10종
 function getSeasonDexItems(rotation) {
   return [...NON_MYTHIC_TREASURES, ...getRotationMythics(rotation)];
 }
@@ -208,7 +207,7 @@ function getItemStars(count) {
   return stars;
 }
 
-// 도감 발견 개수에 따른 수집가 등급 (+ 다음 등급까지 남은 개수)
+// 수집모드 신화 도감 수에 따른 수집가 칭호 (+ 다음 칭호까지 남은 개수)
 function getCollectorRank(obtainedCount) {
   let currentIndex = 0;
   COLLECTOR_RANKS.forEach((rank, i) => {
@@ -222,7 +221,7 @@ function getCollectorRank(obtainedCount) {
     name: current.name,
     emoji: current.emoji,
     obtainedCount,
-    total: SEASON_DEX_SIZE,
+    total: MYTHICS.length,
     next: next
       ? { key: next.key, name: next.name, emoji: next.emoji, remaining: next.minObtained - obtainedCount }
       : null,
@@ -312,12 +311,19 @@ function describeItemEffect(type, value) {
   }
 }
 
-// box_claims 한 줄(claim)과 보유 아이템(owned)에서 업그레이드·환생 특성·아이템 효과가 반영된 능력치를 계산합니다.
-// claim.codex_count: 신화 도감 수 (DB 컬럼이 아니라 정산할 때 store.settle 이 넣어줍니다)
+// 이번 주 규칙 (시즌 번호로 돌아가며 정해짐)
+function getSeasonRule(season) {
+  return SEASON_RULES[((season % SEASON_RULES.length) + SEASON_RULES.length) % SEASON_RULES.length];
+}
+
+// box_claims 한 줄(claim)과 보유 아이템(owned)에서 업그레이드·환생 특성·아이템 효과·이번 주 규칙이 반영된 능력치를 계산합니다.
+// claim.season_rule: 이번 주 규칙 (DB 컬럼이 아니라 정산할 때 store.settle 이 넣어줍니다)
 function getClaimStats(claim, owned = {}) {
   const effects = getItemEffects(owned);
+  // 이번 주 규칙은 아이템 효과 최대치와 별개로 더해집니다.
+  const rule = claim.season_rule;
+  if (rule) effects[rule.type] += rule.value;
   const baseChargeMs = getChargeIntervalMs(claim.upgrade_charge_speed + getPerkLevel(claim, 'chargeSpeed'));
-  const codexIncomePercent = (Number(claim.codex_count) || 0) * CODEX_INCOME_PERCENT_PER_MYTHIC;
   return {
     chargeIntervalMs: effects.chargeSpeed > 0
       ? Math.max(MIN_ITEM_CHARGE_INTERVAL_MS, Math.round(baseChargeMs * (100 - effects.chargeSpeed) / 100))
@@ -325,13 +331,12 @@ function getClaimStats(claim, owned = {}) {
     maxCharges: MAX_BOX_CHARGES,
     storageMs: getStorageMs(claim.upgrade_capacity, getPerkLevel(claim, 'storage')) + effects.storageMinutes * 60000,
     luckPercent: (claim.upgrade_luck + getPerkLevel(claim, 'luck')) * LUCK_PERCENT_PER_LEVEL + effects.luck,
-    pityLimit: MYTHIC_PITY_LIMIT - effects.pity,
+    pityLimit: Math.max(300, MYTHIC_PITY_LIMIT - effects.pity),
     goldenBonusPercent: effects.golden,
     boxDiscountPercent: effects.boxDiscount,
     mythicIncomePercent: effects.incomePercent,
-    codexIncomePercent,
-    // 수입 배율 세 번째 항목: 신화 효과(전체 수입 +%)와 신화 도감 보너스를 더한 값
-    itemIncomePercent: 100 + effects.incomePercent + codexIncomePercent,
+    // 수입 배율 세 번째 항목: 아이템 효과(전체 수입 +%) + 이번 주 규칙
+    itemIncomePercent: 100 + effects.incomePercent,
     upgradeDiscountPercent: effects.upgradeDiscount,
     autoOpenDiscountPercent: effects.autoOpenDiscount,
     effects,
@@ -407,6 +412,7 @@ module.exports = {
   describeMythicEffect,
   getItemStars,
   getCollectorRank,
+  getSeasonRule,
   getUpgradeCost,
   describeUpgradeEffect,
   getClaimStats,

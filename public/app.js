@@ -289,8 +289,10 @@ function applyModeUI(mode){
   document.getElementById('switchModeBtn').textContent = isRecord ? '📖 수집모드로' : '🏆 기록모드로';
 
   document.getElementById('collectionModeSubtext').textContent = isRecord
-    ? '도감은 이번 판 한정 (환생 시 초기화)'
-    : '도감 영구 보존';
+    ? '가방은 환생하면 비워져요'
+    : '도감은 영구히 남아요';
+  // 기록모드에는 도감이 없으므로, 모드를 바꾸면 가방 탭으로 돌아갑니다.
+  if (isRecord) showCollectionTab('run');
 
   document.getElementById('modeTabRun').textContent = '🎒 가방';
   document.getElementById('runModeHint').textContent = isRecord
@@ -374,11 +376,10 @@ async function refreshStatus(){
     applyChargeInfo(data);
     if (typeof data.pityReduction === 'number') cachedPityReduction = data.pityReduction;
     updatePityUI(data.mythicPity, data.mythicPityLimit);
-    document.getElementById('mainClaimBonusBtn')
-      .classList.toggle('hidden', !(data.collectionComplete && !data.bonusClaimed));
 
-    if (data.collectorRank) renderCollectorRank(data.collectorRank);
+    renderCollectorRank(data.collectorRank);
     applySeason(data.season, data.seasonChange, data.codex);
+    renderPace(data.pace, data.seasonBest);
     renderPrestigeHint(data.prestige);
     applyGoldenBox(data.goldenBox);
     renderAchievementBadge(data.claimableAchievements);
@@ -554,7 +555,6 @@ function renderTick(){
     if (cachedIncome.upgradeBonusPercent > 0) bonuses.push(`강화 +${cachedIncome.upgradeBonusPercent}%`);
     if (cachedIncome.prestigeBonusPercent > 0) bonuses.push(`환생 +${cachedIncome.prestigeBonusPercent}%`);
     if (cachedIncome.mythicBonusPercent > 0) bonuses.push(`신화 +${cachedIncome.mythicBonusPercent}%`);
-    if (cachedIncome.codexBonusPercent > 0) bonuses.push(`신화 도감 +${cachedIncome.codexBonusPercent}%`);
     breakdownText = `${parts.join(' + ')}${bonuses.length ? ` · ${bonuses.join(' · ')}` : ''}`;
   }
   document.querySelectorAll('[data-income="pending"]').forEach(el => { el.textContent = rateText; });
@@ -756,7 +756,7 @@ function updatePityUI(pity, limit){
   const hint = document.getElementById('pityHint');
   const imminent = remaining <= 1;
   box.classList.toggle('imminent', imminent);
-  const reductionText = cachedPityReduction > 0 ? ` · ✨ 별의 파편 효과로 천장 -${cachedPityReduction.toLocaleString()}` : '';
+  const reductionText = cachedPityReduction > 0 ? ` · ✨ 효과로 천장 -${cachedPityReduction.toLocaleString()}` : '';
   hint.textContent = imminent
     ? '🔥 다음 상자는 신화 확정!'
     : `${remaining.toLocaleString()}개 더 열면 신화 확정${reductionText}`;
@@ -916,7 +916,12 @@ async function performRebirth(btnEl){
       if (onMainScreen) alert(data.message);
       else showToast(data.message, true);
     } else {
-      const recordText = `기록: ${formatDuration(Math.floor(data.durationMs / 1000))} · 환생 포인트 +${data.prestigeGained} (보유 ${data.prestigePoints}개, 강화 → 환생 상점에서 사용)`;
+      const vsBest = data.previousBestMs == null
+        ? '🏁 이번 시즌 첫 기록!'
+        : data.isNewBest
+          ? `🏆 시즌 최고 기록 경신! (${formatDuration(Math.floor((data.previousBestMs - data.durationMs) / 1000))} 단축)`
+          : `최고 기록보다 ${formatDuration(Math.floor((data.durationMs - data.previousBestMs) / 1000))} 느림`;
+      const recordText = `기록: ${formatDuration(Math.floor(data.durationMs / 1000))} · ${vsBest} · 환생 포인트 +${data.prestigeGained} (보유 ${data.prestigePoints}개 → 강화의 환생 상점에서 특성을 사면 다음 판이 더 빨라져요)`;
       const msg = `✨ ${data.rebirthNumber}번째 환생! ${recordText}`;
       if (onMainScreen) {
         document.getElementById('rarityBadge').textContent = '';
@@ -994,21 +999,15 @@ async function loadCollection(showLoadingText = true){
     if (data.mode && data.mode !== currentMode) applyModeUI(data.mode);
     applyIncome(data.income);
     setGold(data.totalTreasure, data.income && data.income.lastCollectedAt);
-    document.getElementById('collectionProgress').textContent = `${data.progress.obtained}/${data.progress.total}`;
-
-    const claimBtn = document.getElementById('claimBonusBtn');
-    if (data.isComplete && !data.bonusClaimed) claimBtn.classList.remove('hidden');
-    else claimBtn.classList.add('hidden');
-
-    if (data.collectorRank) renderCollectorRank(data.collectorRank);
+    renderCollectorRank(data.collectorRank);
     if (data.itemEffects) renderItemEffects(data.itemEffects);
     renderTick();
 
-    // ── 수집모드 그리드: 평생 발견 기록 (전부 다 표시, 잠긴 건 ❔) ──
+    // ── 도감(수집모드): 일반~전설 발견 기록 (신화 100종은 loadCodex가 위쪽에 따로 그림) ──
     collectionGrid.innerHTML = '';
-    data.collection.forEach(item => {
+    data.collection.filter(item => item.rarity !== 'mythic').forEach(item => {
       const card = document.createElement('div');
-      card.className = `item-card ${item.rarity} ${item.obtained ? '' : 'locked'} ${item.inSeasonDex ? '' : 'past-season'}`;
+      card.className = `item-card ${item.rarity} ${item.obtained ? '' : 'locked'}`;
       card.title = item.obtained
         ? (item.firstDiscoveredAt ? `${item.flavor} (${new Date(item.firstDiscoveredAt).toLocaleDateString()} 발견)` : item.flavor)
         : '아직 발견하지 못한 아이템입니다';
@@ -1105,14 +1104,13 @@ function renderItemEffects(effects){
 const COLLECTION_TABS = {
   run: ['modeTabRun', 'runModeView'],
   dex: ['modeTabCollection', 'collectionModeView'],
-  codex: ['modeTabCodex', 'codexView'],
 };
 function showCollectionTab(which){
   for (const [name, [tabId, viewId]] of Object.entries(COLLECTION_TABS)) {
     document.getElementById(tabId).classList.toggle('active', name === which);
     document.getElementById(viewId).classList.toggle('hidden', name !== which);
   }
-  if (which === 'codex') loadCodex();
+  if (which === 'dex') loadCodex();
 }
 function showBagTab(){ showCollectionTab('run'); }
 
@@ -1127,43 +1125,9 @@ function showOpenTab(which){
 document.getElementById('openTabCharge').addEventListener('click', () => showOpenTab('charge'));
 document.getElementById('openTabGold').addEventListener('click', () => showOpenTab('gold'));
 
-// 메인 화면의 "도감 완료" 버튼: 도감을 다 채웠고 보상을 아직 안 받았을 때만 나타남
-document.getElementById('mainClaimBonusBtn').addEventListener('click', async function(){
-  this.disabled = true;
-  try {
-    const res = await authFetch('/api/box/collection/claim-bonus', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok) { alert(data.message); return; }
-    document.getElementById('rarityBadge').textContent = '';
-    setResultIcon(null);
-    document.getElementById('treasureName').textContent = `🎉 도감 완성! +${data.bonusGold}G`;
-    document.getElementById('treasureDetail').textContent = '도감 완성 보상을 받았습니다';
-    document.getElementById('resultBox').style.display = 'block';
-    this.classList.add('hidden');
-  } finally {
-    this.disabled = false;
-    refreshStatus();
-  }
-});
-
 // 가방·도감 화면 탭 전환
 document.getElementById('modeTabRun').addEventListener('click', () => showCollectionTab('run'));
 document.getElementById('modeTabCollection').addEventListener('click', () => showCollectionTab('dex'));
-document.getElementById('modeTabCodex').addEventListener('click', () => showCollectionTab('codex'));
-
-document.getElementById('claimBonusBtn').addEventListener('click', async function(){
-  this.disabled = true;
-  try {
-    const res = await authFetch('/api/box/collection/claim-bonus', { method: 'POST' });
-    const data = await res.json();
-    // 결과는 화면 위 짧은 알림으로 (가방 칸이 밀리지 않도록)
-    showToast(res.ok ? `🎉 도감 완성! +${data.bonusGold}G 획득!` : data.message, !res.ok);
-    await loadCollection(false);
-    refreshStatus();
-  } finally {
-    this.disabled = false;
-  }
-});
 
 document.getElementById('craftAllBtn').addEventListener('click', async function(){
   this.disabled = true;
@@ -1600,9 +1564,8 @@ function renderAchievements(){
 document.getElementById('openRankingBtn').addEventListener('click', async () => {
   gameScreen.classList.add('hidden');
   rankingScreen.classList.remove('hidden');
-  currentRankPage = 1;
-  currentRankSeason = null;
-  await loadRanking();
+  // 지금 모드의 랭킹만 보여줍니다.
+  setRankType(currentMode === 'collection' ? 'collection' : 'record');
 });
 document.getElementById('backFromRankingBtn').addEventListener('click', () => {
   rankingScreen.classList.add('hidden');
@@ -1681,7 +1644,7 @@ function formatSeasonDate(iso){
 }
 
 function seasonIconsHtml(mythics, cls){
-  return mythics.map(m => `<span class="${cls} ${m.inCodex ? 'have' : ''}" title="${escapeHtml(m.inCodex ? m.name : '아직 신화 도감에 없는 신화')} · ${escapeHtml(m.effect)}">${itemIconHtml(m.key, 'season-icon', !m.inCodex)}</span>`).join('');
+  return mythics.map(m => `<span class="${cls} ${m.have ? 'have' : ''}" title="${escapeHtml(m.have ? m.name : '아직 없는 신화')} · ${escapeHtml(m.effect)}">${itemIconHtml(m.key, 'season-icon', !m.have)}</span>`).join('');
 }
 
 function applySeason(season, seasonChange, codex){
@@ -1689,10 +1652,12 @@ function applySeason(season, seasonChange, codex){
   lastSeasonInfo = season;
   cachedSeasonEndsAt = season.endsAt ? new Date(season.endsAt) : null;
   document.getElementById('seasonBannerNo').textContent = `시즌 ${season.number}`;
+  document.getElementById('seasonRule').textContent = season.rule
+    ? `📜 이번 주 규칙 ${season.rule.emoji} ${season.rule.name}: ${season.rule.text}` : '';
   document.getElementById('seasonBannerIcons').innerHTML = seasonIconsHtml(season.mythics, 'season-slot');
   document.getElementById('seasonBannerSub').textContent = codex
-    ? `이번 주 ${season.codexObtained}/${season.mythics.length} · 신화 도감 ${codex.obtained}/${codex.total} (수입 +${codex.incomeBonusPercent}%) ›`
-    : '';
+    ? `이번 주 신화 ${season.haveCount}/${season.mythics.length} · 신화 도감 ${codex.obtained}/${codex.total} ›`
+    : `이번 판 신화 ${season.haveCount}/${season.mythics.length} · 매주 신화와 규칙이 바뀌어요 ›`;
   document.getElementById('seasonBanner').classList.remove('hidden');
   renderSeasonCountdown();
   maybeShowSeasonOverlay(season, seasonChange);
@@ -1721,13 +1686,14 @@ function maybeShowSeasonOverlay(season, seasonChange){
   if (!isNew) return;
 
   const reset = seasonChange ? seasonChange.reset : currentMode === 'record';
+  const ruleText = season.rule ? ` 이번 주 규칙은 ${season.rule.emoji} ${season.rule.name}(${season.rule.text})!` : '';
   document.getElementById('seasonOverlayTitle').textContent = `🎉 시즌 ${season.number} 시작!`;
-  document.getElementById('seasonOverlayText').textContent = reset
-    ? '기록모드가 새로 시작됐어요. 모두 같은 출발선에서 이번 주 랭킹에 도전해요! (지난 시즌 기록은 랭킹에서 볼 수 있고, 신화 도감은 그대로예요)'
-    : '수집모드 진행은 그대로예요. 이번 주 시즌 도감과 등장하는 신화가 바뀌었어요.';
+  document.getElementById('seasonOverlayText').textContent = (reset
+    ? '기록모드가 새로 시작됐어요. 모두 같은 출발선에서 이번 주 랭킹에 도전해요! (지난 시즌 기록은 랭킹에서 볼 수 있어요)'
+    : '수집모드 진행과 신화 도감은 그대로예요. 이번 주에만 나오는 신화를 모아보세요.') + ruleText;
   document.getElementById('seasonOverlayIcons').innerHTML = season.mythics.map(m => `
-    <div class="season-overlay-item ${m.inCodex ? 'have' : ''}">
-      ${itemIconHtml(m.key, 'season-icon', !m.inCodex)}
+    <div class="season-overlay-item ${m.have ? 'have' : ''}">
+      ${itemIconHtml(m.key, 'season-icon', !m.have)}
       <small>${escapeHtml(m.effect)}</small>
     </div>`).join('');
   document.getElementById('seasonOverlay').classList.add('show');
@@ -1736,13 +1702,49 @@ document.getElementById('seasonOverlayCloseBtn').addEventListener('click', () =>
   document.getElementById('seasonOverlay').classList.remove('show');
 });
 
-// 시즌 배너를 누르면 신화 도감으로
+// 시즌 배너를 누르면 수집모드는 도감, 기록모드는 가방으로
 document.getElementById('seasonBanner').addEventListener('click', async () => {
   gameScreen.classList.add('hidden');
   collectionScreen.classList.remove('hidden');
-  showCollectionTab('codex');
+  showCollectionTab(currentMode === 'collection' ? 'dex' : 'run');
   await loadCollection();
 });
+
+// -------------------------------
+// 기록모드 페이스 (시즌 최고 기록과 구간 비교)
+// -------------------------------
+function signedDuration(ms){
+  const sign = ms < 0 ? '-' : '+';
+  const total = Math.floor(Math.abs(ms) / 1000);
+  const m = Math.floor(total / 60);
+  const sec = String(total % 60).padStart(2, '0');
+  return `${sign}${m}:${sec}`;
+}
+function renderPace(pace, seasonBest){
+  const line = document.getElementById('paceLine');
+  const bestLine = document.getElementById('seasonBestLine');
+  if (!pace) { line.classList.add('hidden'); bestLine.textContent = ''; return; }
+
+  bestLine.textContent = seasonBest
+    ? `🏆 이번 시즌 내 최고 ${formatDuration(Math.floor(seasonBest.bestDurationMs / 1000))} · ${seasonBest.rank}위`
+    : '🏁 이번 시즌 첫 환생 기록에 도전해보세요!';
+
+  if (pace.bestRunMs == null) {
+    line.textContent = pace.reached > 0
+      ? `🏁 구간 기록 ${pace.reached * 10}% 지점 통과 · ${formatDuration(Math.floor(pace.lastSplitMs / 1000))}`
+      : '🏁 목표의 10%마다 구간 기록을 남겨요. 첫 환생 후부터 최고 기록과 비교돼요';
+    line.className = 'pace-line';
+    return;
+  }
+  if (pace.deltaMs == null) {
+    line.textContent = `🏁 최고 기록 페이스: ${pace.nextSplitBestMs != null ? `10% 지점을 ${formatDuration(Math.floor(pace.nextSplitBestMs / 1000))}에 통과했어요` : '비교 중'}`;
+    line.className = 'pace-line';
+    return;
+  }
+  const faster = pace.deltaMs <= 0;
+  line.textContent = `🏁 ${pace.reached * 10}% 지점 · 최고 기록보다 ${signedDuration(pace.deltaMs).slice(1)} ${faster ? '빠름' : '느림'}`;
+  line.className = `pace-line ${faster ? 'ahead' : 'behind'}`;
+}
 
 // -------------------------------
 // 신화 도감 (계정 전체 · 영구)
@@ -1757,11 +1759,13 @@ async function loadCodex(){
     if (!res.ok) { groupsEl.innerHTML = `<p style="color:var(--danger); font-size:13px;">${escapeHtml(data.message || '불러오지 못했습니다.')}</p>`; return; }
 
     const pct = Math.round(data.obtained / data.total * 100);
+    const rank = data.collectorRank;
+    const nextText = rank.next ? `다음 칭호 ${rank.next.emoji} ${rank.next.name}까지 ${rank.next.remaining}종` : '최고 칭호 달성!';
     headEl.innerHTML = `
-      <div class="codex-progress"><span>🌟 신화 도감 <strong>${data.obtained}</strong> / ${data.total}</span><span class="codex-bonus">수입 +${data.incomeBonusPercent}%</span></div>
+      <div class="codex-progress"><span>🌟 신화 도감 <strong>${data.obtained}</strong> / ${data.total}</span><span class="codex-bonus">${rank.emoji} ${escapeHtml(rank.name)}</span></div>
       <div class="goal-bar-wrap"><div class="goal-bar-fill codex-bar" style="width:${pct}%"></div></div>
-      <p class="codex-rule">매주 목요일 오전 9시마다 신화 10종이 바뀌어 등장해요. 10주면 100종을 모두 만날 수 있어요.<br>
-      한 번 얻은 신화는 영원히 도감에 남고, 1종마다 두 모드 모두 전체 수입 +${data.perMythicPercent}%! · 천장은 아직 없는 신화를 먼저 줘요.</p>`;
+      <p class="codex-rule">${nextText} · 칭호는 랭킹에서 닉네임 옆에 보여요.<br>
+      매주 목요일 오전 9시마다 신화 10종이 바뀌어 등장해요. 놓치면 10주 뒤에 다시 와요! · 천장은 아직 없는 신화를 먼저 줘요.</p>`;
 
     groupsEl.innerHTML = data.groups.map(g => {
       const have = g.items.filter(i => i.obtained).length;
@@ -1769,7 +1773,7 @@ async function loadCodex(){
         ? `<span class="codex-when now">이번 주 등장 중 · 종료까지 ${formatRemaining(new Date(data.seasonEndsAt) - adjustedNow())}</span>`
         : `<span class="codex-when">시즌 ${g.nextSeason} · ${g.nextStartsAt ? formatSeasonDate(g.nextStartsAt) : ''} 등장</span>`;
       const cards = g.items.map(i => `
-        <div class="codex-card ${i.obtained ? 'have' : ''}" title="${escapeHtml(i.obtained ? `${i.flavor} (시즌 ${i.obtainedSeason || '-'} 획득)` : '아직 얻지 못한 신화')}">
+        <div class="codex-card ${i.obtained ? 'have' : ''}" title="${escapeHtml(i.obtained ? `${i.flavor} (${new Date(i.firstObtainedAt).toLocaleDateString()} 획득)` : '아직 얻지 못한 신화')}">
           <span class="tier-badge">${'Ⅰ Ⅱ Ⅲ Ⅳ'.split(' ')[i.tier - 1]}</span>
           ${itemIconHtml(i.key, 'codex-icon', !i.obtained)}
           <div class="codex-name">${i.obtained ? escapeHtml(i.name) : '???'}</div>
@@ -1830,17 +1834,33 @@ function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 }
 
-function renderRankRow(rank, nickname, ms, isMe){
+// value: 기록 랭킹은 걸린 시간, 수집 랭킹은 "신화 N종"
+function renderRankRow(rank, nickname, value, isMe, title){
+  const titleHtml = title ? `<span class="rank-title" title="${escapeHtml(title.name)}">${title.emoji}</span>` : '';
   return `
     <div class="rank-row ${isMe ? 'me' : ''}">
       <span class="rank-num">#${rank}</span>
-      <span class="rank-name">${escapeHtml(nickname)}${isMe ? ' (나)' : ''}</span>
-      <span class="rank-time">${formatDuration(Math.floor(ms / 1000))}</span>
+      <span class="rank-name">${titleHtml}${escapeHtml(nickname)}${isMe ? ' (나)' : ''}</span>
+      <span class="rank-time">${value}</span>
     </div>
   `;
 }
-function renderEmptyRankRow(){
-  return `<div class="rank-row empty"><span class="rank-num"></span><span class="rank-name">-</span><span class="rank-time">--:--:--</span></div>`;
+function rankValue(type, r){
+  return type === 'collection' ? `신화 ${r.count}종` : formatDuration(Math.floor(r.bestDurationMs / 1000));
+}
+
+// 랭킹은 모드별로 따로: 기록모드 = 시즌 환생 기록 랭킹, 수집모드 = 신화 수집 랭킹
+let currentRankType = 'record';
+function setRankType(type){
+  currentRankType = type;
+  currentRankPage = 1;
+  currentRankSeason = null;
+  document.getElementById('rankingTitle').textContent = type === 'collection' ? '🌟 신화 수집 랭킹' : '🏆 시즌 기록 랭킹';
+  document.getElementById('seasonPicker').classList.toggle('hidden', type !== 'record');
+  loadRanking();
+}
+function renderEmptyRankRow(type){
+  return `<div class="rank-row empty"><span class="rank-num"></span><span class="rank-name">-</span><span class="rank-time">${type === 'collection' ? '-' : '--:--:--'}</span></div>`;
 }
 
 async function loadRanking(){
@@ -1852,15 +1872,20 @@ async function loadRanking(){
   paginationEl.classList.add('hidden');
 
   try {
+    const typeQuery = currentRankType === 'collection' ? '&type=collection' : '';
     const seasonQuery = currentRankSeason ? `&season=${currentRankSeason}` : '';
-    const res = await authFetch(`/api/box/leaderboard?page=${currentRankPage}${seasonQuery}`);
+    const res = await authFetch(`/api/box/leaderboard?page=${currentRankPage}${typeQuery}${seasonQuery}`);
     const data = await res.json();
-    if (data.season) {
+    if (data.type === 'collection') {
+      document.getElementById('rankingSubtitle').textContent =
+        `수집모드 신화 도감(${data.total}종)을 가장 많이 모은 순위 · 같으면 먼저 모은 사람이 앞서요`;
+    } else if (data.season) {
       const isCurrent = data.season === data.currentSeason;
       const period = data.seasonStartsAt && data.seasonEndsAt
         ? ` (${formatSeasonDate(data.seasonStartsAt)} ~ ${formatSeasonDate(data.seasonEndsAt)} 오전 9시)` : '';
+      const ruleText = data.rule ? ` · 규칙 ${data.rule.emoji} ${data.rule.name}` : '';
       document.getElementById('rankingSubtitle').textContent =
-        `시즌 ${data.season}${isCurrent ? '' : ' (지난 시즌)'}${period} · ${(data.goldRequired / 10000).toLocaleString()}만 골드까지 가장 빨리 도달한 환생 기록입니다`;
+        `시즌 ${data.season}${isCurrent ? '' : ' (지난 시즌)'}${period}${ruleText} · ${(data.goldRequired / 10000).toLocaleString()}만 골드까지 가장 빨리 도달한 환생 기록입니다`;
       renderSeasonTabs(data.currentSeason, data.season);
     }
     if (!res.ok) {
@@ -1869,14 +1894,16 @@ async function loadRanking(){
     }
 
     if (data.totalPlayers === 0) {
-      listEl.innerHTML = '<p style="color:var(--ink-dim); font-size:13px; text-align:center; padding:20px 0;">아직 환생 기록이 없습니다.<br>첫 기록의 주인공이 되어보세요!</p>';
+      listEl.innerHTML = `<p style="color:var(--ink-dim); font-size:13px; text-align:center; padding:20px 0;">${data.type === 'collection'
+        ? '아직 신화를 모은 사람이 없습니다.<br>수집모드에서 첫 신화를 찾아보세요!'
+        : '아직 환생 기록이 없습니다.<br>첫 기록의 주인공이 되어보세요!'}</p>`;
       return;
     }
 
     // 항상 RANK_PAGE_SIZE칸의 틀을 유지: 부족한 줄은 빈 자리로 채움
-    let html = data.leaderboard.map(r => renderRankRow(r.rank, r.nickname, r.bestDurationMs, r.isMe)).join('');
+    let html = data.leaderboard.map(r => renderRankRow(r.rank, r.nickname, rankValue(data.type, r), r.isMe, r.title)).join('');
     for (let i = data.leaderboard.length; i < RANK_PAGE_SIZE; i++) {
-      html += renderEmptyRankRow();
+      html += renderEmptyRankRow(data.type);
     }
     listEl.innerHTML = html;
 
@@ -1892,10 +1919,12 @@ async function loadRanking(){
     if (data.myRank && data.myRank.outsideCurrentPage) {
       footerEl.classList.remove('hidden');
       footerEl.innerHTML = `<p style="font-size:11px; color:var(--ink-dim); margin:0 0 6px; text-align:center;">내 순위</p>` +
-        renderRankRow(data.myRank.rank, '나', data.myRank.bestDurationMs, true);
+        renderRankRow(data.myRank.rank, '나', rankValue(data.type, data.myRank), true);
     } else if (!data.myRank) {
       footerEl.classList.remove('hidden');
-      const noRecordText = data.season === data.currentSeason
+      const noRecordText = data.type === 'collection'
+        ? '수집모드에서 신화를 얻으면 순위에 올라요.'
+        : data.season === data.currentSeason
         ? '아직 환생 기록이 없어 순위에 없습니다.'
         : `시즌 ${data.season}에는 내 기록이 없어요.`;
       footerEl.innerHTML = `<p style="text-align:center; font-size:12px; color:var(--ink-dim);">${noRecordText}</p>`;

@@ -36,12 +36,11 @@ const {
   TREASURES,
   TREASURE_BY_KEY,
   CRAFT_COST,
-  COMPLETION_BONUS_GOLD,
   REBIRTH_GOLD_REQUIRED,
   SEASON_GOLD_REQUIRED,
-  SEASON_DEX_SIZE,
   EFFECT_TYPE_CAPS,
-  CODEX_INCOME_PERCENT_PER_MYTHIC,
+  SPLIT_STEPS,
+  COLLECTOR_RANKS,
   MAX_BOX_CHARGES,
   MAX_GOLD_BOX_PURCHASE,
   GOLD_PER_BOX_PURCHASE,
@@ -71,6 +70,7 @@ const {
   rollBoxes,
   getRotationMythics,
   getSeasonDexItems,
+  getSeasonRule,
   getItemEffectValue,
   EFFECT_TYPE_EMOJI,
   getNextCraftRarity,
@@ -159,6 +159,8 @@ function activeItemEffects(save) {
     if (!effect || !(count > 0)) continue;
     (sourcesByType[effect.type] = sourcesByType[effect.type] || []).push(TREASURE_BY_KEY.get(key).name);
   }
+  const rule = save.claim.season_rule;
+  if (rule) (sourcesByType[rule.type] = sourcesByType[rule.type] || []).push(`${rule.emoji} 이번 주 규칙`);
   return Object.keys(EFFECT_TYPE_CAPS)
     .filter(type => effects[type] > 0)
     .map(type => ({
@@ -184,44 +186,59 @@ function itemEffectInfo(key, count) {
   };
 }
 
+// 이번 주 규칙 (화면 표시용)
+function ruleResponse(rule) {
+  return { key: rule.key, emoji: rule.emoji, name: rule.name, text: describeItemEffect(rule.type, rule.value) };
+}
+
 // 이번 시즌 정보 (메인 화면 배너 · 시즌 변경 안내용)
-function seasonResponse(save) {
-  const mythics = getRotationMythics(save.rotation).map(m => ({
-    key: m.key,
-    name: m.name,
-    emoji: m.emoji,
-    tier: m.tier,
-    effect: describeItemEffect(m.effect.type, m.effect.perItem),
-    inCodex: save.codex.has(m.key),
-    owned: save.owned[m.key] || 0,
-  }));
+// have: 수집모드는 신화 도감에 있는지, 기록모드는 이번 판 가방에 있는지
+function seasonResponse(mode, save) {
+  const isCollection = mode === MODES.COLLECTION;
+  const mythics = getRotationMythics(save.rotation).map(m => {
+    const have = isCollection ? save.codex.has(m.key) : (save.owned[m.key] || 0) > 0;
+    return {
+      key: m.key,
+      name: have ? m.name : null,
+      emoji: m.emoji,
+      tier: m.tier,
+      effect: describeItemEffect(m.effect.type, m.effect.perItem),
+      have,
+    };
+  });
   return {
     number: save.season,
     rotation: save.rotation,
     startsAt: getSeasonStart(save.season),
     endsAt: getSeasonEnd(save.season),
+    rule: ruleResponse(save.claim.season_rule),
     mythics,
-    codexObtained: mythics.filter(m => m.inCodex).length,
+    haveCount: mythics.filter(m => m.have).length,
   };
 }
 
-function codexSummary(save) {
+// 신화 도감 요약 (수집모드 전용, 기록모드는 null)
+function codexSummary(mode, save) {
+  if (mode !== MODES.COLLECTION) return null;
+  return { obtained: save.codex.size, total: MYTHICS.length };
+}
+
+// 기록모드 페이스: 이번 판 구간 기록을 시즌 최고 기록의 같은 구간과 비교합니다.
+// deltaMs < 0 이면 최고 기록보다 빠름. 아직 비교할 구간이 없으면 null.
+function paceResponse(mode, save) {
+  if (mode !== MODES.RECORD) return null;
+  const splits = Array.isArray(save.claim.run_splits) ? save.claim.run_splits : [];
+  const best = Array.isArray(save.claim.best_splits) ? save.claim.best_splits : [];
+  const bestRunMs = save.claim.best_run_ms != null ? Number(save.claim.best_run_ms) : null;
+  const index = splits.length - 1;
   return {
-    obtained: save.codex.size,
-    total: MYTHICS.length,
-    incomeBonusPercent: save.codex.size * CODEX_INCOME_PERCENT_PER_MYTHIC,
-    perMythicPercent: CODEX_INCOME_PERCENT_PER_MYTHIC,
+    steps: SPLIT_STEPS,
+    reached: splits.length,                       // 지나온 구간 수 (1 = 10%)
+    lastSplitMs: index >= 0 ? splits[index] : null,
+    deltaMs: index >= 0 && best[index] != null ? splits[index] - best[index] : null,
+    bestRunMs,
+    nextSplitBestMs: best[splits.length] != null ? best[splits.length] : null, // 다음 구간을 최고 기록은 몇 분에 지났는지
   };
-}
-
-// 시즌 도감(일반~전설 + 이번 시즌 신화) 중 발견한 아이템 key Set
-async function getSeasonDexDiscovered(client, userId, mode, rotation) {
-  const result = await client.query(
-    'SELECT item_key FROM user_discoveries WHERE user_id = $1 AND mode = $2',
-    [userId, mode]
-  );
-  const dexKeys = new Set(getSeasonDexItems(rotation).map(t => t.key));
-  return new Set(result.rows.map(r => r.item_key).filter(key => dexKeys.has(key)));
 }
 
 function chargeResponse(chargeInfo, chargesUsed = 0) {
@@ -579,9 +596,6 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
     }
     const { claim } = save;
 
-    // 시즌 도감을 다 채웠는지 (메인 화면의 "도감 완료" 버튼 표시용) + 수집가 등급 계산
-    const obtainedCount = (await getSeasonDexDiscovered(client, userId, mode, save.rotation)).size;
-
     // 최고 분당 수입 기록 (업적용)
     const bestIncome = Number((claim.lifetime_stats || {}).bestIncome) || 0;
     if (save.income.perMinuteIncome > bestIncome) {
@@ -594,23 +608,23 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       isRecordMode,
       goldenBox,
       ...achievementsResponse(mode, claim),
-      collectionComplete: obtainedCount >= SEASON_DEX_SIZE,
-      season: seasonResponse(save),
+      season: seasonResponse(mode, save),
       seasonChange: save.seasonChange,
-      codex: codexSummary(save),
-      bonusClaimed: claim.completion_bonus_claimed,
+      codex: codexSummary(mode, save),
+      pace: paceResponse(mode, save),
+      seasonBest: isRecordMode ? await findMyRank(userId, save.season) : null,
       ...chargeResponse(save.chargeInfo),
       chargeIntervalMs: save.stats.chargeIntervalMs,
       totalTreasure: claim.total_treasure,
       mythicPity: claim.mythic_pity,
       mythicPityLimit: save.stats.pityLimit,
-      pityReduction: save.stats.effects.pity, // 별의 파편 효과로 줄어든 천장
+      pityReduction: save.stats.effects.pity, // 아이템 효과·이번 주 규칙으로 줄어든 천장
       boxPrice: boxPriceOf(save),
       boxPricing: boxPricingOf(save),
       rebirthGoldRequired: REBIRTH_GOLD_REQUIRED,
       itemEffects: activeItemEffects(save),
       income: incomeResponse(save),
-      collectorRank: getCollectorRank(obtainedCount),
+      collectorRank: mode === MODES.COLLECTION ? getCollectorRank(save.codex.size) : null,
       rebirthCount: claim.rebirth_count,
       runStartedAt: claim.run_started_at,
       ...progressionResponse(mode, save),
@@ -1011,12 +1025,13 @@ router.get('/collection', handle('서버 오류가 발생했습니다.', async (
     const incomeByKey = {};
     save.income.items.forEach(item => { incomeByKey[item.key] = item.incomePerMinute; });
 
-    // 목록: 시즌 도감(일반~전설 + 이번 시즌 신화 10종) + 그 밖에 갖고 있는 지난 시즌 신화
+    // 가방 목록: 일반~전설 전부 + 이번 주 신화 10종 + 그 밖에 갖고 있는 지난 시즌 신화
+    // (수집모드의 신화 100종 전체는 GET /codex 로 따로 봅니다)
     // 아이템 숙련도(★): 같은 아이템을 많이 모을수록 붙고, 그 아이템의 수입이 올라갑니다.
     const locked = store.lockedSet(save.claim);
     const dexItems = getSeasonDexItems(save.rotation);
     const dexKeys = new Set(dexItems.map(t => t.key));
-    const extraMythics = MYTHICS.filter(m => !dexKeys.has(m.key) && ((save.owned[m.key] || 0) > 0 || discoveryMap[m.key]));
+    const extraMythics = MYTHICS.filter(m => !dexKeys.has(m.key) && (save.owned[m.key] || 0) > 0);
     const collection = [...dexItems, ...extraMythics].map(item => {
       const count = save.owned[item.key] || 0;
       return {
@@ -1040,52 +1055,17 @@ router.get('/collection', handle('서버 오류가 발생했습니다.', async (
       };
     });
 
-    const obtainedCount = collection.filter(item => item.inSeasonDex && item.obtained).length;
-
     return {
       mode,
       isRecordMode: mode === MODES.RECORD,
       collection,
       totalTreasure: save.claim.total_treasure,
-      progress: { obtained: obtainedCount, total: SEASON_DEX_SIZE },
-      isComplete: obtainedCount === SEASON_DEX_SIZE,
       itemEffects: activeItemEffects(save),
-      season: seasonResponse(save),
-      codex: codexSummary(save),
-      bonusClaimed: save.claim.completion_bonus_claimed,
-      collectorRank: getCollectorRank(obtainedCount),
+      season: seasonResponse(mode, save),
+      codex: codexSummary(mode, save),
+      collectorRank: mode === MODES.COLLECTION ? getCollectorRank(save.codex.size) : null,
       income: incomeResponse(save),
       prestige: progressionResponse(mode, save).prestige,
-    };
-  });
-}));
-
-// -------------------------------
-// 도감 완성 보상 수령: POST /api/box/collection/claim-bonus
-// -------------------------------
-router.post('/collection/claim-bonus', handle('서버 오류가 발생했습니다.', async (req) => {
-  const userId = req.user.userId;
-
-  return withSave(userId, async (client, mode, save) => {
-    if (save.claim.completion_bonus_claimed) throw new HttpError(400, '이미 완성 보상을 받으셨습니다.');
-
-    const discovered = await getSeasonDexDiscovered(client, userId, mode, save.rotation);
-    if (discovered.size < SEASON_DEX_SIZE) {
-      throw new HttpError(400, '아직 이번 시즌 도감을 모두 채우지 못했습니다.');
-    }
-
-    const newTotal = save.claim.total_treasure + COMPLETION_BONUS_GOLD;
-    await store.updateClaim(client, userId, mode, {
-      total_treasure: newTotal,
-      run_gold_earned: save.claim.run_gold_earned + COMPLETION_BONUS_GOLD,
-      completion_bonus_claimed: true,
-    });
-
-    return {
-      message: '도감 완성 보상을 받았습니다!',
-      mode,
-      bonusGold: COMPLETION_BONUS_GOLD,
-      totalTreasure: newTotal,
     };
   });
 }));
@@ -1166,11 +1146,24 @@ router.post('/rebirth', handle('서버 오류로 환생에 실패했습니다.',
       claim,
     });
 
+    // 시즌 최고 기록이면 이번 판 구간 기록을 "최고 기록 구간"으로 저장합니다. (다음 판 페이스 비교용)
+    const previousBestMs = claim.best_run_ms != null ? Number(claim.best_run_ms) : null;
+    const isNewBest = previousBestMs === null || durationMs < previousBestMs;
+    if (isNewBest) {
+      const splits = (Array.isArray(claim.run_splits) ? claim.run_splits : []).slice(0, SPLIT_STEPS - 1);
+      await store.updateClaim(client, userId, mode, {
+        best_splits: JSON.stringify([...splits, durationMs]),
+        best_run_ms: durationMs,
+      });
+    }
+
     return {
       message: `${rebirthNumber}번째 환생을 달성했습니다! 처음부터 다시 시작합니다.`,
       mode,
       rebirthNumber,
       durationMs,
+      previousBestMs,
+      isNewBest,
       prestigeGained,
       prestigePoints: claim.prestige_points + prestigeGained,
       totalTreasure: startGold,
@@ -1229,11 +1222,82 @@ async function findMyRank(userId, season) {
   };
 }
 
+// 수집가 칭호 (랭킹에서 닉네임 옆에 표시): userId → { emoji, name }
+const MYTHIC_KEYS = MYTHICS.map(m => m.key);
+function collectorTitle(count) {
+  let title = COLLECTOR_RANKS[0];
+  for (const rank of COLLECTOR_RANKS) if (count >= rank.minObtained) title = rank;
+  return { emoji: title.emoji, name: title.name };
+}
+async function collectorTitlesFor(userIds) {
+  if (userIds.length === 0) return {};
+  const result = await db.query(
+    `SELECT user_id, COUNT(*) AS cnt FROM user_discoveries
+     WHERE mode = 'collection' AND item_key = ANY($1::text[]) AND user_id = ANY($2::int[])
+     GROUP BY user_id`,
+    [MYTHIC_KEYS, userIds]
+  );
+  const counts = Object.fromEntries(result.rows.map(r => [r.user_id, parseInt(r.cnt, 10)]));
+  return Object.fromEntries(userIds.map(id => [id, collectorTitle(counts[id] || 0)]));
+}
+
+// 신화 수집 랭킹: 수집모드 신화 도감 수가 많은 순, 같으면 그 수를 먼저 채운(마지막 발견이 빠른) 순
+const CODEX_RANK_CTE = `
+  WITH c AS (
+    SELECT user_id, COUNT(*) AS cnt, MAX(first_discovered_at) AS reached_at
+    FROM user_discoveries
+    WHERE mode = 'collection' AND item_key = ANY($1::text[])
+    GROUP BY user_id
+  )`;
+
+async function collectionLeaderboard(userId, page, pageSize, offset) {
+  const [totalResult, result, mineResult] = await Promise.all([
+    db.query(`${CODEX_RANK_CTE} SELECT COUNT(*) AS total FROM c`, [MYTHIC_KEYS]),
+    db.query(
+      `${CODEX_RANK_CTE}
+       SELECT u.id AS user_id, u.nickname, c.cnt FROM c JOIN users u ON u.id = c.user_id
+       ORDER BY c.cnt DESC, c.reached_at ASC, u.id ASC
+       LIMIT $2 OFFSET $3`,
+      [MYTHIC_KEYS, pageSize, offset]
+    ),
+    db.query(
+      `${CODEX_RANK_CTE}
+       SELECT me.cnt, (SELECT COUNT(*) + 1 FROM c o
+                       WHERE o.cnt > me.cnt OR (o.cnt = me.cnt AND (o.reached_at < me.reached_at
+                         OR (o.reached_at = me.reached_at AND o.user_id < me.user_id)))) AS rank
+       FROM c me WHERE me.user_id = $2`,
+      [MYTHIC_KEYS, userId]
+    ),
+  ]);
+  const totalPlayers = parseInt(totalResult.rows[0].total, 10);
+  const titles = await collectorTitlesFor(result.rows.map(r => r.user_id));
+  const leaderboard = result.rows.map((row, index) => ({
+    rank: offset + index + 1,
+    nickname: row.nickname,
+    count: parseInt(row.cnt, 10),
+    title: titles[row.user_id],
+    isMe: row.user_id === userId,
+  }));
+  const mine = mineResult.rows[0];
+  const myRank = leaderboard.find(r => r.isMe) || (mine ? {
+    rank: parseInt(mine.rank, 10), count: parseInt(mine.cnt, 10), isMe: true, outsideCurrentPage: true,
+  } : null);
+  return {
+    type: 'collection',
+    leaderboard, myRank, page, pageSize, totalPlayers,
+    totalPages: Math.max(1, Math.ceil(totalPlayers / pageSize)),
+    total: MYTHICS.length,
+  };
+}
+
+// ?type=collection 이면 신화 수집 랭킹, 아니면 기록모드 시즌 랭킹(환생 최단 기록)
 router.get('/leaderboard', handle('서버 오류가 발생했습니다.', async (req) => {
   const userId = req.user.userId;
   const pageSize = LEADERBOARD_PAGE_SIZE;
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const offset = (page - 1) * pageSize;
+  if (req.query.type === 'collection') return collectionLeaderboard(userId, page, pageSize, offset);
+
   // ?season=1 처럼 지난 시즌도 볼 수 있습니다 (없거나 잘못된 값이면 현재 시즌)
   const currentSeason = getSeason();
   const requestedSeason = parseInt(req.query.season, 10);
@@ -1260,35 +1324,40 @@ router.get('/leaderboard', handle('서버 오류가 발생했습니다.', async 
 
   const totalPlayers = parseInt(totalResult.rows[0].total, 10);
   const totalPages = Math.max(1, Math.ceil(totalPlayers / pageSize));
+  const titles = await collectorTitlesFor(result.rows.map(r => r.user_id));
 
   const leaderboard = result.rows.map((row, index) => ({
     rank: offset + index + 1,
     nickname: row.nickname,
     bestDurationMs: parseInt(row.best_duration_ms, 10),
+    title: titles[row.user_id],
     isMe: row.user_id === userId,
   }));
 
   const myRank = leaderboard.find(r => r.isMe) || await findMyRank(userId, season);
 
   return {
+    type: 'record',
     leaderboard, myRank, page, pageSize, totalPlayers, totalPages,
     season,
     currentSeason,
     seasonStartsAt: getSeasonStart(season),
     seasonEndsAt: getSeasonEnd(season),
+    rule: ruleResponse(getSeasonRule(season)),
     goldRequired: SEASON_GOLD_REQUIRED[season] || REBIRTH_GOLD_REQUIRED,
   };
 }));
 
 // -------------------------------
-// 신화 도감 조회: GET /api/box/codex (계정 전체 · 영구)
+// 신화 도감 조회: GET /api/box/codex (수집모드 전용 · 영구)
 // -------------------------------
-// 신화 100종을 시즌 묶음(10종씩)으로 나눠서, 얻었는지와 다음에 언제 나오는지를 알려줍니다.
+// 수집모드에서 얻은 신화 100종을 시즌 묶음(10종씩)으로 나눠서, 얻었는지와 다음에 언제 나오는지를 알려줍니다.
 router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) => {
   const userId = req.user.userId;
   const result = await db.query(
-    'SELECT item_key, first_obtained_at, season FROM mythic_codex WHERE user_id = $1',
-    [userId]
+    `SELECT item_key, first_discovered_at FROM user_discoveries
+     WHERE user_id = $1 AND mode = 'collection' AND item_key = ANY($2::text[])`,
+    [userId, MYTHIC_KEYS]
   );
   const found = new Map(result.rows.map(r => [r.item_key, r]));
   const currentSeason = getSeason();
@@ -1302,7 +1371,7 @@ router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) 
         rotation: m.rotation,
         isCurrent: nextSeason === currentSeason,
         nextSeason,
-        nextStartsAt: nextSeason === currentSeason ? getSeasonStart(currentSeason) : getSeasonStart(nextSeason),
+        nextStartsAt: getSeasonStart(nextSeason),
         items: [],
       };
     }
@@ -1316,8 +1385,7 @@ router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) 
       // 효과는 아직 못 얻었어도 보여줘서 "무엇을 노릴지" 정할 수 있게 합니다.
       effect: itemEffectInfo(m.key, 0),
       obtained: Boolean(row),
-      firstObtainedAt: row ? row.first_obtained_at : null,
-      obtainedSeason: row ? row.season : null,
+      firstObtainedAt: row ? row.first_discovered_at : null,
     });
   }
   // 이번 시즌 묶음을 맨 앞에, 그 뒤로는 다음에 나오는 순서대로
@@ -1328,8 +1396,7 @@ router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) 
     seasonEndsAt: getSeasonEnd(currentSeason),
     obtained: found.size,
     total: MYTHICS.length,
-    incomeBonusPercent: found.size * CODEX_INCOME_PERCENT_PER_MYTHIC,
-    perMythicPercent: CODEX_INCOME_PERCENT_PER_MYTHIC,
+    collectorRank: getCollectorRank(found.size),
     groups,
   };
 }));
