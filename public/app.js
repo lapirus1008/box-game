@@ -273,7 +273,8 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
   goldenBoxExpireAt = null;
   document.getElementById('goldenBox').classList.add('hidden');
   resetGameResultUI();
-  gameScreen.classList.add('hidden');
+  [gameScreen, collectionScreen, upgradeScreen, achievementScreen, rankingScreen].forEach(el => el.classList.add('hidden'));
+  document.body.classList.remove('in-game');
   authScreen.classList.remove('hidden');
 });
 
@@ -284,13 +285,14 @@ function applyModeUI(mode){
   document.body.classList.toggle('mode-collection', !isRecord);
 
   document.getElementById('modeBadge').textContent = isRecord ? '🏆 기록모드' : '📖 수집모드';
-  document.getElementById('switchModeBtn').textContent = isRecord ? '📖 수집모드로' : '🏆 기록모드로';
+  document.getElementById('switchModeBtn').textContent = isRecord ? '📖 수집모드로 전환' : '🏆 기록모드로 전환';
 
   document.getElementById('collectionModeSubtext').textContent = isRecord
     ? '가방은 환생하면 비워져요'
     : '도감은 영구히 남아요';
   // 기록모드에는 도감이 없으므로, 모드를 바꾸면 가방 탭으로 돌아갑니다.
   if (isRecord) showCollectionTab('run');
+  if (isRecord && typeof currentTab !== 'undefined' && currentTab === 'dex') goTab('bag');
 
   document.getElementById('modeTabRun').textContent = '🎒 가방';
   document.getElementById('runModeHint').textContent = '같은 아이템 3개 → 한 등급 위로 합성 · 🔓 잠그면 재료로 안 써요';
@@ -327,10 +329,43 @@ document.getElementById('switchModeBtn').addEventListener('click', () => {
   switchMode(currentMode === 'record' ? 'collection' : 'record');
 });
 
+// -------------------------------
+// 아래 고정 탭 바: 홈 · 가방 · 도감(수집모드) · 강화 · 업적 · 랭킹
+// -------------------------------
+const TAB_OPENERS = {
+  bag: 'openCollectionBtn',
+  dex: 'openCollectionBtn',
+  upgrade: 'openUpgradeBtn',
+  achievement: 'openAchievementBtn',
+  ranking: 'openRankingBtn',
+};
+let currentTab = 'home';
+function goTab(tab){
+  currentTab = tab;
+  document.querySelectorAll('#tabBar .tab-item').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
+  [gameScreen, collectionScreen, upgradeScreen, achievementScreen, rankingScreen].forEach(el => el.classList.add('hidden'));
+  window.scrollTo(0, 0);
+  if (tab === 'home') {
+    gameScreen.classList.remove('hidden');
+    refreshStatus();
+    return;
+  }
+  // 각 화면을 여는 기존 버튼 동작(데이터 불러오기 포함)을 그대로 씁니다.
+  document.getElementById(TAB_OPENERS[tab]).click();
+  if (tab === 'bag' || tab === 'dex') {
+    showCollectionTab(tab === 'dex' ? 'dex' : 'run');
+    document.getElementById('collectionTitle').textContent = tab === 'dex' ? '도감' : '가방';
+  }
+}
+document.querySelectorAll('#tabBar .tab-item').forEach(btn => {
+  btn.addEventListener('click', () => goTab(btn.dataset.tab));
+});
+
 function enterGame(){
   document.getElementById('userNickname').textContent = currentUser.nickname || currentUser.email;
   authScreen.classList.add('hidden');
-  gameScreen.classList.remove('hidden');
+  document.body.classList.add('in-game');
+  goTab('home');
   resetGameResultUI();
 
   // /me 응답에 담겨온 현재 모드로 즉시 UI를 맞춰서, 첫 상태 조회가 끝나기 전에도
@@ -909,9 +944,7 @@ document.getElementById('openCollectionBtn').addEventListener('click', async () 
 });
 
 document.getElementById('backToGameBtn').addEventListener('click', () => {
-  collectionScreen.classList.add('hidden');
-  gameScreen.classList.remove('hidden');
-  refreshStatus();
+  goTab('home');
 });
 
 async function loadCollection(showLoadingText = true){
@@ -1127,9 +1160,7 @@ document.getElementById('openUpgradeBtn').addEventListener('click', async () => 
   await refreshStatus();
 });
 document.getElementById('backFromUpgradeBtn').addEventListener('click', () => {
-  upgradeScreen.classList.add('hidden');
-  gameScreen.classList.remove('hidden');
-  refreshStatus();
+  goTab('home');
 });
 
 function renderUpgradeScreen(){
@@ -1444,9 +1475,7 @@ document.getElementById('openAchievementBtn').addEventListener('click', async ()
   await refreshStatus();
 });
 document.getElementById('backFromAchievementBtn').addEventListener('click', () => {
-  achievementScreen.classList.add('hidden');
-  gameScreen.classList.remove('hidden');
-  refreshStatus();
+  goTab('home');
 });
 
 const STAT_UNIT = { boxes: '개', crafts: '번', legendary: '개', mythic: '개', golden: '번', bestIncome: 'G/분', rebirths: '번' };
@@ -1519,8 +1548,7 @@ document.getElementById('openRankingBtn').addEventListener('click', async () => 
   setRankType(currentMode === 'collection' ? 'collection' : 'record');
 });
 document.getElementById('backFromRankingBtn').addEventListener('click', () => {
-  rankingScreen.classList.add('hidden');
-  gameScreen.classList.remove('hidden');
+  goTab('home');
 });
 document.getElementById('rankPrevBtn').addEventListener('click', async () => {
   if (currentRankPage > 1) { currentRankPage--; await loadRanking(); }
@@ -1665,11 +1693,8 @@ document.getElementById('seasonOverlayCloseBtn').addEventListener('click', () =>
 });
 
 // 시즌 배너를 누르면 수집모드는 도감, 기록모드는 가방으로
-document.getElementById('seasonBanner').addEventListener('click', async () => {
-  gameScreen.classList.add('hidden');
-  collectionScreen.classList.remove('hidden');
-  showCollectionTab(currentMode === 'collection' ? 'dex' : 'run');
-  await loadCollection();
+document.getElementById('seasonBanner').addEventListener('click', () => {
+  goTab(currentMode === 'collection' ? 'dex' : 'bag');
 });
 
 // -------------------------------

@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261014e">
+<link rel="stylesheet" href="style.css?v=20261014h">
 </head>
 <body>
 
@@ -129,26 +129,9 @@
   <div class="card hidden" id="gameScreen">
     <div class="top-row">
       <div class="greeting">안녕하세요, <strong id="userNickname"></strong>님</div>
+      <span class="mode-chip" id="modeBadge">🏆 기록모드</span>
       <button id="logoutBtn">로그아웃</button>
     </div>
-
-    <div class="mode-bar">
-      <span class="mode-badge" id="modeBadge">🏆 기록모드</span>
-      <button id="switchModeBtn">📖 수집모드로</button>
-    </div>
-
-    <div class="rank-chip hidden" id="collectorRankMain"></div>
-
-    <!-- 시즌 + 오늘의 규칙 + 오늘의 신화 10종 (누르면 수집모드는 도감, 기록모드는 가방) -->
-    <button class="season-banner hidden" id="seasonBanner">
-      <span class="season-banner-top">
-        <span>🗓 <strong id="seasonBannerNo">시즌</strong> · 오늘의 신화</span>
-        <span class="season-countdown" id="seasonCountdown"></span>
-      </span>
-      <span class="season-rule" id="seasonRule"></span>
-      <span class="season-banner-icons" id="seasonBannerIcons"></span>
-      <span class="season-banner-sub" id="seasonBannerSub"></span>
-    </button>
 
     <!-- 보유 골드 + 분당 수입. ? 를 누르면 수입이 어떻게 계산되는지 보여줍니다 -->
     <div class="gold-row">
@@ -177,17 +160,30 @@
     <div class="charge-bar-wrap"><div class="charge-bar-fill" id="chargeBarFill"></div></div>
     <p class="next-charge" id="nextChargeText"></p>
 
-    <div class="pity-box" id="pityBox">
-      <div class="pity-top"><span>🌸 신화 천장 <small class="pity-hint" id="pityHint"></small></span><span class="pity-count" id="pityText">0 / 3,000</span></div>
-      <div class="pity-bar-wrap"><div class="pity-bar-fill" id="pityBarFill"></div></div>
-    </div>
-
     <div class="result-box" id="resultBox">
       <img class="result-icon hidden" id="treasureIcon" alt="">
       <div class="rarity-badge" id="rarityBadge"></div>
       <div class="treasure-name" id="treasureName"></div>
       <div id="treasureDetail" style="font-size:13px; color:var(--ink-dim);"></div>
     </div>
+
+    <div class="pity-box" id="pityBox">
+      <div class="pity-top"><span>🌸 신화 천장 <small class="pity-hint" id="pityHint"></small></span><span class="pity-count" id="pityText">0 / 3,000</span></div>
+      <div class="pity-bar-wrap"><div class="pity-bar-fill" id="pityBarFill"></div></div>
+    </div>
+
+    <!-- 시즌 + 오늘의 규칙 + 오늘의 신화 10종 (누르면 수집모드는 도감, 기록모드는 가방) -->
+    <button class="season-banner hidden" id="seasonBanner">
+      <span class="season-banner-top">
+        <span>🗓 <strong id="seasonBannerNo">시즌</strong> · 오늘의 신화</span>
+        <span class="season-countdown" id="seasonCountdown"></span>
+      </span>
+      <span class="season-rule" id="seasonRule"></span>
+      <span class="season-banner-icons" id="seasonBannerIcons"></span>
+      <span class="season-banner-sub" id="seasonBannerSub"></span>
+    </button>
+
+    <div class="rank-chip hidden" id="collectorRankMain"></div>
 
     <div class="goal-box record-only" id="rebirthGoalBox">
       <p class="goal-top"><span>🎯 환생까지</span><span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 300,000G</span></p>
@@ -212,20 +208,24 @@
       </div>
     </div>
 
-    <div class="nav-grid">
+    <!-- 화면 이동은 아래 고정 탭 바(tabBar)로 합니다. 이 버튼들은 탭 바가 내부에서 누르는 용도로만 남겨둡니다. -->
+    <div class="nav-grid hidden">
       <button class="nav-tile" id="openCollectionBtn">🎒 가방·도감</button>
       <button class="nav-tile" id="openUpgradeBtn">🛠 강화</button>
-      <button class="nav-tile" id="openAchievementBtn">🏅 업적<span class="nav-badge hidden" id="achievementBadge"></span></button>
+      <button class="nav-tile" id="openAchievementBtn">🏅 업적</button>
       <button class="nav-tile" id="openRankingBtn">🏆 랭킹</button>
     </div>
-    <button class="reset-link record-only" id="resetRunBtn">🔄 초심으로 돌아가기</button>
+    <div class="bottom-actions">
+      <button class="mode-switch" id="switchModeBtn">📖 수집모드로 전환</button>
+      <button class="reset-link record-only" id="resetRunBtn">🔄 초심으로 돌아가기</button>
+    </div>
     <p class="legal-links"><a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a> · <button class="link-btn" id="openDeleteAccountBtn">계정 삭제</button></p>
   </div>
 
   <!-- 도감 화면 -->
   <div class="card hidden" id="collectionScreen">
     <div class="top-row">
-      <h1 style="margin:0; font-size:20px;">가방 · 도감</h1>
+      <h1 style="margin:0; font-size:20px;" id="collectionTitle">가방</h1>
       <button id="backToGameBtn">← 돌아가기</button>
     </div>
     <p class="screen-sub">💰 <strong id="shopGold">0</strong>G · <span id="collectionModeSubtext"></span></p>
@@ -329,7 +329,17 @@
   </div>
 
 <!-- 배포할 때마다 ?v= 값을 바꾸면 브라우저·앱이 예전 파일을 쓰지 않습니다 -->
-<script src="app.js?v=20261014e"></script>
+<!-- 앱처럼 화면 아래에 고정된 탭 바 (로그인 후에만 보임) -->
+<nav class="tab-bar" id="tabBar">
+  <button class="tab-item active" data-tab="home"><span class="tab-icon">🏠</span><small>홈</small></button>
+  <button class="tab-item" data-tab="bag"><span class="tab-icon">🎒</span><small>가방</small></button>
+  <button class="tab-item collection-only" data-tab="dex"><span class="tab-icon">📖</span><small>도감</small></button>
+  <button class="tab-item" data-tab="upgrade"><span class="tab-icon">🛠</span><small>강화</small></button>
+  <button class="tab-item" data-tab="achievement"><span class="tab-icon">🏅</span><small>업적</small><span class="nav-badge hidden" id="achievementBadge"></span></button>
+  <button class="tab-item" data-tab="ranking"><span class="tab-icon">🏆</span><small>랭킹</small></button>
+</nav>
+
+<script src="app.js?v=20261014h"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {
