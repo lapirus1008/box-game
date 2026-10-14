@@ -229,10 +229,11 @@ body.mode-collection .collection-mode-notice{ display:block; }
   position:relative;
   perspective:600px;
 }
-/* 상자: 나무결 몸통 + 둥근 뚜껑 + 금속 테두리·띠 + 자물쇠 */
+/* 상자: 앱 아이콘(public/icons/app/icon.svg)과 같은 모양 · 금색 몸통 + 은색 띠 + 빨간 자물쇠 + 진한 외곽선 */
 .chest{
-  --wood-1:#8A5A2B; --wood-2:#5E3B1A; --wood-3:#3F260F;
-  --metal-1:#F3D27A; --metal-2:#B8862E; --metal-3:#6E4D14;
+  --gold-hi:#fff3b0; --gold-mid:#f2c230; --gold-lo:#9a640a;
+  --silver:linear-gradient(135deg, #ffffff, #c3cbd8 50%, #656e83);
+  --outline:#1c1631;
   width:150px;
   height:124px;
   cursor:pointer;
@@ -251,56 +252,64 @@ body.mode-collection .collection-mode-notice{ display:block; }
   width:150px;
   height:72px;
   box-sizing:border-box;
-  border-radius:4px 4px 12px 12px;
-  border:4px solid var(--metal-2);
-  background:
-    repeating-linear-gradient(180deg, transparent 0 15px, rgba(0,0,0,0.22) 15px 17px),
-    linear-gradient(180deg, var(--wood-1), var(--wood-2) 70%, var(--wood-3));
-  box-shadow:inset 0 0 0 2px var(--metal-3), inset 0 -10px 16px rgba(0,0,0,0.35);
+  border-radius:4px 4px 6px 6px;
+  border:3px solid var(--outline);
+  background:linear-gradient(180deg, var(--gold-mid), var(--gold-lo));
 }
 .chest-lid{
   position:absolute;
   top:0; left:0;
   width:150px;
-  height:56px;
+  height:58px;
   box-sizing:border-box;
-  border-radius:60px 60px 4px 4px / 34px 34px 4px 4px;
-  border:4px solid var(--metal-2);
-  background:
-    radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.18), transparent 60%),
-    repeating-linear-gradient(180deg, transparent 0 13px, rgba(0,0,0,0.2) 13px 15px),
-    linear-gradient(180deg, var(--wood-1), var(--wood-2));
-  box-shadow:inset 0 0 0 2px var(--metal-3), inset 0 6px 10px rgba(255,255,255,0.08);
+  border-radius:70px 70px 0 0 / 40px 40px 0 0;
+  border:3px solid var(--outline);
+  background:linear-gradient(135deg, var(--gold-hi), var(--gold-mid) 45%, var(--gold-lo));
   transform-origin:50% 100%;
   transition:transform 0.45s cubic-bezier(.34,1.56,.64,1);
   z-index:1;
 }
-/* 세로 금속 띠 (뚜껑·몸통 공통) */
-.chest-band{
-  position:absolute; top:-4px; bottom:-4px; width:12px;
-  background:linear-gradient(90deg, var(--metal-3), var(--metal-1) 40%, var(--metal-2));
-  box-shadow:0 0 0 1px rgba(0,0,0,0.25);
+.chest-lid::before{ /* 뚜껑 윤기 */
+  content:''; position:absolute; left:12px; top:10px; width:34px; height:22px;
+  border-top:4px solid rgba(255,255,255,0.55); border-left:4px solid rgba(255,255,255,0.55);
+  border-radius:30px 0 0 0; transform:rotate(-8deg);
 }
-.chest-band.left{ left:22px; }
-.chest-band.right{ right:22px; }
-.chest-lid .chest-band{ border-radius:6px 6px 0 0; top:-2px; }
+/* 세로 은색 띠 (뚜껑·몸통 공통) */
+.chest-band{
+  position:absolute; top:-3px; bottom:-3px; width:12px;
+  box-sizing:border-box;
+  background:var(--silver);
+  border:3px solid var(--outline);
+}
+.chest-band.left{ left:12px; }
+.chest-band.right{ right:12px; }
+.chest-lid .chest-band{ top:8px; bottom:-3px; border-bottom:none; }
+.chest-lid .chest-band.left{ left:14px; }
+.chest-lid .chest-band.right{ right:14px; }
+/* 뚜껑과 몸통 사이 가로 은색 띠 */
+.chest::before{
+  content:''; position:absolute; left:-6px; right:-6px; top:50px; height:14px;
+  box-sizing:border-box; border-radius:4px;
+  background:var(--silver); border:3px solid var(--outline);
+  z-index:2;
+}
 .chest-lock{
   position:absolute;
-  top:42px;
+  top:44px;
   left:50%;
   transform:translateX(-50%);
-  width:26px;
-  height:30px;
-  border-radius:6px 6px 10px 10px;
-  background:linear-gradient(180deg, var(--metal-1), var(--metal-2) 60%, var(--metal-3));
-  border:2px solid var(--metal-3);
-  box-shadow:0 2px 4px rgba(0,0,0,0.45);
+  width:28px;
+  height:32px;
+  box-sizing:border-box;
+  border-radius:6px;
+  background:linear-gradient(135deg, #f5a5b0, #e8364f 50%, #972333);
+  border:3px solid var(--outline);
   z-index:3;
 }
 .chest-lock::after{ /* 열쇠 구멍 */
-  content:''; position:absolute; left:50%; top:8px; transform:translateX(-50%);
-  width:7px; height:12px; border-radius:4px 4px 1px 1px;
-  background:radial-gradient(circle at 50% 30%, #1A1006 3px, transparent 3.5px), linear-gradient(#1A1006, #1A1006) 50% 100% / 3px 7px no-repeat;
+  content:''; position:absolute; left:50%; top:6px; transform:translateX(-50%);
+  width:8px; height:14px;
+  background:radial-gradient(circle at 50% 4px, var(--outline) 3.5px, transparent 4px), linear-gradient(var(--outline), var(--outline)) 50% 100% / 3px 9px no-repeat;
 }
 .chest-glow{
   position:absolute;
@@ -327,8 +336,8 @@ body.mode-collection .collection-mode-notice{ display:block; }
 @keyframes raysSpin{ to{ rotate:60deg; } }
 
 /* 열 상자가 있을 때: 가끔 들썩이고 반짝임 */
-.chest-spark{ position:absolute; color:var(--metal-1); font-size:14px; opacity:0; pointer-events:none; text-shadow:0 0 6px rgba(255,226,140,0.9); }
-.chest-spark.s1{ top:-6px; left:6px; }
+.chest-spark{ position:absolute; color:#ffffff; font-size:14px; opacity:0; pointer-events:none; text-shadow:0 0 6px rgba(255,226,140,0.9); }
+.chest-spark.s1{ top:-6px; left:6px; color:#ffd6f2; }
 .chest-spark.s2{ top:10px; right:0; font-size:11px; }
 .chest-spark.s3{ top:52px; left:-8px; font-size:12px; }
 .chest.ready{ animation:chestWiggle 3.2s ease-in-out infinite; }
@@ -1398,13 +1407,19 @@ body:not(.mode-collection) .collection-only{ display:none !important; }
 /* -------------------------------
    메인 화면 간소화: 골드 줄 · ? 설명 · 짧은 상태 줄
    ------------------------------- */
+/* 골드(윗줄) · 분당 수입(아랫줄) · ? 버튼(오른쪽) */
 .gold-row{
-  display:flex; align-items:center; gap:8px;
+  display:grid; grid-template-columns:1fr auto; align-items:center; column-gap:8px; row-gap:2px;
   margin:0 0 6px; padding:10px 12px;
   border-radius:12px; background:var(--surface-2);
 }
+.gold-row .gold-amount{ grid-column:1; grid-row:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.gold-row .gold-rate{ grid-column:1; grid-row:2; text-align:left; }
+.gold-row .help-btn{ grid-column:2; grid-row:1 / span 2; }
 .gold-amount{ font-family:'Fraunces', serif; font-size:22px; color:var(--gold); white-space:nowrap; }
 .gold-amount strong{ font-weight:700; }
+.gold-amount.long{ font-size:19px; }
+.gold-amount.xlong{ font-size:16px; }
 .gold-rate{ flex:1; min-width:0; font-size:12px; color:var(--teal); font-weight:600; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .help-btn{
   width:24px; height:24px; flex-shrink:0; padding:0; margin:0;

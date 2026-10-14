@@ -88,6 +88,10 @@ function setGold(total, collectedAt){
 function renderGold(){
   const text = formatGold(liveGold());
   document.getElementById('totalTreasure').textContent = text;
+  // 숫자가 길어지면(억·조 단위) 글자를 줄여서 '분당 +G'가 잘리지 않게 합니다.
+  const goldAmount = document.querySelector('#gameScreen .gold-amount');
+  goldAmount.classList.toggle('long', text.length > 10);
+  goldAmount.classList.toggle('xlong', text.length > 13);
   document.getElementById('shopGold').textContent = text;
   document.getElementById('upgradeGold').textContent = text;
 }
@@ -464,14 +468,23 @@ function applyChargeInfo(data){
   cachedNextChargeAt = data.nextChargeInMs != null ? new Date(adjustedNow().getTime() + data.nextChargeInMs) : null;
 }
 
-// 정산 중에 자동 개봉/자동 합성이 일어났으면 결과 칸에 짧게 알려줍니다.
+// 상자 뚜껑이 열리는 연출 (직접 열 때와 자동 개봉 때 공통)
+function playChestOpen(){
+  const chest = document.getElementById('chest');
+  chest.classList.remove('open');
+  void chest.offsetWidth; // 연달아 열려도 애니메이션이 처음부터 다시 나오게
+  chest.classList.add('open');
+  clearTimeout(playChestOpen.timer);
+  playChestOpen.timer = setTimeout(() => chest.classList.remove('open'), 1200);
+}
+
+// 정산 중에 자동 개봉이 일어났으면 직접 열 때처럼 상자가 열리고 결과 칸에 보여줍니다.
+// 신화 상자 도착·자동 합성은 화면 위 짧은 알림으로 알려줘요.
 function handleAutoEvents(data){
   const lines = [];
   if (data.autoOpened && data.autoOpened.count > 0) {
-    const highlights = data.autoOpened.obtained
-      .filter(o => o.rarity !== 'common')
-      .map(o => `${o.emoji}${o.name} x${o.count}`);
-    lines.push(`🤖 자동 개봉 ${data.autoOpened.count}개${highlights.length ? ` · ${highlights.join(', ')}` : ''}`);
+    playChestOpen();
+    showOpenResult(`🤖 자동 개봉 ${data.autoOpened.count}개`, data.autoOpened.obtained);
     checkAndTriggerLegendary(data.autoOpened.obtained, data.autoOpened.pityTriggered);
   }
   if (data.autoOpened && data.autoOpened.sealed > 0) {
@@ -560,7 +573,8 @@ function renderTick(){
   }
 
   const canOpen = cachedCharges >= 1 && !cachedAutoOpen;
-  chest.style.opacity = canOpen ? '1' : '0.6';
+  // 자동 개봉 중에는 상자가 열리는 모습이 보이도록 흐리게 하지 않습니다.
+  chest.style.opacity = (canOpen || cachedAutoOpen) ? '1' : '0.6';
   chest.classList.toggle('ready', canOpen);
   chest.style.pointerEvents = (canOpen && !isOpening) ? 'auto' : 'none';
 
@@ -860,7 +874,6 @@ document.getElementById('chest').addEventListener('click', async function(){
   if (cachedCharges < 1 || isOpening || cachedAutoOpen) return;
   isOpening = true;
   this.style.pointerEvents = 'none';
-  const chest = this;
 
   try {
     const res = await authFetch('/api/box/open-all', { method: 'POST' });
@@ -870,8 +883,7 @@ document.getElementById('chest').addEventListener('click', async function(){
     syncServerTime(data.serverTime);
     applyChargeInfo(data);
     setGold(data.totalTreasure);
-    chest.classList.add('open');
-    setTimeout(() => chest.classList.remove('open'), 1200);
+    playChestOpen();
     showOpenResult(`📦 상자 ${data.quantity}개 오픈`, data.obtained);
     updatePityUI(data.mythicPity, data.mythicPityLimit);
     checkAndTriggerLegendary(data.obtained, data.mythicPityTriggered);
