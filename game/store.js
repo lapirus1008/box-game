@@ -26,9 +26,9 @@ const {
   REBIRTH_GOLD_REQUIRED,
   SPLIT_STEPS,
 } = require('./config');
-const { getItemStars, getClaimStats, getPerkLevel, rollBoxes, craftCascade, makeRollContext, getSeasonRule } = require('./logic');
+const { getItemStars, getClaimStats, getPerkLevel, rollBoxes, craftCascade, makeRollContext, getDailyRule } = require('./logic');
 const { MYTHICS } = require('./mythics');
-const { getSeason, getRotation } = require('./season');
+const { getSeason, getDay, getRotation } = require('./season');
 
 // box_claims에서 게임 진행에 필요한 컬럼 전체
 const CLAIM_COLUMNS = [
@@ -288,7 +288,9 @@ async function settle(client, userId, mode) {
   const now = new Date();
   // 0. 시즌이 바뀌었으면 새 시즌을 먼저 적용합니다.
   const season = getSeason(now);
-  const rotation = getRotation(season);
+  // 신화 10종과 규칙은 매일 바뀝니다.
+  const day = getDay(now);
+  const rotation = getRotation(day);
   let seasonChange = null;
   if ((Number(claim.season) || 0) < season) {
     seasonChange = { from: Number(claim.season) || null, to: season, reset: mode === MODES.RECORD };
@@ -297,7 +299,7 @@ async function settle(client, userId, mode) {
   }
   // 신화 도감은 수집모드에서만 씁니다. (천장이 도감에 없는 신화를 먼저 주는 데 사용)
   const codex = mode === MODES.COLLECTION ? await getCodexKeys(client, userId) : new Set();
-  claim.season_rule = getSeasonRule(season);
+  claim.season_rule = getDailyRule(day);
 
   let owned = await getOwnedCounts(client, userId, mode, { forUpdate: true });
   // 능력치(보관 시간·행운·천장 등)는 정산 시작 시점의 보유 아이템 기준으로 계산합니다.
@@ -430,6 +432,7 @@ async function settle(client, userId, mode) {
     owned,
     codex,
     season,
+    day,
     rotation,
     seasonChange,
     now,

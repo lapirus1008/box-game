@@ -70,7 +70,6 @@ const {
   rollBoxes,
   getRotationMythics,
   getSeasonDexItems,
-  getSeasonRule,
   getItemEffectValue,
   EFFECT_TYPE_EMOJI,
   getNextCraftRarity,
@@ -94,7 +93,7 @@ const {
 } = require('../game/logic');
 const store = require('../game/store');
 const { MYTHICS } = require('../game/mythics');
-const { getSeason, getSeasonStart, getSeasonEnd, getNextSeasonForRotation } = require('../game/season');
+const { getSeason, getSeasonStart, getSeasonEnd, getDay, getDayStart, getDayEnd, getNextDayForRotation } = require('../game/season');
 
 const router = express.Router();
 
@@ -160,7 +159,7 @@ function activeItemEffects(save) {
     (sourcesByType[effect.type] = sourcesByType[effect.type] || []).push(TREASURE_BY_KEY.get(key).name);
   }
   const rule = save.claim.season_rule;
-  if (rule) (sourcesByType[rule.type] = sourcesByType[rule.type] || []).push(`${rule.emoji} 이번 주 규칙`);
+  if (rule) (sourcesByType[rule.type] = sourcesByType[rule.type] || []).push(`${rule.emoji} 오늘의 규칙`);
   return Object.keys(EFFECT_TYPE_CAPS)
     .filter(type => effects[type] > 0)
     .map(type => ({
@@ -186,12 +185,12 @@ function itemEffectInfo(key, count) {
   };
 }
 
-// 이번 주 규칙 (화면 표시용)
+// 오늘의 규칙 (화면 표시용)
 function ruleResponse(rule) {
   return { key: rule.key, emoji: rule.emoji, name: rule.name, text: describeItemEffect(rule.type, rule.value) };
 }
 
-// 이번 시즌 정보 (메인 화면 배너 · 시즌 변경 안내용)
+// 시즌(매주) + 오늘(매일 바뀌는 신화 10종·규칙) 정보 (메인 화면 배너 · 변경 안내용)
 // have: 수집모드는 신화 도감에 있는지, 기록모드는 이번 판 가방에 있는지
 function seasonResponse(mode, save) {
   const isCollection = mode === MODES.COLLECTION;
@@ -210,7 +209,9 @@ function seasonResponse(mode, save) {
     number: save.season,
     rotation: save.rotation,
     startsAt: getSeasonStart(save.season),
-    endsAt: getSeasonEnd(save.season),
+    endsAt: getSeasonEnd(save.season),       // 시즌(기록모드 초기화·랭킹) 끝나는 시각
+    day: save.day,
+    dayEndsAt: getDayEnd(save.day),          // 오늘의 신화·규칙이 바뀌는 시각
     rule: ruleResponse(save.claim.season_rule),
     mythics,
     haveCount: mythics.filter(m => m.have).length,
@@ -514,6 +515,38 @@ router.post('/bulk-open', handle('서버 오류로 일괄 열기에 실패했습
   );
 
   return withSave(userId, async (client, mode, save) => {
+    assertCanOpen(save, quantity);
+
+    const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, store.rollContextOf(save));
+    await store.updateClaim(client, userId, mode, {
+      box_charges: save.chargeInfo.charges - quantity,
+      mythic_pity: pity,
+    });
+    await store.addItems(client, userId, mode, counts);
+    await store.saveStats(client, userId, mode, save.claim, store.boxStatDeltas(quantity, counts));
+
+    return {
+      message: `상자 ${quantity}개를 열었습니다!`,
+      mode,
+      quantity,
+      ...pityResponse(save, pity, pityTriggered),
+      totalTreasure: save.claim.total_treasure,
+      obtained: toObtainedList(counts),
+      ...chargeResponse(save.chargeInfo, quantity),
+      ...autoEventResponse(save),
+    };
+  });
+}));
+
+// -------------------------------
+// 쌓인 상자 모두 열기: POST /api/box/open-all (상자를 누르면 충전된 만큼 한 번에 엽니다)
+// -------------------------------
+router.post('/open-all', handle('서버 오류로 상자를 열지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+
+  return withSave(userId, async (client, mode, save) => {
+    const quantity = save.chargeInfo.charges;
+    if (quantity < 1) assertCanOpen(save, 1); // 충전이 없으면 안내 메시지와 함께 거절
     assertCanOpen(save, quantity);
 
     const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, store.rollContextOf(save));
@@ -1343,7 +1376,6 @@ router.get('/leaderboard', handle('서버 오류가 발생했습니다.', async 
     currentSeason,
     seasonStartsAt: getSeasonStart(season),
     seasonEndsAt: getSeasonEnd(season),
-    rule: ruleResponse(getSeasonRule(season)),
     goldRequired: SEASON_GOLD_REQUIRED[season] || REBIRTH_GOLD_REQUIRED,
   };
 }));
@@ -1351,7 +1383,7 @@ router.get('/leaderboard', handle('서버 오류가 발생했습니다.', async 
 // -------------------------------
 // 신화 도감 조회: GET /api/box/codex (수집모드 전용 · 영구)
 // -------------------------------
-// 수집모드에서 얻은 신화 100종을 시즌 묶음(10종씩)으로 나눠서, 얻었는지와 다음에 언제 나오는지를 알려줍니다.
+// 수집모드에서 얻은 신화 100종을 날짜별 묶음(10종씩)으로 나눠서, 얻었는지와 다음에 언제 나오는지를 알려줍니다.
 router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) => {
   const userId = req.user.userId;
   const result = await db.query(
@@ -1360,18 +1392,18 @@ router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) 
     [userId, MYTHIC_KEYS]
   );
   const found = new Map(result.rows.map(r => [r.item_key, r]));
-  const currentSeason = getSeason();
+  const today = getDay();
 
   const groups = [];
   for (const m of MYTHICS) {
     let group = groups[m.rotation];
     if (!group) {
-      const nextSeason = getNextSeasonForRotation(m.rotation, currentSeason);
+      const nextDay = getNextDayForRotation(m.rotation, today);
       group = groups[m.rotation] = {
         rotation: m.rotation,
-        isCurrent: nextSeason === currentSeason,
-        nextSeason,
-        nextStartsAt: getSeasonStart(nextSeason),
+        isCurrent: nextDay === today,
+        daysUntil: nextDay - today,
+        nextStartsAt: getDayStart(nextDay),
         items: [],
       };
     }
@@ -1388,12 +1420,11 @@ router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) 
       firstObtainedAt: row ? row.first_discovered_at : null,
     });
   }
-  // 이번 시즌 묶음을 맨 앞에, 그 뒤로는 다음에 나오는 순서대로
-  groups.sort((a, b) => a.nextSeason - b.nextSeason);
+  // 오늘 묶음을 맨 앞에, 그 뒤로는 다음에 나오는 순서대로
+  groups.sort((a, b) => a.daysUntil - b.daysUntil);
 
   return {
-    currentSeason,
-    seasonEndsAt: getSeasonEnd(currentSeason),
+    dayEndsAt: getDayEnd(today),
     obtained: found.size,
     total: MYTHICS.length,
     collectorRank: getCollectorRank(found.size),

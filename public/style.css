@@ -1287,3 +1287,51 @@ body:not(.mode-collection) .collection-only{ display:none !important; }
 .season-best{ font-size:11px; color:var(--ink-dim); margin:4px 0 0; }
 .dex-heading{ font-size:14px; margin:16px 0 8px; color:var(--ink); }
 .rank-title{ margin-right:4px; }
+
+/* -------------------------------
+   신화 획득 팝업 (2초쯤 떴다 사라짐, 3칸씩)
+   ------------------------------- */
+.mythic-popup{
+  position:fixed;
+  left:50%;
+  top:18%;
+  z-index:1300;
+  width:min(92vw, 340px);
+  max-height:70vh;
+  overflow-y:auto;
+  padding:14px 12px 12px;
+  border-radius:16px;
+  background:linear-gradient(160deg, #2a1640 0%, #151a35 100%);
+  border:1px solid var(--rarity-mythic);
+  box-shadow:0 0 28px rgba(240,98,146,0.45), 0 12px 32px rgba(0,0,0,0.5);
+  transform:translate(-50%, -12px) scale(0.92);
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .18s ease, transform .18s ease;
+  cursor:pointer;
+}
+.mythic-popup.show{ opacity:1; transform:translate(-50%, 0) scale(1); pointer-events:auto; }
+.mythic-popup-title{
+  margin:0 0 10px;
+  text-align:center;
+  font-size:13px;
+  font-weight:700;
+  letter-spacing:1px;
+  color:var(--rarity-mythic);
+}
+.mythic-popup-grid{ display:flex; flex-wrap:wrap; justify-content:center; gap:8px; }
+.mythic-popup-item{
+  width:calc((100% - 16px) / 3);
+  display:flex; flex-direction:column; align-items:center; gap:3px;
+  padding:6px 4px;
+  border-radius:10px;
+  background:rgba(240,98,146,0.1);
+  animation:mythicPopIn .35s ease-out both;
+}
+.mythic-popup-item:nth-child(2){ animation-delay:.05s; }
+.mythic-popup-item:nth-child(3){ animation-delay:.1s; }
+.mythic-popup-item:nth-child(n+4){ animation-delay:.15s; }
+@keyframes mythicPopIn{ from{ transform:scale(.6); opacity:0; } to{ transform:scale(1); opacity:1; } }
+.mythic-popup-icon{ width:52px; height:52px; filter:drop-shadow(0 0 8px rgba(240,98,146,0.6)); }
+.mythic-popup-name{ font-size:10px; line-height:1.25; text-align:center; color:#ffe1ee; }
+.gold-open-title{ margin:0 0 8px; font-size:12px; font-weight:600; color:var(--gold); }

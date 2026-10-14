@@ -518,7 +518,7 @@ function renderTick(){
     statusText.textContent = `⏳ 자동 개봉 중 · 남은 시간 ${formatDuration(Math.floor(autoOpenRemainingMs() / 1000))}`;
     statusText.classList.add('ready');
   } else if (canOpen) {
-    statusText.textContent = `충전된 상자 ${cachedCharges}개 · 열 수 있습니다`;
+    statusText.textContent = `충전된 상자 ${cachedCharges}개 · 상자를 누르면 모두 열어요`;
     statusText.classList.add('ready');
   } else {
     statusText.classList.remove('ready');
@@ -580,7 +580,6 @@ function renderTick(){
   rebirthBtn.disabled = !goalReady;
   rebirthBtn.classList.toggle('hidden', !goalReady);
 
-  clampBulkOpenQty();
   clampBuyBoxQty();
   if (!upgradeScreen.classList.contains('hidden')) {
     updateUpgradeAffordability();
@@ -666,11 +665,7 @@ document.getElementById('buyBoxBtn').addEventListener('click', async function(){
     }
 
     setGold(data.totalTreasure);
-    document.getElementById('rarityBadge').textContent = '';
-    setResultIcon(null);
-    document.getElementById('treasureName').textContent = `💰 ${data.quantity}개 구매 오픈`;
-    document.getElementById('treasureDetail').innerHTML = obtainedChipsHtml(data.obtained);
-    document.getElementById('resultBox').style.display = 'block';
+    showOpenResult(`💰 ${data.quantity}개 구매 오픈`, data.obtained);
 
     updatePityUI(data.mythicPity, data.mythicPityLimit);
     checkAndTriggerLegendary(data.obtained, data.mythicPityTriggered);
@@ -684,32 +679,6 @@ document.getElementById('buyBoxBtn').addEventListener('click', async function(){
     this.textContent = originalText;
     clampBuyBoxQty();
   }
-});
-
-function getMaxOpenableQty(){
-  return cachedAutoOpen ? 0 : Math.max(0, cachedCharges);
-}
-
-function clampBulkOpenQty(){
-  const input = document.getElementById('bulkOpenQty');
-  const max = getMaxOpenableQty();
-  let value = parseInt(input.value, 10);
-  if (isNaN(value) || value < 1) value = 1;
-  if (value > max) value = max;
-  input.value = max === 0 ? 0 : value;
-
-  document.getElementById('bulkOpenCostText').textContent = cachedAutoOpen
-    ? '⏳ 자동 개봉 중이라 충전된 상자는 자동으로 열려요'
-    : `충전 ${cachedCharges}/${cachedMaxCharges} · 최대 ${max}개까지 무료로 열 수 있어요`;
-
-  document.getElementById('bulkOpenBtn').disabled = cachedAutoOpen || max === 0 || value < 1 || isOpening;
-  document.getElementById('maxQtyBtn').disabled = cachedAutoOpen || max === 0;
-}
-
-document.getElementById('bulkOpenQty').addEventListener('input', clampBulkOpenQty);
-document.getElementById('maxQtyBtn').addEventListener('click', () => {
-  document.getElementById('bulkOpenQty').value = getMaxOpenableQty();
-  clampBulkOpenQty();
 });
 
 // -------------------------------
@@ -762,143 +731,102 @@ function updatePityUI(pity, limit){
     : `${remaining.toLocaleString()}개 더 열면 신화 확정${reductionText}`;
 }
 
-const mythicQueue = [];
-let mythicShowing = false;
+// -------------------------------
+// 신화 획득 팝업: 2초쯤 떴다가 사라지는 작은 창에 3칸씩 줄줄이 (누르면 바로 닫힘)
+// 짧은 시간에 여러 번 얻으면 하나로 모아서 보여줍니다.
+// -------------------------------
+const MYTHIC_POPUP_MS = 2200;
+let mythicPopupTimer = null;
+let mythicPopupItems = [];
+let mythicPopupPity = false;
 
-const overlayEyebrow = () => document.querySelector('#mythicEventOverlay .mythic-eyebrow');
-
-function showNextMythicEvent(){
-  if (mythicShowing || mythicQueue.length === 0) return;
-  const item = mythicQueue.shift();
-  mythicShowing = true;
-
-  overlayEyebrow().textContent = item.pityTriggered ? '✦ 천장 달성 · 신화 확정 ✦' : '✦ 신화 등급 발견 ✦';
-  document.getElementById('mythicEventIcon').src = iconSrc(item.key);
-  document.getElementById('mythicEventEffect').textContent = item.effectText ? `✨ ${item.effectText}` : '';
-  document.getElementById('mythicEventName').textContent =
-    item.count > 1 ? `${item.name} x${item.count}` : item.name;
-  document.getElementById('mythicEventFlavor').textContent = item.flavor || '';
-
-  const overlay = document.getElementById('mythicEventOverlay');
-  overlay.classList.add('show');
-
-  // 카드 주변에 반짝이 파티클
-  const card = overlay.querySelector('.mythic-card');
-  for (let i = 0; i < 14; i++) {
-    const p = document.createElement('span');
-    p.className = 'mythic-particle';
-    p.textContent = ['✨', '💫', '🌸'][i % 3];
-    p.style.left = `${Math.random() * 100}%`;
-    p.style.top = `${40 + Math.random() * 60}%`;
-    p.style.animationDelay = `${Math.random() * 0.8}s`;
-    card.appendChild(p);
-    setTimeout(() => p.remove(), 2800);
+function showMythicPopup(mythics, pityTriggered){
+  // 이미 떠 있으면 합쳐서 다시 그림 (같은 신화는 개수만 더함)
+  for (const m of mythics) {
+    const same = mythicPopupItems.find(x => x.key === m.key);
+    if (same) same.count += m.count || 1;
+    else mythicPopupItems.push({ ...m, count: m.count || 1 });
   }
-  if (navigator.vibrate) navigator.vibrate([80, 60, 160]);
+  mythicPopupPity = mythicPopupPity || Boolean(pityTriggered);
+  const total = mythicPopupItems.reduce((sum, m) => sum + m.count, 0);
+  document.getElementById('mythicPopupTitle').textContent =
+    `${mythicPopupPity ? '✦ 천장 달성! ' : '✦ '}신화 ${total}개 획득! ✦`;
+  document.getElementById('mythicPopupGrid').innerHTML = mythicPopupItems.map(m => `
+    <div class="mythic-popup-item" title="${escapeHtml(m.effectText || '')}">
+      ${itemIconHtml(m.key, 'mythic-popup-icon')}
+      <span class="mythic-popup-name">${escapeHtml(m.name)}${m.count > 1 ? ` x${m.count}` : ''}</span>
+    </div>`).join('');
+  const popup = document.getElementById('mythicPopup');
+  popup.classList.remove('show');
+  void popup.offsetWidth; // 애니메이션 다시 재생
+  popup.classList.add('show');
+  if (navigator.vibrate) navigator.vibrate([60, 40, 120]);
+  clearTimeout(mythicPopupTimer);
+  // 많이 나오면 조금 더 오래 보여줍니다 (최대 +1.5초)
+  mythicPopupTimer = setTimeout(hideMythicPopup, MYTHIC_POPUP_MS + Math.min(1500, (mythicPopupItems.length - 1) * 250));
 }
-
-document.getElementById('mythicEventCloseBtn').addEventListener('click', () => {
-  document.getElementById('mythicEventOverlay').classList.remove('show');
-  mythicShowing = false;
-  showNextMythicEvent(); // 한 번에 여러 종류가 나온 경우 이어서 보여줌
-});
+function hideMythicPopup(){
+  clearTimeout(mythicPopupTimer);
+  document.getElementById('mythicPopup').classList.remove('show');
+  mythicPopupItems = [];
+  mythicPopupPity = false;
+}
+document.getElementById('mythicPopup').addEventListener('click', hideMythicPopup);
 
 function checkAndTriggerLegendary(items, pityTriggered){
   // items: 단일 아이템 객체 또는 아이템 배열 둘 다 받을 수 있게
-  const list = Array.isArray(items) ? items : [items];
-  const mythics = list.filter(item => item && item.rarity === 'mythic');
+  const list = (Array.isArray(items) ? items : [items]).filter(Boolean);
+  const mythics = list.filter(item => item.rarity === 'mythic');
 
   if (mythics.length > 0) {
-    // 신화는 전설 이펙트 대신 전용 이벤트 화면으로 보여줌
-    mythics.forEach((m, i) => mythicQueue.push({ ...m, pityTriggered: Boolean(pityTriggered) && i === 0 }));
-    showNextMythicEvent();
-  } else if (list.some(item => item && item.rarity === 'legendary')) {
+    showMythicPopup(mythics, pityTriggered);
+  } else if (list.some(item => item.rarity === 'legendary')) {
     triggerLegendaryEffect();
   }
 }
 
-// 상자 열기가 성공했을 때 화면을 갱신하는 공통 함수
-function handleOpenSuccess(data){
-  syncServerTime(data.serverTime);
-  applyChargeInfo(data);
-  renderTick();
-
-  const chest = document.getElementById('chest');
-  chest.classList.add('open');
+// 여러 개를 연 결과: 가장 높은 등급의 아이템만 보여줍니다. (같은 등급이 여러 종류면 그것만 전부)
+function showOpenResult(title, obtained){
+  const list = obtained || [];
+  const top = RARITY_ORDER_UI.find(r => list.some(o => o.rarity === r));
+  const best = list.filter(o => o.rarity === top);
   const rarityBadge = document.getElementById('rarityBadge');
-  rarityBadge.textContent = RARITY_LABEL[data.treasure.rarity] || '';
-  rarityBadge.className = `rarity-badge ${data.treasure.rarity}`;
-  setResultIcon(data.treasure.key);
-  document.getElementById('treasureName').textContent = data.treasure.name;
-  document.getElementById('treasureDetail').textContent = data.treasure.flavor || '';
+  rarityBadge.textContent = top ? `최고 등급 · ${RARITY_LABEL[top]}` : '';
+  rarityBadge.className = `rarity-badge ${top || ''}`;
+  setResultIcon(best.length === 1 ? best[0].key : null);
+  document.getElementById('treasureName').textContent = title;
+  document.getElementById('treasureDetail').innerHTML = obtainedChipsHtml(best);
   document.getElementById('resultBox').style.display = 'block';
-  setGold(data.totalTreasure);
-
-  updatePityUI(data.mythicPity, data.mythicPityLimit);
-  checkAndTriggerLegendary(data.treasure, data.mythicPityTriggered);
-
-  setTimeout(() => { chest.classList.remove('open'); }, 1500);
-  refreshStatus();
 }
 
 const RARITY_LABEL = { common: '일반', rare: '희귀', epic: '영웅', legendary: '전설', mythic: '신화' };
 
+// 상자를 누르면 충전된 상자를 한 번에 모두 엽니다.
 document.getElementById('chest').addEventListener('click', async function(){
-  if (cachedCharges < 1 || isOpening) return;
+  if (cachedCharges < 1 || isOpening || cachedAutoOpen) return;
   isOpening = true;
   this.style.pointerEvents = 'none';
+  const chest = this;
 
   try {
-    const res = await authFetch('/api/box/open', { method: 'POST' });
+    const res = await authFetch('/api/box/open-all', { method: 'POST' });
     const data = await res.json();
     if (!res.ok){ refreshStatus(); return; }
-    handleOpenSuccess(data);
-  } catch (err) {
-    refreshStatus();
-  } finally {
-    isOpening = false;
-  }
-});
-
-document.getElementById('bulkOpenBtn').addEventListener('click', async function(){
-  if (isOpening) return;
-  const quantity = parseInt(document.getElementById('bulkOpenQty').value, 10);
-  if (!quantity || quantity < 1) return;
-
-  isOpening = true;
-  this.disabled = true;
-  const originalText = this.textContent;
-  this.textContent = '여는 중...';
-
-  try {
-    const res = await authFetch('/api/box/bulk-open', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quantity }),
-    });
-    const data = await res.json();
-    if (!res.ok){ alert(data.message); return; }
 
     syncServerTime(data.serverTime);
     applyChargeInfo(data);
     setGold(data.totalTreasure);
-    document.getElementById('rarityBadge').textContent = '';
-    setResultIcon(null);
-    document.getElementById('treasureName').textContent = `📦 ${data.quantity}개 일괄 오픈`;
-    document.getElementById('treasureDetail').innerHTML = obtainedChipsHtml(data.obtained);
-    document.getElementById('resultBox').style.display = 'block';
-
+    chest.classList.add('open');
+    setTimeout(() => chest.classList.remove('open'), 1200);
+    showOpenResult(`📦 상자 ${data.quantity}개 오픈`, data.obtained);
     updatePityUI(data.mythicPity, data.mythicPityLimit);
     checkAndTriggerLegendary(data.obtained, data.mythicPityTriggered);
-
     renderTick();
     refreshStatus();
   } catch (err) {
-    // 네트워크 실패 시 다음 시도에 맡김
+    refreshStatus();
   } finally {
     isOpening = false;
-    this.textContent = originalText;
-    clampBulkOpenQty();
   }
 });
 
@@ -1113,17 +1041,6 @@ function showCollectionTab(which){
   if (which === 'dex') loadCodex();
 }
 function showBagTab(){ showCollectionTab('run'); }
-
-// 상자 열기 패널 탭 (충전 / 골드 구매)
-function showOpenTab(which){
-  const isCharge = which === 'charge';
-  document.getElementById('openTabCharge').classList.toggle('active', isCharge);
-  document.getElementById('openTabGold').classList.toggle('active', !isCharge);
-  document.getElementById('chargeOpenPanel').classList.toggle('hidden', !isCharge);
-  document.getElementById('goldOpenPanel').classList.toggle('hidden', isCharge);
-}
-document.getElementById('openTabCharge').addEventListener('click', () => showOpenTab('charge'));
-document.getElementById('openTabGold').addEventListener('click', () => showOpenTab('gold'));
 
 // 가방·도감 화면 탭 전환
 document.getElementById('modeTabRun').addEventListener('click', () => showCollectionTab('run'));
@@ -1624,9 +1541,9 @@ function setResultIcon(key){
 }
 
 // -------------------------------
-// 주간 시즌 (매주 목요일 오전 9시)
+// 시즌(매주 목요일) · 오늘의 신화와 규칙(매일) — 둘 다 오전 9시에 바뀜
 // -------------------------------
-let cachedSeasonEndsAt = null;
+let cachedSeasonEndsAt = null;   // 오늘의 신화·규칙이 바뀌는 시각 (배너 카운트다운)
 let lastSeasonInfo = null;
 
 function formatRemaining(ms){
@@ -1650,14 +1567,15 @@ function seasonIconsHtml(mythics, cls){
 function applySeason(season, seasonChange, codex){
   if (!season) return;
   lastSeasonInfo = season;
-  cachedSeasonEndsAt = season.endsAt ? new Date(season.endsAt) : null;
+  cachedSeasonEndsAt = season.dayEndsAt ? new Date(season.dayEndsAt) : null;
   document.getElementById('seasonBannerNo').textContent = `시즌 ${season.number}`;
   document.getElementById('seasonRule').textContent = season.rule
-    ? `📜 이번 주 규칙 ${season.rule.emoji} ${season.rule.name}: ${season.rule.text}` : '';
+    ? `📜 오늘의 규칙 ${season.rule.emoji} ${season.rule.name}: ${season.rule.text}` : '';
   document.getElementById('seasonBannerIcons').innerHTML = seasonIconsHtml(season.mythics, 'season-slot');
+  const seasonLeft = season.endsAt ? ` · 시즌 종료 ${formatRemaining(new Date(season.endsAt) - adjustedNow())}` : '';
   document.getElementById('seasonBannerSub').textContent = codex
-    ? `이번 주 신화 ${season.haveCount}/${season.mythics.length} · 신화 도감 ${codex.obtained}/${codex.total} ›`
-    : `이번 판 신화 ${season.haveCount}/${season.mythics.length} · 매주 신화와 규칙이 바뀌어요 ›`;
+    ? `오늘의 신화 ${season.haveCount}/${season.mythics.length} · 신화 도감 ${codex.obtained}/${codex.total} ›`
+    : `이번 판 신화 ${season.haveCount}/${season.mythics.length}${seasonLeft} ›`;
   document.getElementById('seasonBanner').classList.remove('hidden');
   renderSeasonCountdown();
   maybeShowSeasonOverlay(season, seasonChange);
@@ -1666,31 +1584,41 @@ function applySeason(season, seasonChange, codex){
 function renderSeasonCountdown(){
   const el = document.getElementById('seasonCountdown');
   if (!el) return;
-  el.textContent = cachedSeasonEndsAt ? `⏰ ${formatRemaining(cachedSeasonEndsAt - adjustedNow())} 남음` : '';
-  // 시즌이 끝나는 순간 서버에서 새 시즌을 받아옵니다 (중복 호출 방지)
+  el.textContent = cachedSeasonEndsAt ? `⏰ ${formatRemaining(cachedSeasonEndsAt - adjustedNow())}` : '';
+  // 오늘의 신화가 바뀌는 순간 서버에서 새 정보를 받아옵니다 (중복 호출 방지)
   if (cachedSeasonEndsAt && adjustedNow() >= cachedSeasonEndsAt) {
     cachedSeasonEndsAt = null;
     setTimeout(refreshStatus, 1500);
   }
 }
 
-// 새 시즌을 처음 볼 때 한 번 안내합니다. (모드별로 따로 기억)
+// 새 시즌 / 새로운 날을 처음 볼 때 한 번 안내합니다. (모드별로 따로 기억)
 function seasonSeenKey(){
-  return `boxGameSeasonSeen:${currentUser && currentUser.id}:${currentMode}`;
+  return `boxGameDaySeen:${currentUser && currentUser.id}:${currentMode}`;
 }
 function maybeShowSeasonOverlay(season, seasonChange){
   let seen = null;
-  try { seen = parseInt(localStorage.getItem(seasonSeenKey()), 10); } catch (e) { /* 저장소를 못 쓰면 무시 */ }
-  const isNew = seasonChange || (Number.isInteger(seen) && seen < season.number);
-  try { localStorage.setItem(seasonSeenKey(), String(season.number)); } catch (e) { /* 무시 */ }
-  if (!isNew) return;
+  try { seen = JSON.parse(localStorage.getItem(seasonSeenKey())); } catch (e) { /* 저장소를 못 쓰면 무시 */ }
+  const newSeason = Boolean(seasonChange) || (seen && seen.season < season.number);
+  const newDay = newSeason || (seen && seen.day < season.day);
+  try { localStorage.setItem(seasonSeenKey(), JSON.stringify({ season: season.number, day: season.day })); } catch (e) { /* 무시 */ }
+  if (!newDay) return;
 
-  const reset = seasonChange ? seasonChange.reset : currentMode === 'record';
-  const ruleText = season.rule ? ` 이번 주 규칙은 ${season.rule.emoji} ${season.rule.name}(${season.rule.text})!` : '';
-  document.getElementById('seasonOverlayTitle').textContent = `🎉 시즌 ${season.number} 시작!`;
-  document.getElementById('seasonOverlayText').textContent = (reset
-    ? '기록모드가 새로 시작됐어요. 모두 같은 출발선에서 이번 주 랭킹에 도전해요! (지난 시즌 기록은 랭킹에서 볼 수 있어요)'
-    : '수집모드 진행과 신화 도감은 그대로예요. 이번 주에만 나오는 신화를 모아보세요.') + ruleText;
+  const ruleText = season.rule ? ` 오늘의 규칙은 ${season.rule.emoji} ${season.rule.name}(${season.rule.text})!` : '';
+  let title;
+  let text;
+  if (newSeason) {
+    const reset = seasonChange ? seasonChange.reset : currentMode === 'record';
+    title = `🎉 시즌 ${season.number} 시작!`;
+    text = reset
+      ? '기록모드가 새로 시작됐어요. 모두 같은 출발선에서 이번 시즌 랭킹에 도전해요! (지난 시즌 기록은 랭킹에서 볼 수 있어요)'
+      : '수집모드 진행과 신화 도감은 그대로예요.';
+  } else {
+    title = '☀️ 오늘의 신화가 바뀌었어요';
+    text = '오늘만 나오는 신화 10종이에요. 놓치면 10일 뒤에 다시 와요.';
+  }
+  document.getElementById('seasonOverlayTitle').textContent = title;
+  document.getElementById('seasonOverlayText').textContent = text + ruleText;
   document.getElementById('seasonOverlayIcons').innerHTML = season.mythics.map(m => `
     <div class="season-overlay-item ${m.have ? 'have' : ''}">
       ${itemIconHtml(m.key, 'season-icon', !m.have)}
@@ -1765,13 +1693,13 @@ async function loadCodex(){
       <div class="codex-progress"><span>🌟 신화 도감 <strong>${data.obtained}</strong> / ${data.total}</span><span class="codex-bonus">${rank.emoji} ${escapeHtml(rank.name)}</span></div>
       <div class="goal-bar-wrap"><div class="goal-bar-fill codex-bar" style="width:${pct}%"></div></div>
       <p class="codex-rule">${nextText} · 칭호는 랭킹에서 닉네임 옆에 보여요.<br>
-      매주 목요일 오전 9시마다 신화 10종이 바뀌어 등장해요. 놓치면 10주 뒤에 다시 와요! · 천장은 아직 없는 신화를 먼저 줘요.</p>`;
+      매일 오전 9시마다 신화 10종이 바뀌어 등장해요. 놓치면 10일 뒤에 다시 와요! · 천장은 아직 없는 신화를 먼저 줘요.</p>`;
 
     groupsEl.innerHTML = data.groups.map(g => {
       const have = g.items.filter(i => i.obtained).length;
       const when = g.isCurrent
-        ? `<span class="codex-when now">이번 주 등장 중 · 종료까지 ${formatRemaining(new Date(data.seasonEndsAt) - adjustedNow())}</span>`
-        : `<span class="codex-when">시즌 ${g.nextSeason} · ${g.nextStartsAt ? formatSeasonDate(g.nextStartsAt) : ''} 등장</span>`;
+        ? `<span class="codex-when now">오늘 등장 중 · 교체까지 ${formatRemaining(new Date(data.dayEndsAt) - adjustedNow())}</span>`
+        : `<span class="codex-when">${g.daysUntil === 1 ? '내일' : `${g.daysUntil}일 뒤`} · ${formatSeasonDate(g.nextStartsAt)} 오전 9시 등장</span>`;
       const cards = g.items.map(i => `
         <div class="codex-card ${i.obtained ? 'have' : ''}" title="${escapeHtml(i.obtained ? `${i.flavor} (${new Date(i.firstObtainedAt).toLocaleDateString()} 획득)` : '아직 얻지 못한 신화')}">
           <span class="tier-badge">${'Ⅰ Ⅱ Ⅲ Ⅳ'.split(' ')[i.tier - 1]}</span>

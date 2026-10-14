@@ -58,7 +58,7 @@ function getRotationMythics(rotation) {
   return MYTHICS_BY_ROTATION[rotation] || [];
 }
 
-// 이번 시즌 상자에서 나오는 아이템: 일반~전설 전부 + 이번 시즌 신화 10종
+// 오늘 상자에서 나오는 아이템: 일반~전설 전부 + 오늘의 신화 10종
 function getSeasonDexItems(rotation) {
   return [...NON_MYTHIC_TREASURES, ...getRotationMythics(rotation)];
 }
@@ -311,16 +311,17 @@ function describeItemEffect(type, value) {
   }
 }
 
-// 이번 주 규칙 (시즌 번호로 돌아가며 정해짐)
-function getSeasonRule(season) {
-  return SEASON_RULES[((season % SEASON_RULES.length) + SEASON_RULES.length) % SEASON_RULES.length];
+// 오늘의 규칙 (매일 돌아가며 정해짐. +2는 처음 적용한 날의 규칙을 이어가기 위한 값)
+function getDailyRule(day) {
+  const n = SEASON_RULES.length;
+  return SEASON_RULES[(((day + 2) % n) + n) % n];
 }
 
-// box_claims 한 줄(claim)과 보유 아이템(owned)에서 업그레이드·환생 특성·아이템 효과·이번 주 규칙이 반영된 능력치를 계산합니다.
-// claim.season_rule: 이번 주 규칙 (DB 컬럼이 아니라 정산할 때 store.settle 이 넣어줍니다)
+// box_claims 한 줄(claim)과 보유 아이템(owned)에서 업그레이드·환생 특성·아이템 효과·오늘의 규칙이 반영된 능력치를 계산합니다.
+// claim.season_rule: 오늘의 규칙 (DB 컬럼이 아니라 정산할 때 store.settle 이 넣어줍니다)
 function getClaimStats(claim, owned = {}) {
   const effects = getItemEffects(owned);
-  // 이번 주 규칙은 아이템 효과 최대치와 별개로 더해집니다.
+  // 오늘의 규칙은 아이템 효과 최대치와 별개로 더해집니다.
   const rule = claim.season_rule;
   if (rule) effects[rule.type] += rule.value;
   const baseChargeMs = getChargeIntervalMs(claim.upgrade_charge_speed + getPerkLevel(claim, 'chargeSpeed'));
@@ -335,7 +336,7 @@ function getClaimStats(claim, owned = {}) {
     goldenBonusPercent: effects.golden,
     boxDiscountPercent: effects.boxDiscount,
     mythicIncomePercent: effects.incomePercent,
-    // 수입 배율 세 번째 항목: 아이템 효과(전체 수입 +%) + 이번 주 규칙
+    // 수입 배율 세 번째 항목: 아이템 효과(전체 수입 +%) + 오늘의 규칙
     itemIncomePercent: 100 + effects.incomePercent,
     upgradeDiscountPercent: effects.upgradeDiscount,
     autoOpenDiscountPercent: effects.autoOpenDiscount,
@@ -412,7 +413,7 @@ module.exports = {
   describeMythicEffect,
   getItemStars,
   getCollectorRank,
-  getSeasonRule,
+  getDailyRule,
   getUpgradeCost,
   describeUpgradeEffect,
   getClaimStats,

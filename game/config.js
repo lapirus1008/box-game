@@ -79,7 +79,7 @@ const TREASURES = [
   // 전설 (legendary) - 매우 희귀, 갖고 있으면 초당 골드도 추가로 벌립니다
   { key: 'phoenix_feather', name: '불사조의 깃털', rarity: 'legendary', emoji: '🔥', amount: 500, weight: 0.3, flavor: '전설 속에서만 존재한다던 그 깃털.' },
   { key: 'hourglass_sand',  name: '시간의 모래',   rarity: 'legendary', emoji: '⏳', amount: 600, weight: 0.2, flavor: '만지는 순간 시간이 멈춘 듯한 착각이 든다.' },
-  // 신화 (mythic) 100종은 game/mythics.js 에 있습니다. 시즌마다 10종씩만 상자에서 나옵니다.
+  // 신화 (mythic) 100종은 game/mythics.js 에 있습니다. 매일 10종씩만 상자에서 나옵니다.
   ...MYTHICS,
 ];
 
@@ -127,19 +127,19 @@ const EFFECT_TYPE_CAPS = {
 const MIN_ITEM_CHARGE_INTERVAL_MS = 3 * 1000; // 충전 속도 효과로도 3초보다 빨라지지 않습니다
 
 // -------------------------------
-// 이번 주 규칙 (시즌마다 하나씩 돌아가며 적용, 두 모드 공통)
+// 오늘의 규칙 (매일 오전 9시에 하나씩 돌아가며 적용, 두 모드 공통)
 // -------------------------------
-// 매주 최적의 공략법이 달라지도록, 효과 하나를 크게 올려줍니다. (아이템 효과 최대치와 별개로 더해짐)
-// 순서: 시즌 번호 % 개수. 효과 종류는 ITEM_EFFECTS 와 같습니다.
+// 매일 최적의 공략법이 달라지도록, 효과 하나를 크게 올려줍니다. (아이템 효과 최대치와 별개로 더해짐)
+// 효과 종류는 ITEM_EFFECTS 와 같습니다.
 const SEASON_RULES = [
-  { key: 'luck',      emoji: '🍀', name: '행운의 주', type: 'luck',             value: 25 },
-  { key: 'craftsman', emoji: '🔨', name: '장인의 주', type: 'upgradeDiscount',  value: 25 },
-  { key: 'mythic',    emoji: '🌸', name: '신화의 주', type: 'pity',             value: 800 },
-  { key: 'swift',     emoji: '⚡', name: '쾌속의 주', type: 'chargeSpeed',      value: 20 },
-  { key: 'golden',    emoji: '🎁', name: '황금의 주', type: 'golden',           value: 100 },
-  { key: 'market',    emoji: '🏷️', name: '시장의 주', type: 'boxDiscount',      value: 20 },
-  { key: 'plenty',    emoji: '💰', name: '풍요의 주', type: 'incomePercent',    value: 50 },
-  { key: 'clockwork', emoji: '⏳', name: '태엽의 주', type: 'autoOpenDiscount', value: 40 },
+  { key: 'luck',      emoji: '🍀', name: '행운의 날', type: 'luck',             value: 25 },
+  { key: 'craftsman', emoji: '🔨', name: '장인의 날', type: 'upgradeDiscount',  value: 25 },
+  { key: 'mythic',    emoji: '🌸', name: '신화의 날', type: 'pity',             value: 800 },
+  { key: 'swift',     emoji: '⚡', name: '쾌속의 날', type: 'chargeSpeed',      value: 20 },
+  { key: 'golden',    emoji: '🎁', name: '황금의 날', type: 'golden',           value: 100 },
+  { key: 'market',    emoji: '🏷️', name: '시장의 날', type: 'boxDiscount',      value: 20 },
+  { key: 'plenty',    emoji: '💰', name: '풍요의 날', type: 'incomePercent',    value: 50 },
+  { key: 'clockwork', emoji: '⏳', name: '태엽의 날', type: 'autoOpenDiscount', value: 40 },
 ];
 
 // 기록모드 구간 기록(스플릿): 환생 목표 골드의 10%, 20%, … 90%에 처음 닿은 시각을 남기고

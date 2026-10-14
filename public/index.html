@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>시간의 상자</title>
-<meta name="description" content="상자를 열어 신화 아이템 100종을 모으는 방치형 수집 게임. 매주 목요일 새 시즌!">
+<meta name="description" content="상자를 열어 신화 아이템 100종을 모으는 방치형 수집 게임. 매일 바뀌는 신화와 규칙!">
 <meta name="theme-color" content="#0B1220">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/app/icon-192.png" sizes="192x192" type="image/png">
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261014">
+<link rel="stylesheet" href="style.css?v=20261014c">
 </head>
 <body>
 
@@ -37,10 +37,10 @@
 <!-- 새 시즌 안내 -->
 <div id="seasonOverlay" class="info-overlay">
   <div class="away-card season-card">
-    <p class="away-eyebrow">🗓 매주 목요일 오전 9시 새 시즌</p>
+    <p class="away-eyebrow">☀️ 매일 오전 9시 신화·규칙 교체 · 🗓 매주 목요일 새 시즌</p>
     <p class="season-title" id="seasonOverlayTitle">시즌 3 시작!</p>
     <p class="away-time" id="seasonOverlayText"></p>
-    <p class="season-sub-title">이번 주에만 나오는 신화 10종</p>
+    <p class="season-sub-title">오늘만 나오는 신화 10종</p>
     <div class="season-icon-grid" id="seasonOverlayIcons"></div>
     <button id="seasonOverlayCloseBtn">확인</button>
   </div>
@@ -75,16 +75,10 @@
   </div>
 </div>
 
-<div id="mythicEventOverlay">
-  <div class="mythic-rays"></div>
-  <div class="mythic-card">
-    <p class="mythic-eyebrow">✦ 신화 등급 발견 ✦</p>
-    <img class="mythic-icon" id="mythicEventIcon" src="icons/items/astral_compass.svg" alt="">
-    <p class="mythic-effect" id="mythicEventEffect"></p>
-    <div class="mythic-name" id="mythicEventName">천체의 나침반</div>
-    <p class="mythic-flavor" id="mythicEventFlavor"></p>
-    <button id="mythicEventCloseBtn">✨ 확인</button>
-  </div>
+<!-- 신화 획득 팝업: 2초쯤 떴다가 사라짐 (누르면 바로 닫힘). 여러 개면 3칸씩 줄줄이 -->
+<div id="mythicPopup" class="mythic-popup" role="status" aria-live="polite">
+  <p class="mythic-popup-title" id="mythicPopupTitle">✦ 신화 획득! ✦</p>
+  <div class="mythic-popup-grid" id="mythicPopupGrid"></div>
 </div>
 
   <!-- 로그인 / 회원가입 화면 -->
@@ -136,10 +130,10 @@
 
     <div class="rank-chip hidden" id="collectorRankMain"></div>
 
-    <!-- 이번 시즌: 남은 시간 + 이번 주 규칙 + 이번 주 신화 10종 (누르면 수집모드는 도감, 기록모드는 가방) -->
+    <!-- 시즌 + 오늘의 규칙 + 오늘의 신화 10종 (누르면 수집모드는 도감, 기록모드는 가방) -->
     <button class="season-banner hidden" id="seasonBanner">
       <span class="season-banner-top">
-        <span>🗓 <strong id="seasonBannerNo">시즌</strong> · 이번 주</span>
+        <span>🗓 <strong id="seasonBannerNo">시즌</strong> · 오늘의 신화</span>
         <span class="season-countdown" id="seasonCountdown"></span>
       </span>
       <span class="season-rule" id="seasonRule"></span>
@@ -173,22 +167,11 @@
       <div id="treasureDetail" style="font-size:13px; color:var(--ink-dim);"></div>
     </div>
 
-    <!-- 상자 열기: 충전(무료) / 골드 구매를 탭으로 묶어 한 덩어리로 -->
+    <!-- 충전된 상자는 위의 상자를 누르면 한 번에 모두 열립니다.
+         아래는 충전과는 별개로 골드를 내고 상자를 바로 구매해서 여는 곳입니다. -->
     <div class="bulk-open-box">
-      <div class="open-tabs">
-        <button class="open-tab active" id="openTabCharge">📦 충전으로 열기</button>
-        <button class="open-tab" id="openTabGold">💰 골드로 구매</button>
-      </div>
-      <div id="chargeOpenPanel">
-        <div class="bulk-open-row">
-          <input type="number" id="bulkOpenQty" value="1" min="1" step="1">
-          <button id="maxQtyBtn">최대로</button>
-          <button id="bulkOpenBtn">한번에 열기</button>
-        </div>
-        <p id="bulkOpenCostText">충전 0/100 · 무료로 소모</p>
-      </div>
-      <!-- 충전과는 완전히 별개: 골드만 내면 충전 여부와 상관없이 상자를 바로 구매해서 엽니다 -->
-      <div id="goldOpenPanel" class="hidden">
+      <p class="gold-open-title">💰 골드로 상자 구매</p>
+      <div id="goldOpenPanel">
         <div class="bulk-open-row">
           <input type="number" id="buyBoxQty" value="1" min="1" step="1">
           <button id="maxBuyQtyBtn">최대로</button>
@@ -273,7 +256,7 @@
 
     <div class="craft-result" id="craftResult"></div>
 
-    <!-- 도감 (수집모드 전용, 영구): 신화 100종(매주 10종씩 등장) + 일반~전설 -->
+    <!-- 도감 (수집모드 전용, 영구): 신화 100종(매일 10종씩 등장) + 일반~전설 -->
     <div id="collectionModeView" class="hidden">
       <div class="codex-head" id="codexHead"></div>
       <h3 class="dex-heading">🌟 신화 100종</h3>
@@ -348,7 +331,7 @@
   </div>
 
 <!-- 배포할 때마다 ?v= 값을 바꾸면 브라우저·앱이 예전 파일을 쓰지 않습니다 -->
-<script src="app.js?v=20261014"></script>
+<script src="app.js?v=20261014c"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {
