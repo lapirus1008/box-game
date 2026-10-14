@@ -234,6 +234,7 @@ const INCOME_BOOST_MULTIPLIER = 2;
 //   boxes(연 상자 수) · crafts(합성 횟수) · legendary/mythic(획득 수) · golden(황금 상자)
 //   bestIncome(최고 분당 수입) · rebirths(환생 횟수)
 // reward: { gold } 또는 { points }(환생 포인트, 기록모드 전용 업적에만)
+// 업적은 수집모드 전용입니다(기록모드는 매주 같은 출발선에서 겨루므로 보상을 주지 않아요).
 const ACHIEVEMENTS = [
   { key: 'boxes_1',     stat: 'boxes',      goal: 100,     emoji: '📦', name: '첫 발걸음',     reward: { gold: 2000 } },
   { key: 'boxes_2',     stat: 'boxes',      goal: 1000,    emoji: '📦', name: '상자 수집가',   reward: { gold: 15000 } },
@@ -252,9 +253,6 @@ const ACHIEVEMENTS = [
   { key: 'income_3',    stat: 'bestIncome', goal: 100000,  emoji: '💰', name: '황금 제국',     reward: { gold: 1000000 } },
   { key: 'golden_1',    stat: 'golden',     goal: 10,      emoji: '✨', name: '눈치 빠른 손',  reward: { gold: 20000 } },
   { key: 'golden_2',    stat: 'golden',     goal: 100,     emoji: '✨', name: '황금 사냥꾼',   reward: { gold: 200000 } },
-  { key: 'rebirth_1',   stat: 'rebirths',   goal: 1,       emoji: '🌀', name: '다시 태어나다', reward: { points: 1 }, recordOnly: true },
-  { key: 'rebirth_2',   stat: 'rebirths',   goal: 5,       emoji: '🌀', name: '윤회의 고리',   reward: { points: 2 }, recordOnly: true },
-  { key: 'rebirth_3',   stat: 'rebirths',   goal: 20,      emoji: '🌀', name: '영원한 여행자', reward: { points: 3 }, recordOnly: true },
 ];
 
 // 이 시간 이상 접속하지 않았다가 돌아오면 "자리 비운 동안" 요약을 보여줍니다.

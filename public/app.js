@@ -45,9 +45,21 @@ const upgradeScreen = document.getElementById('upgradeScreen');
 const achievementScreen = document.getElementById('achievementScreen');
 const authError = document.getElementById('authError');
 
-// 골드는 항상 소수점 없이, 천 단위 쉼표를 붙여 표시합니다.
+// 골드는 소수점 없이 표시합니다. 10만 미만은 쉼표(95,003), 그 이상은 한국식 단위로
+// 큰 단위 두 개까지 보여줘요(12만 3,456 · 1억 2,345만 · 3조 20억 · 5경).
+const KOREAN_UNITS = [[1e20, '해'], [1e16, '경'], [1e12, '조'], [1e8, '억'], [1e4, '만']];
 function formatGold(value){
-  return Math.floor(Number(value) || 0).toLocaleString();
+  const n = Math.floor(Number(value) || 0);
+  const abs = Math.abs(n);
+  if (abs < 100000) return n.toLocaleString();
+  const sign = n < 0 ? '-' : '';
+  const i = KOREAN_UNITS.findIndex(([unit]) => abs >= unit);
+  const [unit, name] = KOREAN_UNITS[i];
+  const head = Math.floor(abs / unit);
+  const subUnit = unit / 1e4;
+  const rest = Math.floor((abs % unit) / subUnit);
+  const restName = KOREAN_UNITS[i + 1] ? KOREAN_UNITS[i + 1][1] : '';
+  return `${sign}${head.toLocaleString()}${name}${rest > 0 ? ` ${rest.toLocaleString()}${restName}` : ''}`;
 }
 
 // 지금 이 순간의 골드 (서버 정산값 + 정산 이후 쌓인 골드). 서버와 같은 방식으로 내림 계산합니다.
@@ -273,7 +285,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
   goldenBoxExpireAt = null;
   document.getElementById('goldenBox').classList.add('hidden');
   resetGameResultUI();
-  [gameScreen, collectionScreen, upgradeScreen, achievementScreen, rankingScreen].forEach(el => el.classList.add('hidden'));
+  [gameScreen, collectionScreen, upgradeScreen, achievementScreen, rankingScreen, document.getElementById('guestbookScreen')].forEach(el => el.classList.add('hidden'));
   document.body.classList.remove('in-game');
   authScreen.classList.remove('hidden');
 });
@@ -290,9 +302,11 @@ function applyModeUI(mode){
   document.getElementById('collectionModeSubtext').textContent = isRecord
     ? '가방은 환생하면 비워져요'
     : '도감은 영구히 남아요';
-  // 기록모드에는 도감이 없으므로, 모드를 바꾸면 가방 탭으로 돌아갑니다.
+  // 기록모드에는 도감·업적이 없으므로, 모드를 바꾸면 가방 탭으로 돌아갑니다.
   if (isRecord) showCollectionTab('run');
   if (isRecord && typeof currentTab !== 'undefined' && currentTab === 'dex') goTab('bag');
+  // 업적도 수집모드 전용이에요.
+  if (isRecord && typeof currentTab !== 'undefined' && currentTab === 'achievement') goTab('home');
 
   document.getElementById('modeTabRun').textContent = '🎒 가방';
   document.getElementById('runModeHint').textContent = '같은 아이템 3개 → 한 등급 위로 합성 · 🔓 잠그면 재료로 안 써요';
@@ -343,7 +357,7 @@ let currentTab = 'home';
 function goTab(tab){
   currentTab = tab;
   document.querySelectorAll('#tabBar .tab-item').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
-  [gameScreen, collectionScreen, upgradeScreen, achievementScreen, rankingScreen].forEach(el => el.classList.add('hidden'));
+  [gameScreen, collectionScreen, upgradeScreen, achievementScreen, rankingScreen, document.getElementById('guestbookScreen')].forEach(el => el.classList.add('hidden'));
   window.scrollTo(0, 0);
   if (tab === 'home') {
     gameScreen.classList.remove('hidden');
@@ -351,6 +365,7 @@ function goTab(tab){
     return;
   }
   // 각 화면을 여는 기존 버튼 동작(데이터 불러오기 포함)을 그대로 씁니다.
+  if (tab === 'guestbook') { document.getElementById('guestbookScreen').classList.remove('hidden'); loadGuestbook(); return; }
   document.getElementById(TAB_OPENERS[tab]).click();
   if (tab === 'bag' || tab === 'dex') {
     showCollectionTab(tab === 'dex' ? 'dex' : 'run');
@@ -507,7 +522,7 @@ document.getElementById('awayCloseBtn').addEventListener('click', () => {
 // 환생 조건(골드)을 서버 값으로 맞추고 버튼 문구도 갱신
 function applyRebirthGoal(goal){
   REBIRTH_GOLD_REQUIRED = goal;
-  const text = `${goal.toLocaleString()}G`;
+  const text = `${formatGold(goal)}G`;
   document.getElementById('mainRebirthBtn').textContent = `✨ 환생하기! (${text})`;
   document.getElementById('rebirthBtn').textContent = `✨ 환생하기 (${text})`;
 }
@@ -546,6 +561,7 @@ function renderTick(){
 
   const canOpen = cachedCharges >= 1 && !cachedAutoOpen;
   chest.style.opacity = canOpen ? '1' : '0.6';
+  chest.classList.toggle('ready', canOpen);
   chest.style.pointerEvents = (canOpen && !isOpening) ? 'auto' : 'none';
 
   if (cachedAutoOpen) {
@@ -600,7 +616,7 @@ function renderTick(){
   // 환생 목표 진행바
   const goldNow = liveGold();
   const pct = Math.min(100, (goldNow / REBIRTH_GOLD_REQUIRED) * 100);
-  document.getElementById('rebirthGoalText').textContent = `${goldNow.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
+  document.getElementById('rebirthGoalText').textContent = `${formatGold(goldNow)} / ${formatGold(REBIRTH_GOLD_REQUIRED)}G`;
   document.getElementById('rebirthGoalBar').style.width = `${pct}%`;
 
   const goalBox = document.getElementById('rebirthGoalBox');
@@ -612,7 +628,7 @@ function renderTick(){
   mainRebirthBtn.classList.toggle('hidden', !goalReady); // 환생 가능할 때만 버튼 노출
 
   const rebirthProgressText = document.getElementById('rebirthProgressText');
-  rebirthProgressText.textContent = `${goldNow.toLocaleString()} / ${REBIRTH_GOLD_REQUIRED.toLocaleString()}G`;
+  rebirthProgressText.textContent = `${formatGold(goldNow)} / ${formatGold(REBIRTH_GOLD_REQUIRED)}G`;
   const rebirthBtn = document.getElementById('rebirthBtn');
   rebirthBtn.disabled = !goalReady;
   rebirthBtn.classList.toggle('hidden', !goalReady);
@@ -1559,24 +1575,23 @@ document.getElementById('rankNextBtn').addEventListener('click', async () => {
 });
 
 // 랭킹 시즌 선택 (드롭다운: 시즌이 늘어나도 한 줄로 유지, 현재 시즌이 맨 위·기본값)
+// 시즌은 칩으로 나열해서 눌러서 바로 바꿉니다 (최신 시즌이 맨 앞).
 function renderSeasonTabs(currentSeason, shownSeason){
-  const select = document.getElementById('seasonSelect');
-  select.innerHTML = '';
+  const wrap = document.getElementById('seasonPicker');
+  wrap.innerHTML = '';
   for (let s = currentSeason; s >= 1; s--) {
-    const option = document.createElement('option');
-    option.value = s;
-    option.textContent = s === currentSeason ? `시즌 ${s} (현재)` : `시즌 ${s}`;
-    option.selected = s === shownSeason;
-    select.appendChild(option);
+    const chip = document.createElement('button');
+    chip.className = `season-chip${s === shownSeason ? ' active' : ''}`;
+    chip.textContent = s === currentSeason ? `시즌 ${s} · 지금` : `시즌 ${s}`;
+    chip.addEventListener('click', () => {
+      if (s === shownSeason) return;
+      currentRankSeason = s === currentSeason ? null : s;
+      currentRankPage = 1;
+      loadRanking();
+    });
+    wrap.appendChild(chip);
   }
 }
-document.getElementById('seasonSelect').addEventListener('change', async (e) => {
-  const picked = parseInt(e.target.value, 10);
-  const isCurrent = picked === parseInt(e.target.options[0].value, 10);
-  currentRankSeason = isCurrent ? null : picked;
-  currentRankPage = 1;
-  await loadRanking();
-});
 
 // -------------------------------
 // 아이템 아이콘
@@ -1777,6 +1792,100 @@ async function loadCodex(){
 }
 
 // -------------------------------
+// 방명록
+// -------------------------------
+const guestbookInput = document.getElementById('guestbookInput');
+let guestbookOldestId = null;
+
+function formatTimeAgo(iso){
+  const sec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (sec < 60) return '방금';
+  if (sec < 3600) return `${Math.floor(sec / 60)}분 전`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}시간 전`;
+  if (sec < 86400 * 7) return `${Math.floor(sec / 86400)}일 전`;
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}월 ${d.getDate()}일`;
+}
+function renderGuestbookEntry(e){
+  const title = e.title ? `<span class="rank-title" title="${escapeHtml(e.title.name)}">${e.title.emoji}</span>` : '';
+  const action = e.isMine
+    ? `<button class="link-btn" data-gb-delete="${e.id}">삭제</button>`
+    : `<button class="link-btn" data-gb-report="${e.id}">신고</button>`;
+  return `
+    <div class="guestbook-entry${e.isMine ? ' mine' : ''}">
+      <div class="guestbook-meta"><strong>${title}${escapeHtml(e.nickname)}</strong><small>${formatTimeAgo(e.createdAt)}</small>${action}</div>
+      <p class="guestbook-text">${escapeHtml(e.message)}</p>
+    </div>`;
+}
+async function loadGuestbook(more = false){
+  const listEl = document.getElementById('guestbookList');
+  const moreBtn = document.getElementById('guestbookMoreBtn');
+  if (!more) { guestbookOldestId = null; listEl.innerHTML = '<p class="guestbook-empty">불러오는 중...</p>'; }
+  try {
+    const res = await authFetch(`/api/guestbook${more && guestbookOldestId ? `?before=${guestbookOldestId}` : ''}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+    const html = data.entries.map(renderGuestbookEntry).join('');
+    if (more) listEl.insertAdjacentHTML('beforeend', html);
+    else listEl.innerHTML = html || '<p class="guestbook-empty">아직 글이 없어요. 첫 인사를 남겨 보세요!</p>';
+    if (data.entries.length) guestbookOldestId = data.entries[data.entries.length - 1].id;
+    moreBtn.classList.toggle('hidden', !data.hasMore);
+  } catch (err) {
+    if (!more) listEl.innerHTML = '<p class="guestbook-empty">방명록을 불러오지 못했어요.</p>';
+  }
+}
+guestbookInput.addEventListener('input', () => {
+  document.getElementById('guestbookCount').textContent = `${[...guestbookInput.value].length} / 200`;
+});
+document.getElementById('guestbookForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('guestbookSubmitBtn');
+  if (!guestbookInput.value.trim()) return;
+  btn.disabled = true;
+  try {
+    const res = await authFetch('/api/guestbook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: guestbookInput.value }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.message, true); return; }
+    guestbookInput.value = '';
+    document.getElementById('guestbookCount').textContent = '0 / 200';
+    await loadGuestbook();
+  } finally {
+    btn.disabled = false;
+  }
+});
+document.getElementById('guestbookMoreBtn').addEventListener('click', () => loadGuestbook(true));
+document.getElementById('guestbookList').addEventListener('click', async (e) => {
+  const del = e.target.closest('[data-gb-delete]');
+  const rep = e.target.closest('[data-gb-report]');
+  if (!del && !rep) return;
+  if (del && !confirm('이 글을 지울까요?')) return;
+  if (rep && !confirm('이 글을 신고할까요? 신고한 글은 바로 안 보이게 돼요.')) return;
+  const id = (del || rep).dataset[del ? 'gbDelete' : 'gbReport'];
+  const res = await authFetch(del ? `/api/guestbook/${id}` : `/api/guestbook/${id}/report`, { method: del ? 'DELETE' : 'POST' });
+  const data = await res.json();
+  showToast(data.message, !res.ok);
+  if (res.ok) (del || rep).closest('.guestbook-entry').remove();
+});
+
+// -------------------------------
+// 설정 (상단 ⚙️): 초심으로 돌아가기, 로그아웃, 개인정보처리방침, 계정 삭제
+// -------------------------------
+const settingsOverlay = document.getElementById('settingsOverlay');
+document.getElementById('settingsBtn').addEventListener('click', () => {
+  document.getElementById('settingsNickname').textContent = currentUser ? currentUser.nickname : '';
+  document.getElementById('settingsEmail').textContent = currentUser ? currentUser.email : '';
+  settingsOverlay.classList.add('show');
+});
+document.getElementById('settingsCloseBtn').addEventListener('click', () => settingsOverlay.classList.remove('show'));
+// 설정 안의 버튼을 누르면 창을 닫고 진행합니다(확인창·계정 삭제 창이 그 위에 뜨도록).
+['resetRunBtn', 'logoutBtn', 'openDeleteAccountBtn'].forEach(id =>
+  document.getElementById(id).addEventListener('click', () => settingsOverlay.classList.remove('show'), true));
+
+// -------------------------------
 // 계정 삭제 (스토어 정책: 앱 안에서 계정을 지울 수 있어야 함)
 // -------------------------------
 document.getElementById('openDeleteAccountBtn').addEventListener('click', () => {
@@ -1874,10 +1983,12 @@ function setRankType(type){
   currentRankType = type;
   currentRankPage = 1;
   currentRankSeason = null;
-  document.getElementById('rankingTitle').textContent = type === 'collection' ? '🌟 신화 수집 랭킹' : '🏆 시즌 기록 랭킹';
+  document.querySelectorAll('[data-rank-type]').forEach(btn => btn.classList.toggle('active', btn.dataset.rankType === type));
   document.getElementById('seasonPicker').classList.toggle('hidden', type !== 'record');
   loadRanking();
 }
+document.querySelectorAll('[data-rank-type]').forEach(btn =>
+  btn.addEventListener('click', () => { if (btn.dataset.rankType !== currentRankType) setRankType(btn.dataset.rankType); }));
 function renderEmptyRankRow(type){
   return `<div class="rank-row empty"><span class="rank-num"></span><span class="rank-name">-</span><span class="rank-time">${type === 'collection' ? '-' : '--:--:--'}</span></div>`;
 }

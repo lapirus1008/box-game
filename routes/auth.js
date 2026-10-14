@@ -218,7 +218,7 @@ router.post('/delete-account', deleteLimiter, handle('서버 오류로 계정을
 
   await withTransaction(async (client) => {
     // users를 참조하는 테이블부터 지웁니다.
-    for (const table of ['user_items', 'user_discoveries', 'rebirth_history', 'box_claims']) {
+    for (const table of ['guestbook_reports', 'guestbook_entries', 'user_items', 'user_discoveries', 'rebirth_history', 'box_claims']) {
       await client.query(`DELETE FROM ${table} WHERE user_id = $1`, [user.id]);
     }
     await client.query('DELETE FROM users WHERE id = $1', [user.id]);

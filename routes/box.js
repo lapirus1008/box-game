@@ -421,23 +421,22 @@ function describeReward(reward) {
 
 function achievementsResponse(mode, claim) {
   const claimed = claim.achievements_claimed || {};
-  const list = ACHIEVEMENTS
-    .filter(a => !a.recordOnly || store.isPrestigeMode(mode))
-    .map(a => {
-      const value = getStatValue(claim, a.stat);
-      const isClaimed = Boolean(claimed[a.key]);
-      return {
-        key: a.key,
-        emoji: a.emoji,
-        name: a.name,
-        stat: a.stat,
-        goal: a.goal,
-        progress: Math.min(value, a.goal),
-        claimed: isClaimed,
-        claimable: !isClaimed && value >= a.goal,
-        rewardText: describeReward(a.reward),
-      };
-    });
+  if (store.isPrestigeMode(mode)) return { achievements: [], claimableAchievements: 0 };
+  const list = ACHIEVEMENTS.map(a => {
+    const value = getStatValue(claim, a.stat);
+    const isClaimed = Boolean(claimed[a.key]);
+    return {
+      key: a.key,
+      emoji: a.emoji,
+      name: a.name,
+      stat: a.stat,
+      goal: a.goal,
+      progress: Math.min(value, a.goal),
+      claimed: isClaimed,
+      claimable: !isClaimed && value >= a.goal,
+      rewardText: describeReward(a.reward),
+    };
+  });
   return { achievements: list, claimableAchievements: list.filter(a => a.claimable).length };
 }
 
@@ -941,7 +940,7 @@ router.post('/achievement', handle('서버 오류로 업적 보상을 받지 못
 
   return withSave(userId, async (client, mode, save) => {
     const { claim } = save;
-    if (achievement.recordOnly && !store.isPrestigeMode(mode)) throw new HttpError(400, '기록모드 전용 업적입니다.');
+    if (store.isPrestigeMode(mode)) throw new HttpError(400, '업적은 수집모드에서만 받을 수 있어요.');
     const claimedMap = claim.achievements_claimed || {};
     if (claimedMap[achievement.key]) throw new HttpError(400, '이미 보상을 받은 업적입니다.');
     if (getStatValue(claim, achievement.stat) < achievement.goal) throw new HttpError(400, '아직 달성하지 못한 업적입니다.');
@@ -1469,3 +1468,5 @@ router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) 
 }));
 
 module.exports = router;
+// 방명록에서도 닉네임 옆 칭호를 보여주려고 같이 내보냅니다.
+module.exports.collectorTitlesFor = collectorTitlesFor;

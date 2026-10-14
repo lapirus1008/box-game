@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261014h">
+<link rel="stylesheet" href="style.css?v=20261014l">
 </head>
 <body>
 
@@ -55,6 +55,21 @@
     <p class="golden-info-note" id="incomeHelpNote"></p>
     <button class="link-btn" id="goldenHintBtn" style="margin:0 0 12px;">🎁 황금 상자란?</button>
     <button id="incomeHelpCloseBtn">확인</button>
+  </div>
+</div>
+
+<!-- 설정 (상단 ⚙️) -->
+<div id="settingsOverlay" class="info-overlay">
+  <div class="away-card settings-card">
+    <p class="away-eyebrow">⚙️ 설정</p>
+    <div class="settings-account"><strong id="settingsNickname"></strong><small id="settingsEmail"></small></div>
+    <div class="settings-list">
+      <button class="settings-item record-only" id="resetRunBtn">🔄 초심으로 돌아가기<small>이번 판을 처음부터 다시 시작</small></button>
+      <button class="settings-item" id="logoutBtn">🚪 로그아웃</button>
+      <a class="settings-item" href="privacy.html" target="_blank" rel="noopener">📄 개인정보처리방침</a>
+      <button class="settings-item danger" id="openDeleteAccountBtn">🗑 계정 삭제</button>
+    </div>
+    <button id="settingsCloseBtn">닫기</button>
   </div>
 </div>
 
@@ -128,9 +143,12 @@
   <!-- 게임 화면 -->
   <div class="card hidden" id="gameScreen">
     <div class="top-row">
-      <div class="greeting">안녕하세요, <strong id="userNickname"></strong>님</div>
+      <div class="greeting-wrap">
+        <div class="greeting">안녕하세요, <strong id="userNickname"></strong>님</div>
+        <div class="rank-chip hidden" id="collectorRankMain"></div>
+      </div>
       <span class="mode-chip" id="modeBadge">🏆 기록모드</span>
-      <button id="logoutBtn">로그아웃</button>
+      <button class="settings-btn" id="settingsBtn" aria-label="설정">⚙️</button>
     </div>
 
     <!-- 보유 골드 + 분당 수입. ? 를 누르면 수입이 어떻게 계산되는지 보여줍니다 -->
@@ -149,10 +167,13 @@
 
     <div class="chest-wrap">
       <div class="chest" id="chest">
+        <div class="chest-shadow"></div>
         <div class="chest-glow"></div>
-        <div class="chest-lid"></div>
+        <div class="chest-rays"></div>
+        <div class="chest-body"><span class="chest-band left"></span><span class="chest-band right"></span></div>
+        <div class="chest-lid"><span class="chest-band left"></span><span class="chest-band right"></span></div>
         <div class="chest-lock"></div>
-        <div class="chest-body"></div>
+        <span class="chest-spark s1">✦</span><span class="chest-spark s2">✦</span><span class="chest-spark s3">✧</span>
       </div>
     </div>
 
@@ -183,7 +204,6 @@
       <span class="season-banner-sub" id="seasonBannerSub"></span>
     </button>
 
-    <div class="rank-chip hidden" id="collectorRankMain"></div>
 
     <div class="goal-box record-only" id="rebirthGoalBox">
       <p class="goal-top"><span>🎯 환생까지</span><span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 300,000G</span></p>
@@ -217,9 +237,7 @@
     </div>
     <div class="bottom-actions">
       <button class="mode-switch" id="switchModeBtn">📖 수집모드로 전환</button>
-      <button class="reset-link record-only" id="resetRunBtn">🔄 초심으로 돌아가기</button>
     </div>
-    <p class="legal-links"><a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a> · <button class="link-btn" id="openDeleteAccountBtn">계정 삭제</button></p>
   </div>
 
   <!-- 도감 화면 -->
@@ -314,10 +332,12 @@
       <h1 style="margin:0; font-size:20px;" id="rankingTitle">🏆 랭킹</h1>
       <button id="backFromRankingBtn">← 돌아가기</button>
     </div>
-    <label class="season-picker" id="seasonPicker">
-      <span class="season-picker-label">시즌</span>
-      <select id="seasonSelect"></select>
-    </label>
+    <!-- 랭킹 종류와 시즌을 탭 안에서 바로 바꿔 봅니다 -->
+    <div class="mode-tabs rank-type-tabs">
+      <button class="mode-tab" data-rank-type="record">🏆 기록 랭킹</button>
+      <button class="mode-tab" data-rank-type="collection">🌟 수집 랭킹</button>
+    </div>
+    <div class="season-chips" id="seasonPicker"></div>
     <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:16px;" id="rankingSubtitle">이번 시즌 30만 골드까지 가장 빨리 도달한 환생 기록입니다</p>
     <div id="rankingList"></div>
     <div class="rank-pagination hidden" id="rankPagination">
@@ -328,6 +348,23 @@
     <div class="hidden" id="myRankFooter" style="margin-top:14px;"></div>
   </div>
 
+  <!-- 방명록 -->
+  <div class="card hidden" id="guestbookScreen">
+    <div class="top-row">
+      <h1 style="margin:0; font-size:20px;">💬 방명록</h1>
+    </div>
+    <p class="screen-sub">자유롭게 인사를 남겨 보세요 · 불쾌한 글은 신고하면 바로 안 보여요</p>
+    <form class="guestbook-form" id="guestbookForm">
+      <textarea id="guestbookInput" maxlength="200" rows="2" placeholder="한마디 남기기 (200자까지)"></textarea>
+      <div class="guestbook-form-row">
+        <small id="guestbookCount">0 / 200</small>
+        <button type="submit" id="guestbookSubmitBtn">남기기</button>
+      </div>
+    </form>
+    <div id="guestbookList"></div>
+    <button class="link-btn hidden" id="guestbookMoreBtn">더 보기</button>
+  </div>
+
 <!-- 배포할 때마다 ?v= 값을 바꾸면 브라우저·앱이 예전 파일을 쓰지 않습니다 -->
 <!-- 앱처럼 화면 아래에 고정된 탭 바 (로그인 후에만 보임) -->
 <nav class="tab-bar" id="tabBar">
@@ -335,11 +372,12 @@
   <button class="tab-item" data-tab="bag"><span class="tab-icon">🎒</span><small>가방</small></button>
   <button class="tab-item collection-only" data-tab="dex"><span class="tab-icon">📖</span><small>도감</small></button>
   <button class="tab-item" data-tab="upgrade"><span class="tab-icon">🛠</span><small>강화</small></button>
-  <button class="tab-item" data-tab="achievement"><span class="tab-icon">🏅</span><small>업적</small><span class="nav-badge hidden" id="achievementBadge"></span></button>
+  <button class="tab-item collection-only" data-tab="achievement"><span class="tab-icon">🏅</span><small>업적</small><span class="nav-badge hidden" id="achievementBadge"></span></button>
   <button class="tab-item" data-tab="ranking"><span class="tab-icon">🏆</span><small>랭킹</small></button>
+  <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
 </nav>
 
-<script src="app.js?v=20261014h"></script>
+<script src="app.js?v=20261014l"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {
