@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261014c">
+<link rel="stylesheet" href="style.css?v=20261014e">
 </head>
 <body>
 
@@ -43,6 +43,18 @@
     <p class="season-sub-title">오늘만 나오는 신화 10종</p>
     <div class="season-icon-grid" id="seasonOverlayIcons"></div>
     <button id="seasonOverlayCloseBtn">확인</button>
+  </div>
+</div>
+
+<!-- 골드 수입 설명 (보유 골드 옆 ?) -->
+<div id="incomeOverlay" class="info-overlay">
+  <div class="away-card">
+    <p class="away-eyebrow">💰 골드는 이렇게 쌓여요</p>
+    <div class="away-gold" id="incomeHelpRate"></div>
+    <ul class="away-details" id="incomeHelpList"></ul>
+    <p class="golden-info-note" id="incomeHelpNote"></p>
+    <button class="link-btn" id="goldenHintBtn" style="margin:0 0 12px;">🎁 황금 상자란?</button>
+    <button id="incomeHelpCloseBtn">확인</button>
   </div>
 </div>
 
@@ -121,10 +133,7 @@
     </div>
 
     <div class="mode-bar">
-      <span class="mode-badge" id="modeBadge">
-        🏆 기록모드
-        <span class="mode-hint" id="modeHint">환생하며 랭킹에 도전해요</span>
-      </span>
+      <span class="mode-badge" id="modeBadge">🏆 기록모드</span>
       <button id="switchModeBtn">📖 수집모드로</button>
     </div>
 
@@ -141,6 +150,20 @@
       <span class="season-banner-sub" id="seasonBannerSub"></span>
     </button>
 
+    <!-- 보유 골드 + 분당 수입. ? 를 누르면 수입이 어떻게 계산되는지 보여줍니다 -->
+    <div class="gold-row">
+      <span class="gold-amount">💰 <strong id="totalTreasure">0</strong>G</span>
+      <span class="gold-rate" id="goldRate"></span>
+      <button class="help-btn" id="incomeHelpBtn" aria-label="수입 설명">?</button>
+    </div>
+
+    <!-- 자동 개봉 중에 나온 신화는 내용물이 정해진 채로 보관됩니다. 눌러서 한 번에 열기 -->
+    <button class="sealed-badge hidden" id="sealedBtn">
+      <span class="sealed-icon">🔮</span>
+      <span class="sealed-text"><strong>신화 상자 <span id="sealedCount">0</span>개</strong><small id="sealedSince">자리 비운 사이 도착했어요</small></span>
+      <span class="sealed-cta">열기</span>
+    </button>
+
     <div class="chest-wrap">
       <div class="chest" id="chest">
         <div class="chest-glow"></div>
@@ -152,12 +175,11 @@
 
     <div class="status-text" id="statusText">불러오는 중...</div>
     <div class="charge-bar-wrap"><div class="charge-bar-fill" id="chargeBarFill"></div></div>
-    <p id="nextChargeText" style="font-size:12px; color:var(--ink-dim); text-align:center; margin:4px 0 12px;"></p>
+    <p class="next-charge" id="nextChargeText"></p>
 
     <div class="pity-box" id="pityBox">
-      <div class="pity-top"><span>🌸 신화 천장</span><span class="pity-count" id="pityText">0 / 3,000</span></div>
+      <div class="pity-top"><span>🌸 신화 천장 <small class="pity-hint" id="pityHint"></small></span><span class="pity-count" id="pityText">0 / 3,000</span></div>
       <div class="pity-bar-wrap"><div class="pity-bar-fill" id="pityBarFill"></div></div>
-      <p class="pity-hint" id="pityHint">신화가 나오면 초기화돼요</p>
     </div>
 
     <div class="result-box" id="resultBox">
@@ -166,6 +188,15 @@
       <div class="treasure-name" id="treasureName"></div>
       <div id="treasureDetail" style="font-size:13px; color:var(--ink-dim);"></div>
     </div>
+
+    <div class="goal-box record-only" id="rebirthGoalBox">
+      <p class="goal-top"><span>🎯 환생까지</span><span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 300,000G</span></p>
+      <div class="goal-bar-wrap"><div class="goal-bar-fill" id="rebirthGoalBar"></div></div>
+      <p class="pace-line hidden" id="paceLine"></p>
+      <p class="season-best"><span id="seasonBestLine"></span> <span id="prestigeHint"></span></p>
+    </div>
+
+    <button class="btn-primary record-only hidden" id="mainRebirthBtn" disabled style="margin:10px 0 12px;">✨ 환생하기! (300,000G)</button>
 
     <!-- 충전된 상자는 위의 상자를 누르면 한 번에 모두 열립니다.
          아래는 충전과는 별개로 골드를 내고 상자를 바로 구매해서 여는 곳입니다. -->
@@ -177,40 +208,7 @@
           <button id="maxBuyQtyBtn">최대로</button>
           <button id="buyBoxBtn" style="background:var(--gold); color:#1A1305;">구매해서 열기</button>
         </div>
-        <p id="buyBoxCostText" style="font-size:11px; color:var(--ink-dim); margin:0; text-align:center;">개당 75G · 충전과 무관하게 구매</p>
-      </div>
-    </div>
-
-    <div class="summary-grid">
-      <div class="summary-cell">
-        <span class="label">💰 보유 골드</span>
-        <span class="value" id="totalTreasure">0</span>
-      </div>
-      <div class="summary-cell">
-        <span class="label">⏱ 플레이타임<span class="record-only"> · 환생 <span id="rebirthCount">0</span>회</span></span>
-        <span class="value" id="playtimeDisplay">00:00:00</span>
-      </div>
-    </div>
-
-    <div class="goal-box record-only" id="rebirthGoalBox">
-      <p class="goal-top"><span>🎯 환생까지</span><span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 300,000G</span></p>
-      <div class="goal-bar-wrap"><div class="goal-bar-fill" id="rebirthGoalBar"></div></div>
-      <p class="pace-line hidden" id="paceLine"></p>
-      <p class="prestige-hint" id="prestigeHint"></p>
-      <p class="season-best" id="seasonBestLine"></p>
-    </div>
-
-    <button class="btn-primary record-only hidden" id="mainRebirthBtn" disabled style="margin:10px 0 12px;">✨ 환생하기! (300,000G)</button>
-
-    <button class="golden-hint" id="goldenHintBtn">
-      <span>🎁 <strong>황금 상자</strong> · 접속해 있으면 가끔 나타나요</span>
-      <span class="golden-hint-more">자세히 ›</span>
-    </button>
-
-    <div class="income-box" id="mainIncomeBox">
-      <div class="income-text">
-        <strong class="income-pending" data-income="pending"></strong>
-        <small class="income-rate" data-income="rate"></small>
+        <p id="buyBoxCostText" style="font-size:11px; color:var(--ink-dim); margin:0; text-align:center;">개당 75G</p>
       </div>
     </div>
 
@@ -235,6 +233,7 @@
     <div class="item-effects-box" id="itemEffectsBox"></div>
 
     <div class="rebirth-box record-only">
+      <p class="rebirth-top"><span>⏱ 이번 판 <strong id="playtimeDisplay">00:00:00</strong> · 환생 <span id="rebirthCount">0</span>회</span></p>
       <p class="rebirth-top"><span>🌀 환생 진행도</span><span id="rebirthProgressText" style="color:var(--gold);">0 / 300,000G</span></p>
       <button class="btn-primary hidden" id="rebirthBtn" disabled style="margin-bottom:8px;">✨ 환생하기 (300,000G)</button>
       <button class="collection-link" id="toggleRebirthHistoryBtn" style="margin:0; font-size:12px;">환생 기록 보기</button>
@@ -268,8 +267,7 @@
 
     <!-- 가방: 지금 실제로 들고 있는 아이템 (합성 가능) -->
     <div id="runModeView">
-      <p class="lock-hint">🔓 버튼으로 아이템을 잠그면 합성(자동 합성 포함) 재료로 쓰이지 않아요. 효과가 있는 아이템을 지킬 때 쓰세요!</p>
-      <p style="font-size:12px; color:var(--ink-dim); margin-top:0; margin-bottom:8px;" id="runModeHint">같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있어요 (전설까지만, 신화는 상자에서만!)</p>
+      <p class="lock-hint" id="runModeHint">같은 아이템 3개 → 한 등급 위로 합성 · 🔓 잠그면 재료로 안 써요</p>
       <button class="collection-link" id="craftAllBtn" style="margin-bottom:16px; background:var(--surface-2); border:1px solid var(--gold-dim); border-radius:10px; padding:10px; color:var(--gold); text-decoration:none;">⚡ 전체 합성 (가능한 만큼 한번에)</button>
       <div class="collection-grid" id="runInventoryGrid"></div>
     </div>
@@ -294,7 +292,7 @@
       <h2 class="shop-heading" style="margin-top:0;">✨ 환생 상점</h2>
       <p class="prestige-info" id="prestigeInfo"></p>
       <p class="prestige-next" id="prestigeNext"></p>
-      <p class="prestige-rule">이번 판에 번 골드 50,000G마다 환생할 때 포인트 1개 · 상점 특성은 환생해도 영구히 남아요 (골드 업그레이드와 자동화는 환생하면 초기화)</p>
+      <p class="prestige-rule">이번 판에 번 골드 5만G마다 환생 시 1포인트 · 특성은 환생해도 남고 새 시즌에 초기화</p>
       <div class="shop-list" id="perkList" style="margin-top:10px;"></div>
     </div>
   </div>
@@ -305,7 +303,7 @@
       <h1 style="margin:0; font-size:20px;">업적</h1>
       <button id="backFromAchievementBtn">← 돌아가기</button>
     </div>
-    <p class="screen-sub">목표를 달성하고 보상을 받아요 · 환생해도 기록이 남아요</p>
+    <p class="screen-sub">목표를 달성하고 보상을 받아요</p>
     <div class="craft-result" id="achievementResult"></div>
     <div class="achievement-list" id="achievementList"></div>
   </div>
@@ -331,7 +329,7 @@
   </div>
 
 <!-- 배포할 때마다 ?v= 값을 바꾸면 브라우저·앱이 예전 파일을 쓰지 않습니다 -->
-<script src="app.js?v=20261014c"></script>
+<script src="app.js?v=20261014e"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {

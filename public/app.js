@@ -283,9 +283,7 @@ function applyModeUI(mode){
   const isRecord = mode === 'record';
   document.body.classList.toggle('mode-collection', !isRecord);
 
-  document.getElementById('modeBadge').innerHTML = isRecord
-    ? '🏆 기록모드<span class="mode-hint">환생하며 랭킹에 도전해요</span>'
-    : '📖 수집모드<span class="mode-hint">환생 없이 도감을 영구히 채워요</span>';
+  document.getElementById('modeBadge').textContent = isRecord ? '🏆 기록모드' : '📖 수집모드';
   document.getElementById('switchModeBtn').textContent = isRecord ? '📖 수집모드로' : '🏆 기록모드로';
 
   document.getElementById('collectionModeSubtext').textContent = isRecord
@@ -295,9 +293,7 @@ function applyModeUI(mode){
   if (isRecord) showCollectionTab('run');
 
   document.getElementById('modeTabRun').textContent = '🎒 가방';
-  document.getElementById('runModeHint').textContent = isRecord
-    ? '같은 아이템 3개 → 한 등급 위로 합성 (영웅→전설까지) · 환생하면 비워져요'
-    : '같은 아이템 3개 → 한 등급 위로 합성 (영웅→전설까지)';
+  document.getElementById('runModeHint').textContent = '같은 아이템 3개 → 한 등급 위로 합성 · 🔓 잠그면 재료로 안 써요';
 }
 
 async function switchMode(targetMode){
@@ -380,6 +376,7 @@ async function refreshStatus(){
     renderCollectorRank(data.collectorRank);
     applySeason(data.season, data.seasonChange, data.codex);
     renderPace(data.pace, data.seasonBest);
+    applySealed(data.sealed);
     renderPrestigeHint(data.prestige);
     applyGoldenBox(data.goldenBox);
     renderAchievementBadge(data.claimableAchievements);
@@ -427,6 +424,9 @@ function handleAutoEvents(data){
     lines.push(`🤖 자동 개봉 ${data.autoOpened.count}개${highlights.length ? ` · ${highlights.join(', ')}` : ''}`);
     checkAndTriggerLegendary(data.autoOpened.obtained, data.autoOpened.pityTriggered);
   }
+  if (data.autoOpened && data.autoOpened.sealed > 0) {
+    lines.push(`🔮 신화 상자 +${data.autoOpened.sealed} 도착! 위의 버튼으로 열어보세요`);
+  }
   if (data.autoCrafted && data.autoCrafted.count > 0) {
     lines.push(`⚙️ 자동 합성 ${data.autoCrafted.count}번`);
   }
@@ -446,6 +446,7 @@ function showAwaySummary(summary, autoOpened){
   if (summary.storageCapped) details.push(`📦 보관 시간 ${summary.storageText}까지만 쌓였어요 (강화에서 창고를 늘려보세요)`);
   if (summary.autoOpenedCount > 0) details.push(`⏳ 상자 ${formatGold(summary.autoOpenedCount)}개 자동 개봉`);
   if (summary.autoCraftCount > 0) details.push(`⚙️ ${formatGold(summary.autoCraftCount)}번 자동 합성`);
+  if (summary.sealedGained > 0) details.push(`🔮 신화 상자 ${summary.sealedGained}개 도착! 확인을 누르고 직접 열어보세요`);
   summary.notable.forEach(item => details.push({ html: `${itemIconHtml(item.key, 'chip-icon')} ${escapeHtml(item.name)} x${item.count}` }));
   if (summary.autoOpenedCount === 0) details.push('💡 강화 화면에서 자동 개봉 시간을 사두면 자리 비운 동안에도 상자가 열려요');
 
@@ -480,11 +481,9 @@ function applyRebirthGoal(goal){
 function renderPrestigeHint(prestige){
   const el = document.getElementById('prestigeHint');
   if (!prestige || !prestige.enabled) { el.textContent = ''; return; }
-  const owned = `✨ 환생 포인트 ${prestige.points}개`;
-  const gain = prestige.pointsOnRebirth > 0
-    ? `지금 환생하면 +${prestige.pointsOnRebirth}개`
-    : `이번 판 ${formatGold(prestige.runGoldEarned)} / ${formatGold(prestige.nextPointAt)}G 벌면 +1개`;
-  el.textContent = `${owned} · ${gain}`;
+  el.textContent = prestige.pointsOnRebirth > 0
+    ? `· ✨ 환생 시 +${prestige.pointsOnRebirth}P`
+    : `· ✨ ${formatGold(prestige.nextPointAt - prestige.runGoldEarned)}G 더 벌면 +1P`;
 }
 
 // 0.2초마다 호출: 네트워크 없이 로컬 계산만으로 화면을 그림
@@ -515,14 +514,14 @@ function renderTick(){
   chest.style.pointerEvents = (canOpen && !isOpening) ? 'auto' : 'none';
 
   if (cachedAutoOpen) {
-    statusText.textContent = `⏳ 자동 개봉 중 · 남은 시간 ${formatDuration(Math.floor(autoOpenRemainingMs() / 1000))}`;
+    statusText.textContent = `⏳ 자동 개봉 중 · ${formatDuration(Math.floor(autoOpenRemainingMs() / 1000))}`;
     statusText.classList.add('ready');
   } else if (canOpen) {
-    statusText.textContent = `충전된 상자 ${cachedCharges}개 · 상자를 누르면 모두 열어요`;
+    statusText.textContent = `📦 상자 ${cachedCharges}개 · 눌러서 모두 열기`;
     statusText.classList.add('ready');
   } else {
     statusText.classList.remove('ready');
-    statusText.textContent = '충전된 상자가 없습니다';
+    statusText.textContent = '상자 충전 중';
   }
 
   document.getElementById('chargeBarFill').style.width = `${(cachedCharges / cachedMaxCharges) * 100}%`;
@@ -530,10 +529,10 @@ function renderTick(){
   // 다음 충전까지 몇 초 남았는지 표시 (꽉 찼으면 안내 문구로 대체)
   const nextChargeText = document.getElementById('nextChargeText');
   if (!cachedAutoOpen && cachedCharges >= cachedMaxCharges) {
-    nextChargeText.textContent = `충전이 꽉 찼습니다 (최대 ${cachedMaxCharges}개)`;
+    nextChargeText.textContent = `충전 가득 (${cachedMaxCharges}/${cachedMaxCharges})`;
   } else if (cachedNextChargeAt) {
     const secondsLeft = Math.max(0, Math.ceil((cachedNextChargeAt - adjustedNow()) / 1000));
-    nextChargeText.textContent = `다음 충전까지 ${secondsLeft}초`;
+    nextChargeText.textContent = `충전 ${cachedCharges}/${cachedMaxCharges} · 다음 ${secondsLeft}초`;
   }
 
   // 플레이타임
@@ -558,6 +557,9 @@ function renderTick(){
     breakdownText = `${parts.join(' + ')}${bonuses.length ? ` · ${bonuses.join(' · ')}` : ''}`;
   }
   document.querySelectorAll('[data-income="pending"]').forEach(el => { el.textContent = rateText; });
+  document.getElementById('goldRate').textContent = boostLeft > 0
+    ? `⚡ 분당 +${formatGold(cachedPerMinuteIncome * cachedBoostMultiplier)}G (2배)`
+    : `분당 +${formatGold(cachedPerMinuteIncome)}G`;
   document.querySelectorAll('[data-income="rate"]').forEach(el => { el.textContent = breakdownText; });
 
   // 환생 목표 진행바
@@ -628,7 +630,7 @@ function clampBuyBoxQty(){
 
   const cost = boxPurchaseCost(Math.max(0, value));
   document.getElementById('buyBoxCostText').textContent =
-    `개당 ${formatGold(boxPriceAt(0))}G부터 (많이 살수록 조금씩 올라요) · 총 ${formatGold(cost)}G · 최대 ${max}개`;
+    `총 ${formatGold(cost)}G · 최대 ${max}개 (개당 ${formatGold(boxPriceAt(0))}G~)`;
 
   document.getElementById('buyBoxBtn').disabled = max === 0 || value < 1 || isOpening;
   document.getElementById('maxBuyQtyBtn').disabled = max === 0;
@@ -726,9 +728,8 @@ function updatePityUI(pity, limit){
   const imminent = remaining <= 1;
   box.classList.toggle('imminent', imminent);
   const reductionText = cachedPityReduction > 0 ? ` · ✨ 효과로 천장 -${cachedPityReduction.toLocaleString()}` : '';
-  hint.textContent = imminent
-    ? '🔥 다음 상자는 신화 확정!'
-    : `${remaining.toLocaleString()}개 더 열면 신화 확정${reductionText}`;
+  hint.textContent = imminent ? '🔥 다음 상자 확정!' : `${remaining.toLocaleString()}개 남음`;
+  hint.title = reductionText ? reductionText.replace(/^ · /, '') : '';
 }
 
 // -------------------------------
@@ -740,7 +741,7 @@ let mythicPopupTimer = null;
 let mythicPopupItems = [];
 let mythicPopupPity = false;
 
-function showMythicPopup(mythics, pityTriggered){
+function showMythicPopup(mythics, pityTriggered, title){
   // 이미 떠 있으면 합쳐서 다시 그림 (같은 신화는 개수만 더함)
   for (const m of mythics) {
     const same = mythicPopupItems.find(x => x.key === m.key);
@@ -749,10 +750,12 @@ function showMythicPopup(mythics, pityTriggered){
   }
   mythicPopupPity = mythicPopupPity || Boolean(pityTriggered);
   const total = mythicPopupItems.reduce((sum, m) => sum + m.count, 0);
-  document.getElementById('mythicPopupTitle').textContent =
-    `${mythicPopupPity ? '✦ 천장 달성! ' : '✦ '}신화 ${total}개 획득! ✦`;
-  document.getElementById('mythicPopupGrid').innerHTML = mythicPopupItems.map(m => `
-    <div class="mythic-popup-item" title="${escapeHtml(m.effectText || '')}">
+  document.getElementById('mythicPopupTitle').textContent = title
+    || `${mythicPopupPity ? '✦ 천장 달성! ' : '✦ '}신화 ${total}개 획득! ✦`;
+  // 하나씩 차례로 튀어나오게 (많으면 최대 1.2초 안에 모두 등장)
+  const step = Math.min(0.12, 1.2 / Math.max(1, mythicPopupItems.length));
+  document.getElementById('mythicPopupGrid').innerHTML = mythicPopupItems.map((m, i) => `
+    <div class="mythic-popup-item" style="animation-delay:${(i * step).toFixed(2)}s" title="${escapeHtml(m.effectText || '')}">
       ${itemIconHtml(m.key, 'mythic-popup-icon')}
       <span class="mythic-popup-name">${escapeHtml(m.name)}${m.count > 1 ? ` x${m.count}` : ''}</span>
     </div>`).join('');
@@ -762,8 +765,8 @@ function showMythicPopup(mythics, pityTriggered){
   popup.classList.add('show');
   if (navigator.vibrate) navigator.vibrate([60, 40, 120]);
   clearTimeout(mythicPopupTimer);
-  // 많이 나오면 조금 더 오래 보여줍니다 (최대 +1.5초)
-  mythicPopupTimer = setTimeout(hideMythicPopup, MYTHIC_POPUP_MS + Math.min(1500, (mythicPopupItems.length - 1) * 250));
+  // 많이 나오면 조금 더 오래 보여줍니다 (최대 +3초)
+  mythicPopupTimer = setTimeout(hideMythicPopup, MYTHIC_POPUP_MS + Math.min(3000, (mythicPopupItems.length - 1) * 250));
 }
 function hideMythicPopup(){
   clearTimeout(mythicPopupTimer);
@@ -1350,8 +1353,39 @@ function renderGoldenBox(){
   }
 }
 
-// 황금 상자 안내 팝업
+// 보유 골드 옆 ? : 분당 수입이 어떻게 계산되는지 보여줍니다.
+function renderIncomeHelp(){
+  const inc = cachedIncome;
+  if (!inc) return;
+  const boostLeft = boostRemainingMs();
+  document.getElementById('incomeHelpRate').textContent = `분당 +${formatGold(inc.perMinuteIncome)}G`;
+  const rows = [];
+  rows.push(['기본 수입', `${formatGold(inc.baseIncome)}G`]);
+  const items = [...(inc.items || [])].sort((a, b) => b.incomePerMinute - a.incomePerMinute);
+  rows.push([`아이템 ${items.length}종`, `+${formatGold(inc.itemIncome)}G`]);
+  items.slice(0, 3).forEach(it => rows.push([`　└ ${it.name} x${formatGold(it.count)}${it.stars ? ` ★${it.stars}` : ''}`, `+${formatGold(it.incomePerMinute)}G`]));
+  if (inc.upgradeBonusPercent > 0) rows.push(['🛠 수입 강화', `×${(100 + inc.upgradeBonusPercent) / 100}`]);
+  if (inc.prestigeBonusPercent > 0) rows.push(['✨ 환생 특성', `×${(100 + inc.prestigeBonusPercent) / 100}`]);
+  if (inc.mythicBonusPercent > 0) rows.push(['🌟 아이템 효과·오늘의 규칙', `×${(100 + inc.mythicBonusPercent) / 100}`]);
+  if (boostLeft > 0) rows.push([`⚡ 수입 2배 (${formatDuration(Math.floor(boostLeft / 1000)).slice(3)} 남음)`, `×${cachedBoostMultiplier}`]);
+  const list = document.getElementById('incomeHelpList');
+  list.innerHTML = rows.map(([k, v]) => `<li><span>${escapeHtml(k)}</span><span class="golden-chance">${escapeHtml(v)}</span></li>`).join('');
+  const storage = lastStatus && lastStatus.storageMs ? formatHoursText(lastStatus.storageMs) : '';
+  document.getElementById('incomeHelpNote').textContent =
+    `(기본 + 아이템) × 배율 = 분당 수입. 아이템은 등급이 높을수록, ★(같은 아이템 10·30·100·300개)가 붙을수록 많이 벌어요.`
+    + (storage ? ` 접속하지 않아도 최대 ${storage}까지 쌓여요(강화의 창고로 늘리기).` : '');
+}
+document.getElementById('incomeHelpBtn').addEventListener('click', () => {
+  renderIncomeHelp();
+  document.getElementById('incomeOverlay').classList.add('show');
+});
+document.getElementById('incomeHelpCloseBtn').addEventListener('click', () => {
+  document.getElementById('incomeOverlay').classList.remove('show');
+});
+
+// 황금 상자 안내 팝업 (골드 설명 안의 "황금 상자란?")
 document.getElementById('goldenHintBtn').addEventListener('click', () => {
+  document.getElementById('incomeOverlay').classList.remove('show');
   const info = goldenBoxInfo;
   document.getElementById('goldenInfoTiming').textContent = info
     ? `접속해 있는 동안 ${info.minGapMinutes}~${info.maxGapMinutes}분마다 나타나요. 나타나면 ${info.windowSeconds}초 안에 눌러야 해요!`
@@ -1654,8 +1688,8 @@ function renderPace(pace, seasonBest){
   if (!pace) { line.classList.add('hidden'); bestLine.textContent = ''; return; }
 
   bestLine.textContent = seasonBest
-    ? `🏆 이번 시즌 내 최고 ${formatDuration(Math.floor(seasonBest.bestDurationMs / 1000))} · ${seasonBest.rank}위`
-    : '🏁 이번 시즌 첫 환생 기록에 도전해보세요!';
+    ? `🏆 시즌 최고 ${formatDuration(Math.floor(seasonBest.bestDurationMs / 1000))} · ${seasonBest.rank}위`
+    : '🏁 첫 환생 기록에 도전!';
 
   if (pace.bestRunMs == null) {
     line.textContent = pace.reached > 0
@@ -1754,6 +1788,38 @@ document.getElementById('deleteAccountForm').addEventListener('submit', async (e
     errorEl.style.display = 'block';
   } finally {
     btn.disabled = false;
+  }
+});
+
+// -------------------------------
+// 🔮 신화 상자 (자동 개봉 중에 나온 신화. 내용물은 이미 정해져 있고, 유효기간 없음)
+// -------------------------------
+function applySealed(sealed){
+  const btn = document.getElementById('sealedBtn');
+  if (!sealed || sealed.count === 0) { btn.classList.add('hidden'); return; }
+  document.getElementById('sealedCount').textContent = sealed.count;
+  const since = sealed.since ? new Date(sealed.since) : null;
+  document.getElementById('sealedSince').textContent = since
+    ? `${since.getMonth() + 1}/${since.getDate()} ${String(since.getHours()).padStart(2, '0')}:${String(since.getMinutes()).padStart(2, '0')}부터 자동 개봉으로 나왔어요`
+    : '자리 비운 사이 도착했어요';
+  btn.classList.remove('hidden');
+}
+
+document.getElementById('sealedBtn').addEventListener('click', async function(){
+  if (this.disabled) return;
+  this.disabled = true;
+  try {
+    const res = await authFetch('/api/box/open-sealed', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.message, true); return; }
+    this.classList.add('hidden');
+    showOpenResult(`🔮 신화 상자 ${data.quantity}개 오픈`, data.obtained);
+    showMythicPopup(data.obtained, data.pityTriggered, `🔮 신화 상자에서 신화 ${data.quantity}개! ✦`);
+    refreshStatus();
+  } catch (err) {
+    showToast('서버에 연결할 수 없습니다.', true);
+  } finally {
+    this.disabled = false;
   }
 });
 

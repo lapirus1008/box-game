@@ -255,7 +255,7 @@ function chargeResponse(chargeInfo, chargesUsed = 0) {
 function autoEventResponse(save) {
   return {
     autoOpened: save.autoOpened
-      ? { count: save.autoOpened.count, obtained: toObtainedList(save.autoOpened.counts), pityTriggered: save.autoOpened.pityTriggered }
+      ? { count: save.autoOpened.count, obtained: toObtainedList(save.autoOpened.counts), pityTriggered: save.autoOpened.pityTriggered, sealed: save.autoOpened.sealed || 0 }
       : null,
     autoCrafted: save.autoCrafted,
   };
@@ -338,8 +338,15 @@ function awaySummary(save) {
     goldEarned: save.earned,
     autoOpenedCount: opened ? opened.count : 0,
     autoCraftCount: save.autoCrafted ? save.autoCrafted.count : 0,
+    sealedGained: opened ? opened.sealed || 0 : 0,
     notable,
   };
+}
+
+// 아직 열지 않은 신화 상자 (메인 화면 배지용)
+function sealedResponse(save) {
+  const list = store.sealedList(save.claim);
+  return { count: list.length, since: list.length ? list[0].at : null };
 }
 
 function incomeResponse(save) {
@@ -539,6 +546,34 @@ router.post('/bulk-open', handle('서버 오류로 일괄 열기에 실패했습
 }));
 
 // -------------------------------
+// 신화 상자 열기: POST /api/box/open-sealed (자동 개봉 중에 나와서 보관해 둔 신화를 한 번에 엽니다)
+// -------------------------------
+router.post('/open-sealed', handle('서버 오류로 신화 상자를 열지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+
+  return withSave(userId, async (client, mode, save) => {
+    const sealed = store.sealedList(save.claim);
+    if (sealed.length === 0) throw new HttpError(400, '열 신화 상자가 없어요.');
+
+    const counts = {};
+    for (const s of sealed) counts[s.key] = (counts[s.key] || 0) + 1;
+    await store.addItems(client, userId, mode, counts);
+    await store.saveStats(client, userId, mode, save.claim, store.countRareGains(counts));
+    await store.updateClaim(client, userId, mode, { sealed_mythics: '[]' });
+
+    return {
+      message: `🔮 신화 상자 ${sealed.length}개를 열었어요!`,
+      mode,
+      quantity: sealed.length,
+      obtained: toObtainedList(counts),
+      pityTriggered: sealed.some(s => s.pity),
+      firstAt: sealed[0].at,
+      totalTreasure: save.claim.total_treasure,
+    };
+  });
+}));
+
+// -------------------------------
 // 쌓인 상자 모두 열기: POST /api/box/open-all (상자를 누르면 충전된 만큼 한 번에 엽니다)
 // -------------------------------
 router.post('/open-all', handle('서버 오류로 상자를 열지 못했습니다.', async (req) => {
@@ -645,6 +680,7 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       seasonChange: save.seasonChange,
       codex: codexSummary(mode, save),
       pace: paceResponse(mode, save),
+      sealed: sealedResponse(save),
       seasonBest: isRecordMode ? await findMyRank(userId, save.season) : null,
       ...chargeResponse(save.chargeInfo),
       chargeIntervalMs: save.stats.chargeIntervalMs,

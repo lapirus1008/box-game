@@ -38,7 +38,7 @@ const CLAIM_COLUMNS = [
   'auto_open_enabled', 'auto_open_remaining_ms', 'auto_craft_unlocked', 'auto_craft_enabled',
   'prestige_points', 'prestige_perks', 'run_gold_earned', 'last_active_at',
   'golden_box_next_at', 'income_boost_until', 'lifetime_stats', 'achievements_claimed',
-  'locked_items', 'season', 'run_splits', 'best_splits', 'best_run_ms',
+  'locked_items', 'season', 'run_splits', 'best_splits', 'best_run_ms', 'sealed_mythics',
 ];
 const MYTHIC_KEYS = MYTHICS.map(m => m.key);
 
@@ -210,6 +210,11 @@ async function addItems(client, userId, mode, deltas) {
   );
 }
 
+// 아직 열지 않은 신화 상자 목록 [{ key, at, pity }]
+function sealedList(claim) {
+  return Array.isArray(claim && claim.sealed_mythics) ? claim.sealed_mythics : [];
+}
+
 // 신화 도감: 수집모드에서 한 번이라도 얻은 신화 key Set
 // 수집모드의 발견 기록(user_discoveries)은 절대 지워지지 않으므로 그대로 신화 도감이 됩니다.
 // (기록모드에서 얻은 신화는 도감에 남지 않습니다)
@@ -225,6 +230,8 @@ async function getCodexKeys(runner, userId) {
 // 천장은 아직 없는 이번 시즌 신화를 우선으로 줍니다. (수집모드: 신화 도감 기준 / 기록모드: 이번 판 가방 기준)
 function rollContextOf(save) {
   const have = new Set(save.codex);
+  // 아직 열지 않은 신화 상자에 든 신화도 "가진 것"으로 칩니다. (천장이 같은 걸 또 주지 않도록)
+  for (const sealed of sealedList(save.claim)) have.add(sealed.key);
   for (const [key, count] of Object.entries(save.owned)) {
     if (count > 0 && TREASURE_BY_KEY.get(key)?.rarity === 'mythic') have.add(key);
   }
@@ -341,6 +348,7 @@ async function settle(client, userId, mode) {
   let pity = claim.mythic_pity;
   let autoOpenRemainingMs = Number(claim.auto_open_remaining_ms);
   let autoOpened = null;
+  const newSealed = [];
 
   const autoActive = claim.auto_open_enabled && autoOpenRemainingMs > 0;
   if (autoActive) {
@@ -360,11 +368,21 @@ async function settle(client, userId, mode) {
     autoOpenRemainingMs -= autoMs;
     charges = Math.min(stats.maxCharges, gained - autoGained);
     if (toOpen > 0) {
-      const rolled = rollBoxes(pity, toOpen, rollContextOf({ codex, owned, stats, rotation }));
+      const rolled = rollBoxes(pity, toOpen, rollContextOf({ codex, owned, stats, rotation, claim }));
       pity = rolled.pity;
-      applyDeltas(rolled.counts);
-      addStats(boxStatDeltas(toOpen, rolled.counts));
-      autoOpened = { count: toOpen, counts: rolled.counts, pityTriggered: rolled.pityTriggered };
+      // 신화는 바로 주지 않고 🔮 신화 상자에 담아 둡니다. (내용물은 지금 정해짐, 유효기간 없음)
+      // 돌아온 유저가 직접 눌러서 열면 그때 가방·도감에 들어갑니다. (POST /open-sealed)
+      const normalCounts = {};
+      for (const [key, amount] of Object.entries(rolled.counts)) {
+        if (TREASURE_BY_KEY.get(key)?.rarity === 'mythic') {
+          for (let i = 0; i < amount; i++) newSealed.push({ key, at: now.toISOString(), pity: rolled.pityTriggered });
+        } else {
+          normalCounts[key] = amount;
+        }
+      }
+      applyDeltas(normalCounts);
+      addStats(boxStatDeltas(toOpen, normalCounts));
+      autoOpened = { count: toOpen, counts: normalCounts, pityTriggered: rolled.pityTriggered, sealed: newSealed.length };
     }
   } else {
     charges = Math.min(stats.maxCharges, charges + gained);
@@ -396,8 +414,10 @@ async function settle(client, userId, mode) {
   // 4. 기록모드 구간 기록: 환생 목표의 10%·20%…에 처음 닿은 경과 시간을 남깁니다.
   const runSplits = mode === MODES.RECORD ? updateRunSplits(claim, gold, now) : null;
   const lifetimeStats = bumpStats(claim, statDeltas);
+  const sealedMythics = newSealed.length > 0 ? [...sealedList(claim), ...newSealed] : null;
   await updateClaim(client, userId, mode, {
     ...(runSplits ? { run_splits: JSON.stringify(runSplits) } : {}),
+    ...(sealedMythics ? { sealed_mythics: JSON.stringify(sealedMythics) } : {}),
     lifetime_stats: JSON.stringify(lifetimeStats),
     total_treasure: gold,
     run_gold_earned: runGoldEarned,
@@ -412,6 +432,7 @@ async function settle(client, userId, mode) {
   const updatedClaim = {
     ...claim,
     ...(runSplits ? { run_splits: runSplits } : {}),
+    ...(sealedMythics ? { sealed_mythics: sealedMythics } : {}),
     total_treasure: gold,
     run_gold_earned: runGoldEarned,
     last_income_collected_at: now,
@@ -465,6 +486,7 @@ async function resetSave(client, userId, mode, now, { rebirthCount = null, prest
     `UPDATE box_claims
      SET total_treasure = $1,
          run_splits = '[]'::jsonb,
+         sealed_mythics = '[]'::jsonb,
          last_income_collected_at = $2::timestamptz,
          run_started_at = $2::timestamptz,
          box_charges = 1,
@@ -505,6 +527,7 @@ module.exports = {
   getOwnedCounts,
   getCodexKeys,
   rollContextOf,
+  sealedList,
   computeIncome,
   addItems,
   settle,
