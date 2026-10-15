@@ -1551,3 +1551,15 @@ body.in-game .tab-bar{
 #guestbookMoreBtn.hidden{ display:none; }
 .settings-item.hidden{ display:none; }
 .settings-item.install-item{ color:var(--gold); border-color:var(--gold-dim); }
+
+/* 자동 로그인 중: 로그인 폼 대신 진행 표시 */
+#authScreen.auto-login > *:not(h1):not(.subtitle):not(#autoLoginBox){ display:none !important; }
+.auto-login-box{ display:flex; flex-direction:column; align-items:center; gap:12px; padding:20px 0 8px; }
+.auto-login-box.hidden{ display:none; }
+.auto-login-box p{ margin:0; font-size:13px; color:var(--ink-dim); text-align:center; line-height:1.5; }
+.auto-login-spinner{
+  width:28px; height:28px; border-radius:50%;
+  border:3px solid var(--surface-2); border-top-color:var(--gold);
+  animation:autoLoginSpin 0.9s linear infinite;
+}
+@keyframes autoLoginSpin{ to{ transform:rotate(360deg); } }

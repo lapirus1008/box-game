@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261015a">
+<link rel="stylesheet" href="style.css?v=20261015b">
 </head>
 <body>
 
@@ -114,6 +114,11 @@
     <h1>시간의 상자</h1>
     <p class="subtitle">상자를 열어 아이템을 모으세요<br>🏆 기록모드로 환생·랭킹 경쟁 / 📖 수집모드로 도감을 영구 수집</p>
 
+    <!-- 저장된 로그인으로 들어가는 중 (서버가 잠들어 있으면 깨우는 데 최대 1분 정도 걸려요) -->
+    <div class="auto-login-box hidden" id="autoLoginBox">
+      <div class="auto-login-spinner"></div>
+      <p id="autoLoginText">자동 로그인 중...</p>
+    </div>
     <div class="error-msg" id="authError"></div>
 
     <form id="loginForm">
@@ -378,7 +383,7 @@
   <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
 </nav>
 
-<script src="app.js?v=20261015a"></script>
+<script src="app.js?v=20261015b"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {

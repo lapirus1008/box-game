@@ -152,18 +152,52 @@ function formatDuration(totalSeconds){
   return `${h}:${m}:${s}`;
 }
 
-// 페이지를 열자마자 저장된 토큰이 아직 유효한지 확인해서 자동 로그인 시도
+// 페이지를 열자마자 저장된 토큰으로 자동 로그인합니다.
+// - 토큰이 정말 무효(401·404)일 때만 지우고 로그인 화면을 보여줍니다.
+// - 서버가 잠들어 있거나(무료 서버는 한동안 안 쓰면 깨우는 데 30초~1분) 네트워크가 끊긴 경우엔
+//   토큰을 지우지 않고 잠시 기다렸다 다시 시도합니다. 그래서 앱을 오랜만에 열어도 로그인이 풀리지 않아요.
+// - 성공하면 서버가 유효기간을 늘린 새 토큰을 주므로 저장해 둡니다.
+const AUTO_LOGIN_RETRY_DELAYS_MS = [2000, 3000, 5000, 8000, 10000, 10000, 15000, 15000];
 (async function tryAutoLogin(){
   if (!authToken) return;
-  try {
-    const res = await authFetch('/api/auth/me');
-    if (!res.ok) throw new Error('토큰 만료');
-    const data = await res.json();
-    currentUser = data.user;
-    enterGame();
-  } catch (err) {
-    localStorage.removeItem('boxGameToken');
-    authToken = null;
+  const box = document.getElementById('autoLoginBox');
+  const text = document.getElementById('autoLoginText');
+  authScreen.classList.add('auto-login');
+  box.classList.remove('hidden');
+  const wakingText = '서버를 깨우는 중이에요 ☕<br>오랜만에 접속하면 1분 정도 걸릴 수 있어요';
+  // 잠든 서버는 오류 대신 한참 동안 응답을 안 주기도 해서, 3초가 넘으면 안내 문구로 바꿉니다.
+  const slowTimer = setTimeout(() => { text.innerHTML = wakingText; }, 3000);
+  const stop = () => { clearTimeout(slowTimer); authScreen.classList.remove('auto-login'); box.classList.add('hidden'); };
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await authFetch('/api/auth/me');
+      if (res.status === 401 || res.status === 404) {
+        localStorage.removeItem('boxGameToken');
+        authToken = null;
+        stop();
+        return;
+      }
+      if (!res.ok) throw new Error(`서버 응답 ${res.status}`);
+      const data = await res.json();
+      if (data.token) {
+        authToken = data.token;
+        localStorage.setItem('boxGameToken', data.token);
+      }
+      currentUser = data.user;
+      stop();
+      enterGame();
+      return;
+    } catch (err) {
+      if (attempt >= AUTO_LOGIN_RETRY_DELAYS_MS.length) {
+        // 오래 기다려도 안 되면 로그인 화면을 보여주되, 저장된 로그인은 지우지 않습니다(새로고침하면 다시 시도).
+        stop();
+        showAuthError('서버에 연결하지 못했어요. 잠시 후 앱을 다시 열어 주세요. (로그인 정보는 그대로 남아 있어요)');
+        return;
+      }
+      text.innerHTML = wakingText;
+      await new Promise(resolve => setTimeout(resolve, AUTO_LOGIN_RETRY_DELAYS_MS[attempt]));
+    }
   }
 })();
 

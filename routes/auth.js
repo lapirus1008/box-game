@@ -189,7 +189,8 @@ router.get('/me', verifyToken, handle('서버 오류가 발생했습니다.', as
   );
   if (result.rows.length === 0) throw new HttpError(404, '사용자를 찾을 수 없습니다.');
 
-  return { user: result.rows[0] };
+  // 들어올 때마다 유효기간을 새로 늘린 토큰을 함께 돌려줍니다(자주 하는 사람은 다시 로그인할 일이 없게).
+  return { user: result.rows[0], token: signToken(result.rows[0]) };
 }));
 
 // -------------------------------
