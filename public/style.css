@@ -1549,3 +1549,5 @@ body.in-game .tab-bar{
 .guestbook-empty{ text-align:center; font-size:13px; color:var(--ink-dim); padding:20px 0; }
 #guestbookMoreBtn{ display:block; margin:6px auto 0; }
 #guestbookMoreBtn.hidden{ display:none; }
+.settings-item.hidden{ display:none; }
+.settings-item.install-item{ color:var(--gold); border-color:var(--gold-dim); }

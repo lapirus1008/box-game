@@ -1894,8 +1894,43 @@ document.getElementById('settingsBtn').addEventListener('click', () => {
 });
 document.getElementById('settingsCloseBtn').addEventListener('click', () => settingsOverlay.classList.remove('show'));
 // 설정 안의 버튼을 누르면 창을 닫고 진행합니다(확인창·계정 삭제 창이 그 위에 뜨도록).
-['resetRunBtn', 'logoutBtn', 'openDeleteAccountBtn'].forEach(id =>
+['installAppBtn', 'resetRunBtn', 'logoutBtn', 'openDeleteAccountBtn'].forEach(id =>
   document.getElementById(id).addEventListener('click', () => settingsOverlay.classList.remove('show'), true));
+
+// -------------------------------
+// 앱으로 설치 (설정 안 버튼)
+// - 안드로이드 크롬 등: 브라우저가 "설치 가능"을 알려줄 때(beforeinstallprompt)만 버튼을 보여주고, 누르면 설치 창을 띄웁니다.
+// - 아이폰 사파리: 설치 창을 띄울 수 없어서 "홈 화면에 추가" 방법을 안내합니다.
+// - 이미 앱으로 실행 중이면 버튼을 숨깁니다.
+// -------------------------------
+const installAppBtn = document.getElementById('installAppBtn');
+let deferredInstallPrompt = null;
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const isIosSafari = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !/crios|fxios|kakaotalk|naver/i.test(navigator.userAgent);
+function updateInstallButton(){
+  installAppBtn.classList.toggle('hidden', isStandalone() || !(deferredInstallPrompt || isIosSafari()));
+}
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); // 크롬 기본 안내 대신 설정의 버튼으로 설치합니다.
+  deferredInstallPrompt = e;
+  updateInstallButton();
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  updateInstallButton();
+  showToast('📲 앱으로 설치했어요! 홈 화면에서 열어 보세요');
+});
+installAppBtn.addEventListener('click', async () => {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice.catch(() => null);
+    deferredInstallPrompt = null; // 한 번 쓴 설치 창은 다시 쓸 수 없어요.
+    updateInstallButton();
+  } else if (isIosSafari()) {
+    alert('아이폰에서는 아래 공유 버튼(□↑)을 누른 뒤\n"홈 화면에 추가"를 고르면 앱처럼 설치돼요.');
+  }
+});
+updateInstallButton();
 
 // -------------------------------
 // 계정 삭제 (스토어 정책: 앱 안에서 계정을 지울 수 있어야 함)
