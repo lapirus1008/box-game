@@ -31,6 +31,13 @@ const globalLimiter = createLimiter({
 });
 app.use(globalLimiter);
 
+// 서버 깨우기용 가벼운 라우트 (GitHub Actions가 10분마다 호출)
+// DB는 건드리지 않습니다. DB까지 24시간 깨워 두면 Neon 무료 사용 시간 한도를 넘을 수 있어서,
+// 서버(Render)만 깨어 있게 하고 DB는 필요할 때 깨어나게(1초 이내) 둡니다.
+app.get('/ping', (req, res) => {
+  res.json({ status: 'ok', serverTime: new Date() });
+});
+
 // 4. 기본 상태 확인용 라우트
 // 브라우저에서 http://localhost:3000/health 로 접속하면 이 코드가 실행됩니다.
 app.get('/health', async (req, res) => {

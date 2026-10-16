@@ -1,0 +1,28 @@
+# Render 무료 서버는 15분 동안 접속이 없으면 잠들고, 다음 접속 때 깨어나는 데 30초~1분 걸립니다.
+# 10분마다 /ping 을 호출해서 서버가 잠들지 않게 합니다.
+# /ping 은 DB를 건드리지 않습니다(Neon 무료 사용 시간 절약 — DB는 필요할 때 1초 안에 깨어남).
+# Render 유료 플랜으로 바꾸면 이 파일을 지우거나, GitHub → Actions → Keep server awake → "Disable workflow" 하세요.
+# 참고: GitHub 예약 실행은 몰릴 때 몇 분씩 늦어질 수 있어서, 아주 가끔은 잠들었다 깨어날 수 있습니다.
+name: Keep server awake
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Actions 화면에서 수동 실행도 가능
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /ping
+        run: |
+          for i in 1 2 3; do
+            if curl -fsS --max-time 70 https://box-game-6y1g.onrender.com/ping; then
+              echo; echo "서버 깨어 있음"
+              exit 0
+            fi
+            sleep 15
+          done
+          # 실패해도 메일 폭탄이 오지 않도록 경고만 남깁니다.
+          echo "::warning::서버 응답 없음 (Render 상태를 확인하세요)"
