@@ -5,6 +5,8 @@
   --gold:#E3B23C;
   --gold-dim:#8A6E28;
   --teal:#3A9188;
+  --race:#FF7A45; /* 기록모드(레이스) 강조색 */
+  --museum:#4FD1C5; /* 수집모드(도감) 강조색 */
   --ink:#F1EAD9;
   --ink-dim:#A9AEC4;
   --danger:#C1543C;
@@ -1456,10 +1458,12 @@ body:not(.mode-collection) .collection-only{ display:none !important; }
 #gameScreen .top-row{ gap:8px; margin-bottom:14px; }
 #gameScreen .greeting{ flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .mode-chip{
-  flex-shrink:0; padding:3px 8px; border-radius:999px;
-  font-size:11px; font-weight:600; color:var(--gold);
-  border:1px solid var(--gold-dim); background:rgba(227,178,60,0.08);
+  width:auto; margin:0; cursor:pointer;
+  flex-shrink:0; padding:4px 9px; border-radius:999px;
+  font-size:11px; font-weight:700; color:var(--race);
+  border:1px solid var(--race); background:rgba(255,122,69,0.1);
 }
+.mode-chip::after{ content:' ▾'; font-size:9px; opacity:0.8; }
 body.mode-collection .mode-chip{ color:var(--teal); border-color:var(--teal); background:rgba(58,145,136,0.1); }
 #gameScreen .gold-row{ margin-bottom:4px; }
 #gameScreen .chest-wrap{ margin-top:4px; }
@@ -1563,3 +1567,74 @@ body.in-game .tab-bar{
   animation:autoLoginSpin 0.9s linear infinite;
 }
 @keyframes autoLoginSpin{ to{ transform:rotate(360deg); } }
+
+/* -------------------------------
+   모드별 분위기 · 모드 카드 · 모드 선택 창
+   기록모드 = 붉은 레이스, 수집모드 = 청록 박물관
+   ------------------------------- */
+body.in-game{ background:radial-gradient(120% 60% at 50% -10%, rgba(255,122,69,0.22), transparent 60%) fixed, var(--bg); }
+body.in-game.mode-collection{ background:radial-gradient(120% 60% at 50% -10%, rgba(79,209,197,0.2), transparent 60%) fixed, var(--bg); }
+body.in-game #gameScreen{ border-color:rgba(255,122,69,0.35); }
+body.in-game.mode-collection #gameScreen{ border-color:rgba(79,209,197,0.35); }
+body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum); background:rgba(79,209,197,0.1); }
+
+.mode-hero{
+  margin:0 0 10px; padding:12px 14px 10px; border-radius:14px;
+  border:1px solid var(--hero); background:linear-gradient(135deg, var(--hero-bg), rgba(20,33,61,0.6));
+  transition:box-shadow 0.3s;
+}
+.record-hero{ --hero:var(--race); --hero-bg:rgba(255,122,69,0.16); }
+.collection-hero{ --hero:var(--museum); --hero-bg:rgba(79,209,197,0.14); }
+.mode-hero.ready{ box-shadow:0 0 16px rgba(255,122,69,0.55); }
+.hero-head{ display:flex; justify-content:space-between; align-items:flex-end; gap:10px; margin-bottom:8px; }
+.hero-title{ flex:1; min-width:0; display:flex; flex-direction:column; font-size:15px; font-weight:800; color:var(--hero); white-space:nowrap; }
+.hero-title small{ font-size:11px; font-weight:500; color:var(--ink-dim); margin-top:2px; white-space:normal; }
+.hero-big{ flex-shrink:0; font-family:'Fraunces', serif; font-size:24px; font-weight:700; color:var(--ink); line-height:1; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.hero-big small{ font-size:14px; color:var(--ink-dim); }
+.mode-hero .goal-bar-wrap{ height:8px; }
+.mode-hero .goal-bar-fill{ background:var(--hero); }
+.hero-line{ display:flex; justify-content:space-between; gap:8px; margin:6px 0 0; font-size:11px; color:var(--ink-dim); }
+.hero-line span:first-child{ color:var(--ink); font-weight:600; white-space:nowrap; }
+.hero-line span:last-child{ text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.mode-hero .pace-line{ margin:4px 0 0; font-size:11px; }
+.hero-foot{ margin:2px 0 0; font-size:11px; color:var(--ink-dim); }
+.hero-foot:empty{ display:none; }
+
+/* 모드 선택 창 */
+.mode-picker{ text-align:left; max-width:360px; }
+.mode-picker-sub{ font-size:12px; color:var(--ink-dim); margin:0 0 12px; }
+.mode-option{
+  all:unset; box-sizing:border-box; cursor:pointer; display:flex; flex-direction:column; gap:4px;
+  width:100%; margin-bottom:10px; padding:12px 14px; border-radius:12px;
+  border:2px solid var(--opt); background:var(--opt-bg);
+}
+.mode-option.record{ --opt:var(--race); --opt-bg:rgba(255,122,69,0.1); }
+.mode-option.collection{ --opt:var(--museum); --opt-bg:rgba(79,209,197,0.08); }
+.mode-option-title{ font-size:16px; font-weight:800; color:var(--opt); }
+.mode-option-title em{ font-style:normal; font-size:11px; font-weight:600; padding:1px 6px; margin-left:4px; border-radius:999px; background:var(--opt); color:#0B1220; vertical-align:middle; }
+.mode-option-desc{ font-size:13px; color:var(--ink); }
+.mode-option-desc strong{ color:var(--opt); }
+.mode-option-list{ font-size:11px; color:var(--ink-dim); line-height:1.6; }
+.mode-option-cta{ align-self:flex-end; margin-top:4px; padding:5px 12px; border-radius:999px; font-size:12px; font-weight:700; background:var(--opt); color:#0B1220; }
+.mode-option.current .mode-option-cta{ background:transparent; color:var(--opt); border:1px solid var(--opt); }
+#modePickerCloseBtn{ display:block; margin:4px auto 0; font-size:12px; }
+
+/* 신화 선택 상자 */
+.choice-box-btn{
+  display:block; width:100%; margin:10px 0 0; padding:9px 12px; border-radius:10px;
+  font-size:13px; font-weight:700; color:#0B1220;
+  background:linear-gradient(135deg, #ffd6f2, var(--rarity-mythic)); border:none;
+  box-shadow:0 0 14px rgba(240,98,146,0.5); animation:pityPulse 2s ease-in-out infinite;
+}
+.choice-box-btn.hidden{ display:none; }
+.choice-card{ max-width:380px; border-color:var(--rarity-mythic); }
+.choice-sub{ font-size:12px; color:var(--ink-dim); margin:0 0 10px; }
+.choice-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; max-height:46vh; overflow-y:auto; padding:2px; margin-bottom:10px; }
+.choice-option{ all:unset; box-sizing:border-box; cursor:pointer; position:relative; padding:4px 2px 6px; border-radius:10px; background:var(--bg); text-align:center; border:1px solid transparent; }
+.choice-option.picked{ border-color:var(--rarity-mythic); box-shadow:0 0 10px rgba(240,98,146,0.6); background:rgba(240,98,146,0.12); }
+.choice-today{ position:absolute; top:2px; right:2px; font-size:9px; font-weight:700; padding:0 4px; border-radius:6px; background:var(--museum); color:#0B1220; }
+.choice-picked{ font-size:12px; color:var(--ink); margin:0 0 10px; min-height:16px; }
+#choiceConfirmBtn{ background:var(--rarity-mythic); color:#0B1220; }
+#choiceCloseBtn{ display:block; margin:8px auto 0; font-size:12px; }
+.guestbook-entry.just-added{ animation:gbIn 0.35s ease-out; }
+@keyframes gbIn{ from{ opacity:0; transform:translateY(-6px); } to{ opacity:1; transform:none; } }

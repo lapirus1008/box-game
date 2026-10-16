@@ -55,7 +55,7 @@ router.post('/', handle('글을 남기지 못했습니다.', async (req) => {
   // 줄바꿈은 3줄 연속까지만, 앞뒤 공백은 지웁니다.
   const message = raw.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   if (!message) throw new HttpError(400, '내용을 입력해주세요.');
-  if ([...message].length > GUESTBOOK_MAX_LENGTH) throw new HttpError(400, `${GUESTBOOK_MAX_LENGTH}자까지 쓸 수 있어요.`);
+  if ([...message].length > GUESTBOOK_MAX_LENGTH) throw new HttpError(400, `${GUESTBOOK_MAX_LENGTH}자까지 작성할 수 있습니다.`);
 
   const last = await db.query(
     'SELECT created_at FROM guestbook_entries WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
@@ -63,11 +63,21 @@ router.post('/', handle('글을 남기지 못했습니다.', async (req) => {
   );
   if (last.rows[0]) {
     const waitMs = GUESTBOOK_COOLDOWN_MS - (Date.now() - new Date(last.rows[0].created_at).getTime());
-    if (waitMs > 0) throw new HttpError(429, `${Math.ceil(waitMs / 1000)}초 뒤에 다시 쓸 수 있어요.`);
+    if (waitMs > 0) throw new HttpError(429, `${Math.ceil(waitMs / 1000)}초 후 다시 작성할 수 있습니다.`);
   }
 
-  await db.query('INSERT INTO guestbook_entries (user_id, message) VALUES ($1, $2)', [userId, message]);
-  return { message: '방명록에 글을 남겼어요.' };
+  const inserted = await db.query(
+    `INSERT INTO guestbook_entries (user_id, message) VALUES ($1, $2)
+     RETURNING id, created_at, (SELECT nickname FROM users WHERE id = $1) AS nickname`,
+    [userId, message]
+  );
+  const row = inserted.rows[0];
+  const titles = await collectorTitlesFor([userId]);
+  // 방금 쓴 글을 그대로 돌려줘서 화면이 목록을 다시 불러오지 않고 맨 위에 끼워 넣게 합니다.
+  return {
+    message: '방명록에 글을 남겼습니다.',
+    entry: { id: row.id, nickname: row.nickname, title: titles[userId], message, createdAt: row.created_at, isMine: true },
+  };
 }));
 
 router.delete('/:id', handle('글을 지우지 못했습니다.', async (req) => {
@@ -75,20 +85,20 @@ router.delete('/:id', handle('글을 지우지 못했습니다.', async (req) =>
     'DELETE FROM guestbook_entries WHERE id = $1 AND user_id = $2',
     [parseInt(req.params.id, 10) || 0, req.user.userId]
   );
-  if (result.rowCount === 0) throw new HttpError(404, '지울 수 있는 글이 없어요.');
-  return { message: '글을 지웠어요.' };
+  if (result.rowCount === 0) throw new HttpError(404, '삭제할 수 있는 글이 없습니다.');
+  return { message: '글을 삭제했습니다.' };
 }));
 
 router.post('/:id/report', handle('신고하지 못했습니다.', async (req) => {
   const entryId = parseInt(req.params.id, 10) || 0;
   const entry = await db.query('SELECT user_id FROM guestbook_entries WHERE id = $1', [entryId]);
-  if (!entry.rows[0]) throw new HttpError(404, '이미 지워진 글이에요.');
-  if (entry.rows[0].user_id === req.user.userId) throw new HttpError(400, '내 글은 신고할 수 없어요.');
+  if (!entry.rows[0]) throw new HttpError(404, '이미 삭제된 글입니다.');
+  if (entry.rows[0].user_id === req.user.userId) throw new HttpError(400, '내 글은 신고할 수 없습니다.');
   await db.query(
     'INSERT INTO guestbook_reports (entry_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
     [entryId, req.user.userId]
   );
-  return { message: '신고했어요. 이 글은 더 이상 보이지 않아요.' };
+  return { message: '신고 완료. 이 글은 더 이상 표시되지 않습니다.' };
 }));
 
 module.exports = router;

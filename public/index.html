@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261015b">
+<link rel="stylesheet" href="style.css?v=20261016c">
 </head>
 <body>
 
@@ -29,7 +29,7 @@
     <p class="away-eyebrow">🎁 황금 상자란?</p>
     <p class="away-time" id="goldenInfoTiming"></p>
     <ul class="away-details" id="goldenInfoRewards"></ul>
-    <p class="golden-info-note">화면 오른쪽 아래에 통통 튀는 🎁 버튼으로 나타나요. 다른 화면(강화·업적 등)에 있어도 나타나요.</p>
+    <p class="golden-info-note">게임 화면 위를 떠다니는 🎁 버튼으로 등장. 강화·업적 등 다른 화면에서도 등장합니다.</p>
     <button id="goldenInfoCloseBtn">확인</button>
   </div>
 </div>
@@ -49,7 +49,7 @@
 <!-- 골드 수입 설명 (보유 골드 옆 ?) -->
 <div id="incomeOverlay" class="info-overlay">
   <div class="away-card">
-    <p class="away-eyebrow">💰 골드는 이렇게 쌓여요</p>
+    <p class="away-eyebrow">💰 골드 수입 구조</p>
     <div class="away-gold" id="incomeHelpRate"></div>
     <ul class="away-details" id="incomeHelpList"></ul>
     <p class="golden-info-note" id="incomeHelpNote"></p>
@@ -64,7 +64,7 @@
     <p class="away-eyebrow">⚙️ 설정</p>
     <div class="settings-account"><strong id="settingsNickname"></strong><small id="settingsEmail"></small></div>
     <div class="settings-list">
-      <button class="settings-item install-item hidden" id="installAppBtn">📲 앱으로 설치<small>홈 화면에 아이콘이 생기고 전체 화면으로 열려요</small></button>
+      <button class="settings-item install-item hidden" id="installAppBtn">📲 앱으로 설치<small>홈 화면 아이콘 · 전체 화면 실행</small></button>
       <button class="settings-item record-only" id="resetRunBtn">🔄 초심으로 돌아가기<small>이번 판을 처음부터 다시 시작</small></button>
       <button class="settings-item" id="logoutBtn">🚪 로그아웃</button>
       <a class="settings-item" href="privacy.html" target="_blank" rel="noopener">📄 개인정보처리방침</a>
@@ -74,11 +74,44 @@
   </div>
 </div>
 
+<!-- 모드 선택: 두 모드를 비교해서 고릅니다 (처음 들어올 때 한 번, 그리고 모드 칩/전환 버튼으로) -->
+<div id="modePickerOverlay" class="info-overlay">
+  <div class="away-card mode-picker">
+    <p class="away-eyebrow">🎮 모드 선택</p>
+    <p class="mode-picker-sub">두 모드는 골드·아이템이 따로 저장됩니다. 언제든 전환 가능.</p>
+    <button class="mode-option record" data-pick-mode="record">
+      <span class="mode-option-title">🏁 기록모드 <em>레이스</em></span>
+      <span class="mode-option-desc">30만 골드를 <strong>가장 빨리</strong> 모으는 타임어택</span>
+      <span class="mode-option-list">⏱ 시즌 랭킹 기록 경쟁<br>🔁 환생할수록 특성이 쌓여 더 빠르게<br>🗓 매주 목요일 전원 같은 출발선에서 새 시즌</span>
+      <span class="mode-option-cta" data-cta="record"></span>
+    </button>
+    <button class="mode-option collection" data-pick-mode="collection">
+      <span class="mode-option-title">📖 수집모드 <em>느긋하게</em></span>
+      <span class="mode-option-desc">신화 <strong>100종 도감</strong>을 영원히 채워 나가기</span>
+      <span class="mode-option-list">♾ 환생·초기화 없이 영구 보존<br>🏅 업적 보상과 수집가 칭호<br>🌟 신화 수집 랭킹</span>
+      <span class="mode-option-cta" data-cta="collection"></span>
+    </button>
+    <button class="link-btn" id="modePickerCloseBtn">닫기</button>
+  </div>
+</div>
+
+<!-- 신화 선택 상자: 아직 도감에 없는 신화 중 1종을 골라 받습니다 (수집모드) -->
+<div id="choiceOverlay" class="info-overlay">
+  <div class="away-card choice-card">
+    <p class="away-eyebrow">🎁 신화 선택 상자</p>
+    <p class="choice-sub" id="choiceSub">아직 없는 신화 중 1종 선택</p>
+    <div class="choice-grid" id="choiceGrid"></div>
+    <p class="choice-picked" id="choicePicked">받을 신화를 선택하세요</p>
+    <button id="choiceConfirmBtn" disabled>이 신화 받기</button>
+    <button class="link-btn" id="choiceCloseBtn">닫기</button>
+  </div>
+</div>
+
 <!-- 계정 삭제 -->
 <div id="deleteAccountOverlay" class="info-overlay">
   <div class="away-card">
     <p class="away-eyebrow">⚠️ 계정 삭제</p>
-    <p class="away-time">계정과 모든 게임 기록(세이브·신화 도감·랭킹)이 즉시 삭제되며 되돌릴 수 없어요.</p>
+    <p class="away-time">계정과 모든 게임 기록(세이브·신화 도감·랭킹)이 즉시 삭제되며 복구할 수 없습니다.</p>
     <form id="deleteAccountForm">
       <label for="deleteAccountPassword">비밀번호 확인</label>
       <input type="password" id="deleteAccountPassword" autocomplete="current-password" required>
@@ -95,7 +128,7 @@
 <!-- 자리 비운 동안 요약 -->
 <div id="awayOverlay">
   <div class="away-card">
-    <p class="away-eyebrow">🌙 다시 오셨네요!</p>
+    <p class="away-eyebrow">🌙 다시 오신 걸 환영합니다</p>
     <p class="away-time" id="awayTime"></p>
     <div class="away-gold" id="awayGold"></div>
     <ul class="away-details" id="awayDetails"></ul>
@@ -153,8 +186,33 @@
         <div class="greeting">안녕하세요, <strong id="userNickname"></strong>님</div>
         <div class="rank-chip hidden" id="collectorRankMain"></div>
       </div>
-      <span class="mode-chip" id="modeBadge">🏆 기록모드</span>
+      <button class="mode-chip" id="modeBadge">🏁 기록모드</button>
       <button class="settings-btn" id="settingsBtn" aria-label="설정">⚙️</button>
+    </div>
+
+    <!-- 모드 카드: 지금 모드에서 무엇을 하는지 맨 위에 크게 보여줍니다 -->
+    <!-- 기록모드: 30만G까지 달리는 레이스 (타이머 · 목표 진행 · 최고 기록과 비교) -->
+    <div class="mode-hero record-hero record-only" id="rebirthGoalBox">
+      <div class="hero-head">
+        <span class="hero-title">🏁 기록 레이스<small>30만G를 가장 빨리 모으기</small></span>
+        <span class="hero-big" id="heroRunTimer">00:00:00</span>
+      </div>
+      <div class="goal-bar-wrap"><div class="goal-bar-fill" id="rebirthGoalBar"></div></div>
+      <p class="hero-line"><span id="rebirthGoalText">0 / 30만G</span><span id="seasonBestLine"></span></p>
+      <p class="pace-line hidden" id="paceLine"></p>
+      <p class="hero-foot" id="prestigeHint"></p>
+    </div>
+    <button class="btn-primary record-only hidden" id="mainRebirthBtn" disabled style="margin:0 0 12px;">✨ 환생하기! (300,000G)</button>
+
+    <!-- 수집모드: 신화 100종 도감 채우기 (영구 · 칭호) -->
+    <div class="mode-hero collection-hero collection-only" id="collectionHero">
+      <div class="hero-head">
+        <span class="hero-title">📖 신화 도감<small>환생 없이 영원히 모으기</small></span>
+        <span class="hero-big"><span id="heroCodexCount">0</span><small> / 100</small></span>
+      </div>
+      <div class="goal-bar-wrap"><div class="goal-bar-fill" id="heroCodexBar"></div></div>
+      <p class="hero-line"><span id="heroRankText"></span><span id="heroTodayMythic">오늘 0/10</span></p>
+      <button class="choice-box-btn hidden" id="choiceBoxBtn">🎁 신화 선택 상자 <strong id="choiceBoxCount">0</strong>개 · 고르기</button>
     </div>
 
     <!-- 보유 골드 + 분당 수입. ? 를 누르면 수입이 어떻게 계산되는지 보여줍니다 -->
@@ -167,7 +225,7 @@
     <!-- 자동 개봉 중에 나온 신화는 내용물이 정해진 채로 보관됩니다. 눌러서 한 번에 열기 -->
     <button class="sealed-badge hidden" id="sealedBtn">
       <span class="sealed-icon">🔮</span>
-      <span class="sealed-text"><strong>신화 상자 <span id="sealedCount">0</span>개</strong><small id="sealedSince">자리 비운 사이 도착했어요</small></span>
+      <span class="sealed-text"><strong>신화 상자 <span id="sealedCount">0</span>개</strong><small id="sealedSince">자리 비운 사이 도착</small></span>
       <span class="sealed-cta">열기</span>
     </button>
 
@@ -211,14 +269,6 @@
     </button>
 
 
-    <div class="goal-box record-only" id="rebirthGoalBox">
-      <p class="goal-top"><span>🎯 환생까지</span><span id="rebirthGoalText" style="color:var(--gold); font-weight:600;">0 / 300,000G</span></p>
-      <div class="goal-bar-wrap"><div class="goal-bar-fill" id="rebirthGoalBar"></div></div>
-      <p class="pace-line hidden" id="paceLine"></p>
-      <p class="season-best"><span id="seasonBestLine"></span> <span id="prestigeHint"></span></p>
-    </div>
-
-    <button class="btn-primary record-only hidden" id="mainRebirthBtn" disabled style="margin:10px 0 12px;">✨ 환생하기! (300,000G)</button>
 
     <!-- 충전된 상자는 위의 상자를 누르면 한 번에 모두 열립니다.
          아래는 충전과는 별개로 골드를 내고 상자를 바로 구매해서 여는 곳입니다. -->
@@ -291,7 +341,7 @@
 
     <!-- 가방: 지금 실제로 들고 있는 아이템 (합성 가능) -->
     <div id="runModeView">
-      <p class="lock-hint" id="runModeHint">같은 아이템 3개 → 한 등급 위로 합성 · 🔓 잠그면 재료로 안 써요</p>
+      <p class="lock-hint" id="runModeHint">같은 아이템 3개 → 한 등급 위로 합성 · 🔓 잠그면 재료에서 제외</p>
       <button class="collection-link" id="craftAllBtn" style="margin-bottom:16px; background:var(--surface-2); border:1px solid var(--gold-dim); border-radius:10px; padding:10px; color:var(--gold); text-decoration:none;">⚡ 전체 합성 (가능한 만큼 한번에)</button>
       <div class="collection-grid" id="runInventoryGrid"></div>
     </div>
@@ -303,7 +353,7 @@
       <h1 style="margin:0; font-size:20px;">강화</h1>
       <button id="backFromUpgradeBtn">← 돌아가기</button>
     </div>
-    <p class="screen-sub">💰 <strong id="upgradeGold">0</strong>G · 골드로 성장 속도를 올려요</p>
+    <p class="screen-sub">💰 <strong id="upgradeGold">0</strong>G · 골드로 성장 속도 강화</p>
     <div class="craft-result" id="upgradeResult"></div>
 
     <h2 class="shop-heading">⬆️ 업그레이드</h2>
@@ -327,7 +377,7 @@
       <h1 style="margin:0; font-size:20px;">업적</h1>
       <button id="backFromAchievementBtn">← 돌아가기</button>
     </div>
-    <p class="screen-sub">목표를 달성하고 보상을 받아요</p>
+    <p class="screen-sub">목표 달성 시 보상 획득</p>
     <div class="craft-result" id="achievementResult"></div>
     <div class="achievement-list" id="achievementList"></div>
   </div>
@@ -359,7 +409,7 @@
     <div class="top-row">
       <h1 style="margin:0; font-size:20px;">💬 방명록</h1>
     </div>
-    <p class="screen-sub">자유롭게 인사를 남겨 보세요 · 불쾌한 글은 신고하면 바로 안 보여요</p>
+    <p class="screen-sub">자유롭게 한마디 · 불쾌한 글은 신고 시 즉시 숨김</p>
     <form class="guestbook-form" id="guestbookForm">
       <textarea id="guestbookInput" maxlength="200" rows="2" placeholder="한마디 남기기 (200자까지)"></textarea>
       <div class="guestbook-form-row">
@@ -383,7 +433,7 @@
   <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
 </nav>
 
-<script src="app.js?v=20261015b"></script>
+<script src="app.js?v=20261016c"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {

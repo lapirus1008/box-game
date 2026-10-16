@@ -39,6 +39,7 @@ const CLAIM_COLUMNS = [
   'prestige_points', 'prestige_perks', 'run_gold_earned', 'last_active_at',
   'golden_box_next_at', 'income_boost_until', 'lifetime_stats', 'achievements_claimed',
   'locked_items', 'season', 'run_splits', 'best_splits', 'best_run_ms', 'sealed_mythics',
+  'mythic_choice_boxes', 'collector_rank_rewarded',
 ];
 const MYTHIC_KEYS = MYTHICS.map(m => m.key);
 

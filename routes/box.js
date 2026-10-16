@@ -382,7 +382,7 @@ async function syncGoldenBox(client, userId, mode, save) {
 const GOLDEN_REWARD_TEXT = {
   gold: `💰 골드 (분당 수입 × ${GOLDEN_GOLD_MINUTES}분, 최소 ${GOLDEN_GOLD_MIN.toLocaleString()}G)`,
   boxes: `📦 상자 ${GOLDEN_BOXES}개 즉시 개봉`,
-  boost: `⚡ ${INCOME_BOOST_MS / 60000}분간 수입 ${INCOME_BOOST_MULTIPLIER}배 (겹치면 시간이 늘어나요)`,
+  boost: `⚡ ${INCOME_BOOST_MS / 60000}분간 수입 ${INCOME_BOOST_MULTIPLIER}배 (중복 시 시간 연장)`,
   autoOpen: '⏳ 자동 개봉 +1시간 (보관 시간이 꽉 찼으면 골드로)',
 };
 const GOLDEN_BOX_INFO = (() => {
@@ -416,7 +416,39 @@ function getStatValue(claim, stat) {
 }
 
 function describeReward(reward) {
+  if (reward.mythicChoice) return `🎁 신화 선택 상자 ${reward.mythicChoice}`;
   return reward.points ? `✨ 환생 포인트 ${reward.points}` : `💰 ${reward.gold.toLocaleString()}G`;
+}
+
+// -------------------------------
+// 신화 선택 상자 (수집모드 전용)
+// -------------------------------
+// 수집가 칭호가 오를 때마다(도감 10·30·60·90종) 1개씩 줍니다. 마지막 칭호(100종 완성)는 고를 신화가 없으므로 제외.
+// 이미 받은 단계는 collector_rank_rewarded에 기록해서 중복 지급하지 않습니다. (기존 유저는 현재 칭호까지 소급 지급)
+const LAST_REWARDABLE_RANK = COLLECTOR_RANKS.reduce((last, r, i) => (r.minObtained < MYTHICS.length ? i : last), 0);
+function collectorRankIndex(count) {
+  let index = 0;
+  COLLECTOR_RANKS.forEach((r, i) => { if (count >= r.minObtained) index = i; });
+  return index;
+}
+async function grantCollectorRankRewards(client, userId, mode, save) {
+  if (mode !== MODES.COLLECTION) return null;
+  const reached = Math.min(collectorRankIndex(save.codex.size), LAST_REWARDABLE_RANK);
+  const rewarded = save.claim.collector_rank_rewarded || 0;
+  if (reached <= rewarded) return null;
+  const count = reached - rewarded;
+  save.claim.mythic_choice_boxes = (save.claim.mythic_choice_boxes || 0) + count;
+  save.claim.collector_rank_rewarded = reached;
+  await store.updateClaim(client, userId, mode, {
+    mythic_choice_boxes: save.claim.mythic_choice_boxes,
+    collector_rank_rewarded: reached,
+  });
+  const rank = COLLECTOR_RANKS[reached];
+  return { count, rank: { emoji: rank.emoji, name: rank.name } };
+}
+function choiceBoxResponse(mode, save) {
+  if (mode !== MODES.COLLECTION) return null;
+  return { count: save.claim.mythic_choice_boxes || 0, remainingMythics: MYTHICS.length - save.codex.size };
 }
 
 function achievementsResponse(mode, claim) {
@@ -464,7 +496,7 @@ router.post('/mode', handle('서버 오류로 모드를 전환하지 못했습�
 // 충전으로 상자를 열 수 있는지 확인합니다.
 function assertCanOpen(save, quantity) {
   if (save.claim.auto_open_enabled && Number(save.claim.auto_open_remaining_ms) > 0) {
-    throw new HttpError(400, '자동 개봉이 켜져 있어서 충전된 상자는 자동으로 열려요.', chargeResponse(save.chargeInfo));
+    throw new HttpError(400, '자동 개봉 중에는 충전된 상자가 자동으로 열립니다.', chargeResponse(save.chargeInfo));
   }
   if (save.chargeInfo.charges < quantity) {
     if (quantity === 1) {
@@ -552,7 +584,7 @@ router.post('/open-sealed', handle('서버 오류로 신화 상자를 열지 못
 
   return withSave(userId, async (client, mode, save) => {
     const sealed = store.sealedList(save.claim);
-    if (sealed.length === 0) throw new HttpError(400, '열 신화 상자가 없어요.');
+    if (sealed.length === 0) throw new HttpError(400, '열 수 있는 신화 상자가 없습니다.');
 
     const counts = {};
     for (const s of sealed) counts[s.key] = (counts[s.key] || 0) + 1;
@@ -561,13 +593,40 @@ router.post('/open-sealed', handle('서버 오류로 신화 상자를 열지 못
     await store.updateClaim(client, userId, mode, { sealed_mythics: '[]' });
 
     return {
-      message: `🔮 신화 상자 ${sealed.length}개를 열었어요!`,
+      message: `🔮 신화 상자 ${sealed.length}개 개봉!`,
       mode,
       quantity: sealed.length,
       obtained: toObtainedList(counts),
       pityTriggered: sealed.some(s => s.pity),
       firstAt: sealed[0].at,
       totalTreasure: save.claim.total_treasure,
+    };
+  });
+}));
+
+// -------------------------------
+// 신화 선택 상자 사용: POST /api/box/choose-mythic { key } (수집모드 전용)
+// 아직 도감에 없는 신화 중 고른 1종을 받습니다.
+// -------------------------------
+router.post('/choose-mythic', handle('서버 오류로 신화를 받지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+  const key = req.body.key;
+  return withSave(userId, async (client, mode, save) => {
+    if (mode !== MODES.COLLECTION) throw new HttpError(400, '신화 선택 상자는 수집모드 전용입니다.');
+    if ((save.claim.mythic_choice_boxes || 0) < 1) throw new HttpError(400, '신화 선택 상자가 없습니다.');
+    if (!MYTHIC_KEYS.includes(key)) throw new HttpError(400, '존재하지 않는 신화입니다.');
+    if (save.codex.has(key)) throw new HttpError(400, '이미 도감에 있는 신화입니다. 다른 신화를 선택하세요.');
+
+    const counts = { [key]: 1 };
+    await store.addItems(client, userId, mode, counts);
+    await store.saveStats(client, userId, mode, save.claim, store.countRareGains(counts));
+    await store.updateClaim(client, userId, mode, { mythic_choice_boxes: save.claim.mythic_choice_boxes - 1 });
+
+    return {
+      message: '🎁 신화 선택 상자 개봉!',
+      mode,
+      obtained: toObtainedList(counts),
+      remainingBoxes: save.claim.mythic_choice_boxes - 1,
     };
   });
 }));
@@ -669,11 +728,14 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       await store.saveStats(client, userId, mode, claim, { bestIncome: save.income.perMinuteIncome - bestIncome });
     }
     const goldenBox = await syncGoldenBox(client, userId, mode, save);
+    const rankReward = await grantCollectorRankRewards(client, userId, mode, save);
 
     return {
       mode,
       isRecordMode,
       goldenBox,
+      rankReward,
+      choiceBox: choiceBoxResponse(mode, save),
       ...achievementsResponse(mode, claim),
       season: seasonResponse(mode, save),
       seasonChange: save.seasonChange,
@@ -764,7 +826,7 @@ router.post('/auto-open', handle('서버 오류로 자동 개봉 설정에 실�
     if (hours === undefined) {
       const on = Boolean(enabled);
       await store.updateClaim(client, userId, mode, { auto_open_enabled: on });
-      return { message: `⏳ 자동 개봉을 ${on ? '켰어요' : '껐어요'}.`, mode, enabled: on, totalTreasure: gold };
+      return { message: `⏳ 자동 개봉을 ${on ? 'ON' : 'OFF'}`, mode, enabled: on, totalTreasure: gold };
     }
 
     const spaceMs = Math.max(0, maxMs - remainingMs);
@@ -777,7 +839,7 @@ router.post('/auto-open', handle('서버 오류로 자동 개봉 설정에 실�
       addMs = n * HOUR_MS;
     }
     if (addMs <= 0 || addMs > spaceMs) {
-      throw new HttpError(400, `자동 개봉 시간은 보관 시간(${formatHours(maxMs)})까지만 채울 수 있어요. 창고를 늘려보세요!`);
+      throw new HttpError(400, `자동 개봉 시간은 보관 시간(${formatHours(maxMs)})까지만 채울 수 있습니다. 창고를 확장하세요!`);
     }
 
     const costPerHour = getAutoOpenCostPerHour(save.income.perMinuteIncome, save.stats.autoOpenDiscountPercent);
@@ -818,12 +880,12 @@ router.post('/auto-craft', handle('서버 오류로 자동 합성 설정에 실�
         [auto.unlockedColumn]: true,
         [auto.enabledColumn]: true,
       });
-      return { message: `${auto.emoji} ${auto.name}을(를) 해금했어요!`, mode, unlocked: true, enabled: true, totalTreasure: gold - auto.cost };
+      return { message: `${auto.emoji} ${auto.name} 해금!`, mode, unlocked: true, enabled: true, totalTreasure: gold - auto.cost };
     }
 
     const on = Boolean(req.body.enabled);
     await store.updateClaim(client, userId, mode, { [auto.enabledColumn]: on });
-    return { message: `${auto.emoji} ${auto.name}을(를) ${on ? '켰어요' : '껐어요'}.`, mode, unlocked: true, enabled: on, totalTreasure: gold };
+    return { message: `${auto.emoji} ${auto.name} ${on ? 'ON' : 'OFF'}`, mode, unlocked: true, enabled: on, totalTreasure: gold };
   });
 }));
 
@@ -844,7 +906,7 @@ router.post('/lock', handle('서버 오류로 잠금 설정에 실패했습니�
     else locked.delete(item.key);
     await store.updateClaim(client, userId, mode, { locked_items: JSON.stringify([...locked]) });
     return {
-      message: lock ? `🔒 ${item.name}을(를) 잠갔어요. 합성 재료로 쓰이지 않아요.` : `🔓 ${item.name} 잠금을 풀었어요.`,
+      message: lock ? `🔒 ${item.name} 잠금 · 합성 재료에서 제외` : `🔓 ${item.name} 잠금 해제`,
       mode,
       itemKey: item.key,
       locked: lock,
@@ -872,8 +934,8 @@ router.post('/golden-box', handle('서버 오류로 황금 상자를 열지 못�
     const box = goldenBoxResponse(save);
     if (!box.available) {
       throw new HttpError(400, box.appearsInMs > 0
-        ? '아직 황금 상자가 나타나지 않았어요.'
-        : '황금 상자가 사라졌어요. 다음 기회를 노려보세요!');
+        ? '아직 황금 상자가 등장하지 않았습니다.'
+        : '황금 상자가 사라졌습니다. 다음 기회를 노려보세요!');
     }
 
     const { claim, now } = save;
@@ -902,7 +964,7 @@ router.post('/golden-box', handle('서버 오류로 황금 상자를 열지 못�
       Object.assign(statDeltas, store.boxStatDeltas(goldenBoxes, counts));
       result.obtained = toObtainedList(counts);
       result.mythicPityTriggered = pityTriggered;
-      result.message = `📦 황금 상자! 상자 ${goldenBoxes}개를 열었어요`;
+      result.message = `📦 황금 상자! 상자 ${goldenBoxes}개 개봉`;
     } else if (result.reward === 'boost') {
       const current = claim.income_boost_until ? new Date(claim.income_boost_until) : now;
       const boostMs = bonus(INCOME_BOOST_MS);
@@ -940,7 +1002,7 @@ router.post('/achievement', handle('서버 오류로 업적 보상을 받지 못
 
   return withSave(userId, async (client, mode, save) => {
     const { claim } = save;
-    if (store.isPrestigeMode(mode)) throw new HttpError(400, '업적은 수집모드에서만 받을 수 있어요.');
+    if (store.isPrestigeMode(mode)) throw new HttpError(400, '업적은 수집모드 전용입니다.');
     const claimedMap = claim.achievements_claimed || {};
     if (claimedMap[achievement.key]) throw new HttpError(400, '이미 보상을 받은 업적입니다.');
     if (getStatValue(claim, achievement.stat) < achievement.goal) throw new HttpError(400, '아직 달성하지 못한 업적입니다.');
@@ -952,6 +1014,9 @@ router.post('/achievement', handle('서버 오류로 업적 보상을 받지 못
     if (achievement.reward.gold) {
       gold += achievement.reward.gold;
       fields.total_treasure = gold;
+    }
+    if (achievement.reward.mythicChoice) {
+      fields.mythic_choice_boxes = (claim.mythic_choice_boxes || 0) + achievement.reward.mythicChoice;
     }
     if (achievement.reward.points) {
       fields.prestige_points = claim.prestige_points + achievement.reward.points;
@@ -977,7 +1042,7 @@ router.post('/prestige-shop', handle('서버 오류로 구매에 실패했습니
   if (!perk) throw new HttpError(400, '존재하지 않는 특성입니다.');
 
   return withSave(userId, async (client, mode, save) => {
-    if (!store.isPrestigeMode(mode)) throw new HttpError(400, '환생 상점은 기록모드에서만 이용할 수 있어요.');
+    if (!store.isPrestigeMode(mode)) throw new HttpError(400, '환생 상점은 기록모드 전용입니다.');
 
     const level = getPerkLevel(save.claim, perk.key);
     if (level >= perk.maxLevel) throw new HttpError(400, '이미 최대 레벨입니다.');
@@ -1023,13 +1088,13 @@ router.post('/craft', handle('서버 오류로 합성에 실패했습니다.', a
   const nextRarity = getNextCraftRarity(sourceItem);
   if (!nextRarity) {
     throw new HttpError(400, sourceItem.rarity === 'legendary'
-      ? '신화 아이템은 합성으로 얻을 수 없어요. 오직 상자에서만 나옵니다!'
+      ? '신화 아이템은 합성할 수 없습니다. 오직 상자에서만 등장!'
       : '이미 최고 등급이라 더 합성할 수 없습니다.');
   }
 
   return withSave(userId, async (client, mode, save) => {
     if (store.lockedSet(save.claim).has(itemKey)) {
-      throw new HttpError(400, `🔒 ${sourceItem.name}은(는) 잠겨 있어서 합성할 수 없어요. 잠금을 풀어주세요.`);
+      throw new HttpError(400, `🔒 ${sourceItem.name}은(는) 잠겨 있어 합성할 수 없습니다. 잠금을 해제하세요.`);
     }
     const ownedCount = save.owned[itemKey] || 0;
     if (ownedCount < CRAFT_COST) {
@@ -1165,7 +1230,7 @@ router.post('/reset-run', handle('서버 오류가 발생했습니다.', async (
     const startGold = await store.resetSave(client, userId, mode, now, { claim });
 
     return {
-      message: '초심으로 돌아갔습니다. 도감도 함께 초기화됐어요. 다시 도전해보세요!',
+      message: '초심으로 돌아갔습니다. 도감도 함께 초기화되었습니다. 다시 도전하세요!',
       mode,
       totalTreasure: startGold,
       runStartedAt: now,
