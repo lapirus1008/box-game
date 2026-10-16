@@ -18,6 +18,8 @@
   --rarity-mythic:#F06292;
 }
 *{ box-sizing:border-box; }
+/* 화면을 아래로 당겨도 새로고침되지 않게 (앱처럼). 위아래 끝에서 튕기는 효과도 막습니다. */
+html, body{ overscroll-behavior-y:none; }
 /* 어떤 버튼이든 disabled 속성만 주면 자동으로 회색 처리됨 (자리는 그대로 유지) */
 button:disabled{
   opacity:0.4;
