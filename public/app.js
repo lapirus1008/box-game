@@ -161,16 +161,48 @@ function formatDuration(totalSeconds){
 //   토큰을 지우지 않고 잠시 기다렸다 다시 시도합니다. 그래서 앱을 오랜만에 열어도 로그인이 풀리지 않아요.
 // - 성공하면 서버가 유효기간을 늘린 새 토큰을 주므로 저장해 둡니다.
 const AUTO_LOGIN_RETRY_DELAYS_MS = [2000, 3000, 5000, 8000, 10000, 10000, 15000, 15000];
+// 서버가 깨어나는 동안(최대 1분) 섞어서 돌려 보여주는 문구
+const WAITING_LINES = [
+  '📦 상자 먼지 닦는 중...',
+  '🔑 열쇠 꾸러미 뒤지는 중...',
+  '⏳ 모래시계 뒤집는 중...',
+  '🧭 신화 지도 펼치는 중...',
+  '💰 금화 한 닢씩 세는 중...',
+  '🐉 상자 지키는 용 깨우는 중...',
+  '🕯 보물 창고에 불 밝히는 중...',
+  '🔮 오늘의 신화 점치는 중...',
+  '🧹 창고 거미줄 걷어내는 중...',
+  '✨ 황금 상자 광내는 중...',
+];
 (async function tryAutoLogin(){
   if (!authToken) return;
   const box = document.getElementById('autoLoginBox');
   const text = document.getElementById('autoLoginText');
   authScreen.classList.add('auto-login');
   box.classList.remove('hidden');
-  const wakingText = '서버 연결 중 ☕<br>오랜만에 접속하면 최대 1분 정도 걸립니다';
-  // 잠든 서버는 오류 대신 한참 동안 응답을 안 주기도 해서, 3초가 넘으면 안내 문구로 바꿉니다.
-  const slowTimer = setTimeout(() => { text.innerHTML = wakingText; }, 3000);
-  const stop = () => { clearTimeout(slowTimer); authScreen.classList.remove('auto-login'); box.classList.add('hidden'); };
+  // 잠든 서버는 오류 대신 한참 동안 응답을 안 주기도 해서, 3초가 넘으면 기다리는 문구를 돌립니다.
+  let funTimer = null;
+  const startWaitingFun = () => {
+    if (funTimer) return;
+    document.getElementById('autoLoginNote').classList.remove('hidden');
+    const lines = [...WAITING_LINES].sort(() => Math.random() - 0.5);
+    let i = 0;
+    const show = () => {
+      text.classList.remove('swap');
+      void text.offsetWidth; // 문구가 바뀔 때마다 살짝 떠오르는 효과를 다시 재생
+      text.textContent = lines[i++ % lines.length];
+      text.classList.add('swap');
+    };
+    show();
+    funTimer = setInterval(show, 2600);
+  };
+  const slowTimer = setTimeout(startWaitingFun, 3000);
+  const stop = () => {
+    clearTimeout(slowTimer);
+    clearInterval(funTimer);
+    authScreen.classList.remove('auto-login');
+    box.classList.add('hidden');
+  };
 
   for (let attempt = 0; ; attempt++) {
     try {
@@ -198,7 +230,7 @@ const AUTO_LOGIN_RETRY_DELAYS_MS = [2000, 3000, 5000, 8000, 10000, 10000, 15000,
         showAuthError('서버에 연결하지 못했습니다. 잠시 후 다시 실행해 주세요. (로그인 정보는 유지됩니다)');
         return;
       }
-      text.innerHTML = wakingText;
+      startWaitingFun();
       await new Promise(resolve => setTimeout(resolve, AUTO_LOGIN_RETRY_DELAYS_MS[attempt]));
     }
   }
