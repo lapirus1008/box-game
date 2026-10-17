@@ -2158,7 +2158,10 @@ function showGuideStep(){
   document.getElementById('guideText').textContent = guideValue(step.text);
   document.getElementById('guideNextBtn').textContent = guideIndex === guideSteps.length - 1 ? '시작하기' : '다음';
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  setTimeout(placeGuide, 350); // 스크롤이 끝난 뒤 위치를 잡습니다
+  // 스크롤이 길면 350ms 안에 안 끝나서, 스크롤 중에는 scroll 이벤트로 계속 따라가고 끝난 뒤 한 번 더 맞춥니다.
+  placeGuide();
+  setTimeout(placeGuide, 350);
+  setTimeout(placeGuide, 800);
 }
 function placeGuide(){
   if (guideLayer.classList.contains('hidden')) return;
@@ -2186,6 +2189,11 @@ function nextGuideStep(){
 document.getElementById('guideNextBtn').addEventListener('click', nextGuideStep);
 document.getElementById('guideSkipBtn').addEventListener('click', endGuide);
 window.addEventListener('resize', placeGuide);
+let guideScrollFrame = 0;
+window.addEventListener('scroll', () => {
+  if (guideLayer.classList.contains('hidden') || guideScrollFrame) return;
+  guideScrollFrame = requestAnimationFrame(() => { guideScrollFrame = 0; placeGuide(); });
+}, { passive: true });
 document.getElementById('openGuideBtn').addEventListener('click', () => {
   settingsOverlay.classList.remove('show');
   setTimeout(startGuide, 200);
