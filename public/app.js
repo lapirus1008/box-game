@@ -474,6 +474,7 @@ function enterGame(){
   document.getElementById('userNickname').textContent = currentUser.nickname || currentUser.email;
   authScreen.classList.add('hidden');
   document.body.classList.add('in-game');
+  armBackGuard();
   goTab('home');
   resetGameResultUI();
 
@@ -2052,6 +2053,49 @@ document.getElementById('choiceConfirmBtn').addEventListener('click', async func
   } catch (err) {
     this.disabled = false;
   }
+});
+
+// -------------------------------
+// 뒤로가기 (안드로이드 뒤로 버튼 · 브라우저 뒤로)
+// 게임에 들어오면 history에 "보호용" 기록을 하나 쌓아 두고, 뒤로가기가 그 기록을 지우면(popstate) 직접 처리합니다.
+//   1) 창(오버레이)이 열려 있으면 → 그 창만 닫기
+//   2) 홈이 아닌 탭이면 → 홈으로
+//   3) 홈이면 → "종료하시겠습니까?" 창. 이때는 보호용 기록을 다시 쌓지 않으므로 뒤로가기를 한 번 더 누르면 그대로 종료됩니다.
+// -------------------------------
+const exitOverlay = document.getElementById('exitOverlay');
+const OVERLAY_CLOSE_BUTTONS = {
+  awayOverlay: 'awayCloseBtn', goldenInfoOverlay: 'goldenInfoCloseBtn', seasonOverlay: 'seasonOverlayCloseBtn',
+  incomeOverlay: 'incomeHelpCloseBtn', settingsOverlay: 'settingsCloseBtn', modePickerOverlay: 'modePickerCloseBtn',
+  choiceOverlay: 'choiceCloseBtn', deleteAccountOverlay: 'deleteAccountCancelBtn',
+};
+function armBackGuard(){
+  if (!history.state || !history.state.boxGameGuard) history.pushState({ boxGameGuard: true }, '');
+}
+window.addEventListener('popstate', () => {
+  if (!document.body.classList.contains('in-game')) return; // 로그인 화면에서는 기본 동작(종료)
+  if (exitOverlay.classList.contains('show')) return; // 종료 창에서 한 번 더 누름 → 이미 앱 밖으로 나가는 중
+  const openOverlay = Object.keys(OVERLAY_CLOSE_BUTTONS).find(id => document.getElementById(id).classList.contains('show'));
+  if (openOverlay) {
+    document.getElementById(OVERLAY_CLOSE_BUTTONS[openOverlay]).click();
+    armBackGuard();
+    return;
+  }
+  if (currentTab !== 'home') {
+    goTab('home');
+    armBackGuard();
+    return;
+  }
+  exitOverlay.classList.add('show'); // 보호용 기록 없이 띄움: 다음 뒤로가기는 종료
+});
+document.getElementById('exitStayBtn').addEventListener('click', () => {
+  exitOverlay.classList.remove('show');
+  armBackGuard();
+});
+document.getElementById('exitQuitBtn').addEventListener('click', () => {
+  // 앱(TWA·설치 앱)에서는 첫 화면에서 뒤로 가면 종료됩니다. 안 되는 환경이면 창 닫기를 시도하고, 그래도 남아 있으면 안내.
+  history.back();
+  setTimeout(() => { window.close(); }, 150);
+  setTimeout(() => { if (!document.hidden) showToast('뒤로가기를 한 번 더 누르면 종료됩니다'); }, 600);
 });
 
 // -------------------------------

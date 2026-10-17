@@ -73,6 +73,20 @@ app.use('/api/box', boxLimiter, boxRoutes);
 const guestbookRoutes = require('./routes/guestbook');
 app.use('/api/guestbook', boxLimiter, guestbookRoutes);
 
+// Render 무료 서버는 15분 동안 외부 요청이 없으면 잠듭니다(다음 접속 때 깨어나는 데 30초~1분).
+// 서버가 10분마다 자기 공개 주소의 /ping 을 호출해서 스스로 깨어 있게 합니다. (DB는 건드리지 않음)
+// RENDER_EXTERNAL_URL 은 Render가 자동으로 넣어 주는 값이라, 로컬에서는 실행되지 않습니다.
+// Render 유료 플랜으로 바꾸면 필요 없습니다(그대로 둬도 무해).
+const SELF_PING_INTERVAL_MS = 10 * 60 * 1000;
+function startSelfPing() {
+  const baseUrl = process.env.RENDER_EXTERNAL_URL;
+  if (!baseUrl || typeof fetch !== 'function') return;
+  setInterval(() => {
+    fetch(`${baseUrl}/ping`).catch(err => console.error('[SELF-PING] 실패:', err.message));
+  }, SELF_PING_INTERVAL_MS);
+  console.log(`[SELF-PING] ${SELF_PING_INTERVAL_MS / 60000}분마다 ${baseUrl}/ping 호출`);
+}
+
 // 6. DB 구조를 최신으로 맞춘 뒤 서버 실행
 // 마이그레이션이 실패하면 새 기능이 동작하지 않으므로 로그를 크게 남깁니다.
 // (그래도 서버는 켜서, 기존 기능과 /health 확인은 가능하게 둡니다)
@@ -83,5 +97,6 @@ runMigrations()
   .finally(() => {
     app.listen(PORT, () => {
       console.log(`[SERVER] 서버가 포트 ${PORT} 에서 실행 중입니다`);
+      startSelfPing();
     });
   });

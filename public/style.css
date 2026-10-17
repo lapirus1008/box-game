@@ -1650,3 +1650,13 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 #choiceCloseBtn{ display:block; margin:8px auto 0; font-size:12px; }
 .guestbook-entry.just-added{ animation:gbIn 0.35s ease-out; }
 @keyframes gbIn{ from{ opacity:0; transform:translateY(-6px); } to{ opacity:1; transform:none; } }
+
+/* 종료 확인 창 */
+.exit-card{ max-width:300px; }
+.exit-icon{ font-size:40px; margin:0 0 6px; }
+.exit-title{ font-size:17px; font-weight:800; color:var(--ink); margin:0 0 6px; }
+.exit-sub{ font-size:12px; color:var(--ink-dim); margin:0 0 16px; line-height:1.6; }
+.exit-buttons{ display:flex; gap:8px; }
+.exit-buttons button{ flex:1; margin:0; }
+.exit-stay{ background:var(--gold); color:#1A1305; }
+.exit-quit{ background:var(--surface-2); color:var(--ink); border:1px solid #2C3F6B; }

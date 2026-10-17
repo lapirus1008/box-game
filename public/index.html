@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261016e">
+<link rel="stylesheet" href="style.css?v=20261017a">
 </head>
 <body>
 
@@ -104,6 +104,19 @@
     <p class="choice-picked" id="choicePicked">받을 신화를 선택하세요</p>
     <button id="choiceConfirmBtn" disabled>이 신화 받기</button>
     <button class="link-btn" id="choiceCloseBtn">닫기</button>
+  </div>
+</div>
+
+<!-- 뒤로가기로 종료할 때 확인 (뒤로가기를 한 번 더 누르거나 '종료'를 누르면 종료) -->
+<div id="exitOverlay" class="info-overlay">
+  <div class="away-card exit-card">
+    <p class="exit-icon">📦</p>
+    <p class="exit-title">게임을 종료하시겠습니까?</p>
+    <p class="exit-sub">골드는 접속하지 않아도 계속 쌓입니다<br>뒤로가기를 한 번 더 누르면 종료</p>
+    <div class="exit-buttons">
+      <button class="exit-stay" id="exitStayBtn">계속하기</button>
+      <button class="exit-quit" id="exitQuitBtn">종료</button>
+    </div>
   </div>
 </div>
 
@@ -435,7 +448,7 @@
   <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
 </nav>
 
-<script src="app.js?v=20261016e"></script>
+<script src="app.js?v=20261017a"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {
