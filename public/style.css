@@ -1681,3 +1681,7 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 .guide-buttons button{ margin:0; padding:9px; font-size:13px; }
 .guide-skip{ flex:1; background:transparent; color:var(--ink-dim); border:1px solid #2C3F6B; }
 .guide-next{ flex:2; background:var(--gold); color:#1A1305; }
+
+/* 구매 칸 제목 옆 작은 ? 버튼 */
+.gold-open-title{ display:flex; align-items:center; gap:6px; }
+.help-btn.mini{ width:18px; height:18px; line-height:18px; font-size:11px; }

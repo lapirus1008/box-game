@@ -668,15 +668,22 @@ router.post('/open-all', handle('서버 오류로 상자를 열지 못했습니�
 // -------------------------------
 router.post('/buy-boxes', handle('서버 오류로 구매에 실패했습니다.', async (req) => {
   const userId = req.user.userId;
-  const quantity = parseQuantity(
+  const requestedQuantity = parseQuantity(
     req.body.quantity,
     MAX_GOLD_BOX_PURCHASE,
     `한 번에 최대 ${MAX_GOLD_BOX_PURCHASE}개까지만 구매할 수 있습니다.`
   );
 
+  // upTo: "최대로" 구매. 화면이 계산한 최대 개수는 몇 초 전 가격·골드 기준이라(자동 개봉으로 수입이 오르면 가격도 오름)
+  // 그 사이 조금 모자랄 수 있습니다. 이때는 오류 대신 지금 살 수 있는 만큼만 삽니다.
+  const upTo = req.body.upTo === true;
+
   return withSave(userId, async (client, mode, save) => {
     const currentGold = save.claim.total_treasure;
     const pricing = boxPricingOf(save);
+    let quantity = requestedQuantity;
+    if (upTo) quantity = Math.min(quantity, getMaxAffordableBoxes(pricing, currentGold, MAX_GOLD_BOX_PURCHASE));
+    if (quantity < 1) throw new HttpError(400, '골드가 부족합니다.');
     const { total: totalCost, firstPrice: boxPrice, lastPrice } = getBoxPurchaseCost(pricing, quantity);
     if (currentGold < totalCost) {
       throw new HttpError(400, `골드가 부족합니다. (필요: ${totalCost.toLocaleString()}G, 보유: ${currentGold.toLocaleString()}G)`, {

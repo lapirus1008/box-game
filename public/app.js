@@ -810,6 +810,8 @@ document.getElementById('buyBoxBtn').addEventListener('click', async function(){
   if (isOpening) return;
   const quantity = parseInt(document.getElementById('buyBoxQty').value, 10);
   if (!quantity || quantity < 1) return;
+  // 최대 개수로 사는 경우: 그 사이 가격이 조금 올라도 서버가 살 수 있는 만큼으로 맞춰서 삽니다.
+  const upTo = quantity >= getMaxBuyableQty();
 
   isOpening = true;
   this.disabled = true;
@@ -820,14 +822,15 @@ document.getElementById('buyBoxBtn').addEventListener('click', async function(){
     const res = await authFetch('/api/box/buy-boxes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quantity }),
+      body: JSON.stringify({ quantity, upTo }),
     });
     const data = await res.json();
 
     if (!res.ok){
-      alert(data.message);
+      showToast(data.message, true);
       return;
     }
+    if (data.quantity < quantity) showToast(`가격이 올라 ${data.quantity}개만 구매했습니다`);
 
     setGold(data.totalTreasure);
     showOpenResult(`💰 ${data.quantity}개 구매 오픈`, data.obtained);
@@ -1532,6 +1535,34 @@ function renderIncomeHelp(){
     `(기본 + 아이템) × 배율 = 분당 수입. 아이템은 등급이 높을수록, ★(같은 아이템 10·30·100·300개)가 붙을수록 수입 증가.`
     + (storage ? ` 접속하지 않아도 최대 ${storage}까지 적립(강화의 창고로 확장).` : '');
 }
+// 상자 가격 설명: 가격은 분당 수입에 비례 → 수입이 오를수록(아이템이 늘수록) 비싸집니다.
+function renderBoxPriceHelp(){
+  const p = cachedBoxPricing;
+  document.getElementById('boxPriceNow').textContent = `지금 1개 ${formatGold(boxPriceAt(0))}G`;
+  const rows = [];
+  if (p) {
+    const seconds = Math.round(p.incomeMinutes * 60);
+    rows.push(['기준', `분당 수입의 ${seconds}초치`]);
+    rows.push(['내 분당 수입', `${formatGold(p.income)}G`]);
+    rows.push(['최소 가격 (할인 전)', `${formatGold(p.minPrice)}G`]);
+    if (p.discountPercent > 0) rows.push(['🏷 할인 (아이템 효과·오늘의 규칙)', `-${p.discountPercent}%`]);
+    const ten = boxPurchaseCost(10);
+    rows.push(['10개 한 번에', `${formatGold(ten)}G (개당 평균 ${formatGold(Math.round(ten / 10))}G)`]);
+  }
+  document.getElementById('boxPriceList').innerHTML =
+    rows.map(([k, v]) => `<li><span>${escapeHtml(k)}</span><span class="golden-chance">${escapeHtml(v)}</span></li>`).join('');
+  document.getElementById('boxPriceNote').textContent =
+    '상자 가격은 분당 수입에 맞춰 정해집니다. 아이템이 늘어 수입이 오르면 가격도 함께 오릅니다. '
+    + '여러 개를 한 번에 사면 뒤의 상자일수록 조금씩 비싸집니다(앞 상자로 오를 수입만큼). '
+    + '자동 개봉 중에는 수입이 계속 올라 가격도 수시로 바뀝니다. 충전된 상자는 공짜이니 먼저 여는 것이 이득!';
+}
+document.getElementById('boxPriceHelpBtn').addEventListener('click', () => {
+  renderBoxPriceHelp();
+  document.getElementById('boxPriceOverlay').classList.add('show');
+});
+document.getElementById('boxPriceCloseBtn').addEventListener('click', () => {
+  document.getElementById('boxPriceOverlay').classList.remove('show');
+});
 document.getElementById('incomeHelpBtn').addEventListener('click', () => {
   renderIncomeHelp();
   document.getElementById('incomeOverlay').classList.add('show');
@@ -2071,7 +2102,7 @@ const exitOverlay = document.getElementById('exitOverlay');
 const OVERLAY_CLOSE_BUTTONS = {
   awayOverlay: 'awayCloseBtn', goldenInfoOverlay: 'goldenInfoCloseBtn', seasonOverlay: 'seasonOverlayCloseBtn',
   incomeOverlay: 'incomeHelpCloseBtn', settingsOverlay: 'settingsCloseBtn', modePickerOverlay: 'modePickerCloseBtn',
-  choiceOverlay: 'choiceCloseBtn', deleteAccountOverlay: 'deleteAccountCancelBtn',
+  choiceOverlay: 'choiceCloseBtn', deleteAccountOverlay: 'deleteAccountCancelBtn', boxPriceOverlay: 'boxPriceCloseBtn',
 };
 function armBackGuard(){
   if (!history.state || !history.state.boxGameGuard) history.pushState({ boxGameGuard: true }, '');

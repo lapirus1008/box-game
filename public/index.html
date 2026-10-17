@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261017c">
+<link rel="stylesheet" href="style.css?v=20261017e">
 </head>
 <body>
 
@@ -132,6 +132,17 @@
       <button class="guide-skip" id="guideSkipBtn">건너뛰기</button>
       <button class="guide-next" id="guideNextBtn">다음</button>
     </div>
+  </div>
+</div>
+
+<!-- 골드로 상자 구매 가격 설명 (구매 칸 제목 옆 ?) -->
+<div id="boxPriceOverlay" class="info-overlay">
+  <div class="away-card">
+    <p class="away-eyebrow">📦 상자 가격 구조</p>
+    <div class="away-gold" id="boxPriceNow"></div>
+    <ul class="away-details" id="boxPriceList"></ul>
+    <p class="golden-info-note" id="boxPriceNote"></p>
+    <button id="boxPriceCloseBtn">확인</button>
   </div>
 </div>
 
@@ -303,7 +314,7 @@
     <!-- 충전된 상자는 위의 상자를 누르면 한 번에 모두 열립니다.
          아래는 충전과는 별개로 골드를 내고 상자를 바로 구매해서 여는 곳입니다. -->
     <div class="bulk-open-box">
-      <p class="gold-open-title">💰 골드로 상자 구매</p>
+      <p class="gold-open-title">💰 골드로 상자 구매 <button class="help-btn mini" id="boxPriceHelpBtn" aria-label="상자 가격 설명">?</button></p>
       <div id="goldOpenPanel">
         <div class="bulk-open-row">
           <input type="number" id="buyBoxQty" value="1" min="1" step="1">
@@ -463,7 +474,7 @@
   <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
 </nav>
 
-<script src="app.js?v=20261017c"></script>
+<script src="app.js?v=20261017e"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {
