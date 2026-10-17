@@ -1660,3 +1660,24 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 .exit-buttons button{ flex:1; margin:0; }
 .exit-stay{ background:var(--gold); color:#1A1305; }
 .exit-quit{ background:var(--surface-2); color:var(--ink); border:1px solid #2C3F6B; }
+
+/* 처음 하는 사람을 위한 화면 가이드 */
+.guide-layer{ position:fixed; inset:0; z-index:1000; }
+.guide-layer.hidden{ display:none; }
+.guide-spot{
+  position:fixed; border-radius:14px; pointer-events:none;
+  box-shadow:0 0 0 9999px rgba(5,9,18,0.78), 0 0 0 2px var(--gold), 0 0 18px rgba(227,178,60,0.6);
+  transition:left 0.3s, top 0.3s, width 0.3s, height 0.3s;
+}
+.guide-tip{
+  position:fixed; left:50%; transform:translateX(-50%);
+  width:calc(100% - 32px); max-width:360px; padding:14px 16px 12px; border-radius:14px;
+  background:var(--surface); border:1px solid var(--gold); box-shadow:0 10px 30px rgba(0,0,0,0.5);
+}
+.guide-step{ margin:0 0 4px; font-size:11px; color:var(--gold); font-weight:700; }
+.guide-title{ margin:0 0 6px; font-size:16px; font-weight:800; color:var(--ink); }
+.guide-text{ margin:0 0 12px; font-size:13px; line-height:1.55; color:var(--ink-dim); }
+.guide-buttons{ display:flex; gap:8px; }
+.guide-buttons button{ margin:0; padding:9px; font-size:13px; }
+.guide-skip{ flex:1; background:transparent; color:var(--ink-dim); border:1px solid #2C3F6B; }
+.guide-next{ flex:2; background:var(--gold); color:#1A1305; }

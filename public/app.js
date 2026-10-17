@@ -422,11 +422,15 @@ function openModePicker(){
   });
   modePickerOverlay.classList.add('show');
 }
-document.querySelectorAll('[data-pick-mode]').forEach(btn => btn.addEventListener('click', () => {
+document.querySelectorAll('[data-pick-mode]').forEach(btn => btn.addEventListener('click', async () => {
   modePickerOverlay.classList.remove('show');
-  if (btn.dataset.pickMode !== currentMode) switchMode(btn.dataset.pickMode);
+  if (btn.dataset.pickMode !== currentMode) await switchMode(btn.dataset.pickMode);
+  maybeStartGuide();
 }));
-document.getElementById('modePickerCloseBtn').addEventListener('click', () => modePickerOverlay.classList.remove('show'));
+document.getElementById('modePickerCloseBtn').addEventListener('click', () => {
+  modePickerOverlay.classList.remove('show');
+  maybeStartGuide();
+});
 document.getElementById('switchModeBtn').addEventListener('click', openModePicker);
 document.getElementById('modeBadge').addEventListener('click', openModePicker);
 // 계정마다 처음 한 번은 모드 설명을 보여줍니다.
@@ -434,7 +438,8 @@ function maybeShowModeIntro(){
   const key = `boxGameModeIntro:${currentUser && currentUser.id}`;
   let seen = false;
   try { seen = Boolean(localStorage.getItem(key)); localStorage.setItem(key, '1'); } catch (e) { seen = true; }
-  if (!seen) openModePicker();
+  if (!seen) openModePicker(); // 모드를 고르고 나면 화면 가이드가 이어집니다
+  else setTimeout(maybeStartGuide, 1500);
 }
 
 // -------------------------------
@@ -2074,6 +2079,7 @@ function armBackGuard(){
 window.addEventListener('popstate', () => {
   if (!document.body.classList.contains('in-game')) return; // 로그인 화면에서는 기본 동작(종료)
   if (exitOverlay.classList.contains('show')) return; // 종료 창에서 한 번 더 누름 → 이미 앱 밖으로 나가는 중
+  if (!guideLayer.classList.contains('hidden')) { endGuide(); armBackGuard(); return; }
   const openOverlay = Object.keys(OVERLAY_CLOSE_BUTTONS).find(id => document.getElementById(id).classList.contains('show'));
   if (openOverlay) {
     document.getElementById(OVERLAY_CLOSE_BUTTONS[openOverlay]).click();
@@ -2096,6 +2102,93 @@ document.getElementById('exitQuitBtn').addEventListener('click', () => {
   history.back();
   setTimeout(() => { window.close(); }, 150);
   setTimeout(() => { if (!document.hidden) showToast('뒤로가기를 한 번 더 누르면 종료됩니다'); }, 600);
+});
+
+// -------------------------------
+// 처음 하는 사람을 위한 화면 가이드 (계정마다 한 번 · 설정 → 게임 가이드로 다시 보기)
+// 실제 화면의 해당 부분을 밝게 비추고(나머지는 어둡게) 설명 말풍선을 띄웁니다.
+// -------------------------------
+const GUIDE_STEPS = [
+  { target: '#chest', title: '📦 상자 열기', text: '상자는 시간이 지나면 저절로 충전됩니다. 상자를 누르면 쌓인 상자가 한 번에 열립니다.' },
+  { target: '.gold-row', title: '💰 골드 수입', text: '모은 아이템이 매 분 골드를 벌어 줍니다. 접속하지 않아도 쌓입니다. ? 를 누르면 수입 계산을 볼 수 있습니다.' },
+  { target: () => currentMode === 'collection' ? '#collectionHero' : '#rebirthGoalBox',
+    title: () => currentMode === 'collection' ? '📖 수집모드 목표' : '🏁 기록모드 목표',
+    text: () => currentMode === 'collection'
+      ? '신화 100종 도감을 채우는 모드. 도감이 늘어날수록 칭호가 오르고, 칭호마다 원하는 신화를 고르는 선택 상자를 받습니다.'
+      : '30만 골드를 최대한 빨리 모으는 레이스. 다 모으면 환생하고 기록이 랭킹에 올라갑니다. 환생할수록 특성이 쌓여 더 빨라집니다.' },
+  { target: '#pityBox', title: '🌸 신화 천장', text: '상자를 열 때마다 게이지가 찹니다. 가득 차면 아직 없는 신화가 확정으로 나옵니다.' },
+  { target: '#seasonBanner', title: '🗓 오늘의 신화', text: '매일 오전 9시에 신화 10종이 바뀝니다. 오늘 놓친 신화는 10일 뒤 다시 등장합니다.' },
+  { target: '#tabBar [data-tab="bag"]', title: '🎒 가방 · 합성', text: '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있습니다. 등급이 높을수록 골드를 더 많이 법니다.' },
+  { target: '#tabBar [data-tab="upgrade"]', title: '🛠 강화', text: '골드로 수입·충전 속도·창고·행운을 올립니다. 자동 개봉을 사 두면 자리를 비운 동안에도 상자가 열립니다.' },
+  { target: '#modeBadge', title: '🎮 모드 전환', text: '기록모드와 수집모드는 따로 저장됩니다. 여기를 눌러 언제든 오갈 수 있습니다. 즐거운 수집 되세요!' },
+];
+const guideLayer = document.getElementById('guideLayer');
+let guideSteps = [];
+let guideIndex = 0;
+const guideValue = (v) => (typeof v === 'function' ? v() : v);
+function guideKey(){ return `boxGameGuide:${currentUser && currentUser.id}`; }
+function maybeStartGuide(){
+  let seen = true;
+  try { seen = Boolean(localStorage.getItem(guideKey())); } catch (e) { /* 저장소를 못 쓰면 띄우지 않음 */ }
+  if (!seen) setTimeout(startGuide, 500);
+}
+function startGuide(){
+  if (currentTab !== 'home') goTab('home');
+  try { localStorage.setItem(guideKey(), '1'); } catch (e) { /* 무시 */ }
+  // 지금 화면에 보이는 대상만 안내합니다 (예: 기록모드엔 도감 카드가 없음)
+  guideSteps = GUIDE_STEPS.filter(step => {
+    const el = document.querySelector(guideValue(step.target));
+    return el && el.offsetParent !== null;
+  });
+  if (guideSteps.length === 0) return;
+  guideIndex = 0;
+  guideLayer.classList.remove('hidden');
+  showGuideStep();
+}
+function endGuide(){
+  guideLayer.classList.add('hidden');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function showGuideStep(){
+  const step = guideSteps[guideIndex];
+  const el = document.querySelector(guideValue(step.target));
+  if (!el) { nextGuideStep(); return; }
+  document.getElementById('guideStep').textContent = `${guideIndex + 1} / ${guideSteps.length}`;
+  document.getElementById('guideTitle').textContent = guideValue(step.title);
+  document.getElementById('guideText').textContent = guideValue(step.text);
+  document.getElementById('guideNextBtn').textContent = guideIndex === guideSteps.length - 1 ? '시작하기' : '다음';
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  setTimeout(placeGuide, 350); // 스크롤이 끝난 뒤 위치를 잡습니다
+}
+function placeGuide(){
+  if (guideLayer.classList.contains('hidden')) return;
+  const step = guideSteps[guideIndex];
+  const el = document.querySelector(guideValue(step.target));
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const pad = 6;
+  const spot = document.getElementById('guideSpot');
+  spot.style.left = `${r.left - pad}px`;
+  spot.style.top = `${r.top - pad}px`;
+  spot.style.width = `${r.width + pad * 2}px`;
+  spot.style.height = `${r.height + pad * 2}px`;
+  // 대상이 화면 아래쪽이면 말풍선을 위에, 위쪽이면 아래에 띄웁니다.
+  const tip = document.getElementById('guideTip');
+  const below = r.top + r.height / 2 < window.innerHeight / 2;
+  tip.style.top = below ? `${Math.min(r.bottom + 14, window.innerHeight - tip.offsetHeight - 12)}px` : '';
+  tip.style.bottom = below ? '' : `${Math.max(window.innerHeight - r.top + 14, 12)}px`;
+}
+function nextGuideStep(){
+  guideIndex++;
+  if (guideIndex >= guideSteps.length) endGuide();
+  else showGuideStep();
+}
+document.getElementById('guideNextBtn').addEventListener('click', nextGuideStep);
+document.getElementById('guideSkipBtn').addEventListener('click', endGuide);
+window.addEventListener('resize', placeGuide);
+document.getElementById('openGuideBtn').addEventListener('click', () => {
+  settingsOverlay.classList.remove('show');
+  setTimeout(startGuide, 200);
 });
 
 // -------------------------------
