@@ -531,7 +531,7 @@ async function refreshStatus(){
     applySealed(data.sealed);
     renderPrestigeHint(data.prestige);
     applyGoldenBox(data.goldenBox);
-    renderAchievementBadge(data.claimableAchievements);
+    renderAchievementBadge((data.claimableAchievements || 0) + (data.collection ? data.collection.missions.claimable : 0));
     if (!achievementScreen.classList.contains('hidden')) renderAchievements();
     if (data.awaySummary) showAwaySummary(data.awaySummary, data.autoOpened);
     else handleAutoEvents(data);
@@ -762,7 +762,9 @@ let cachedBoxPricing = null;
 function boxPriceAt(k){
   const p = cachedBoxPricing;
   if (!p) return cachedBoxPrice;
-  const base = Math.max(p.minPrice, Math.floor((p.income + k * p.step) * p.incomeMinutes));
+  // 서버(game/logic.js getBoxPrice)와 같은 공식: 최소 가격 × (수입 ÷ 기준 수입)^지수
+  const scaled = p.minPrice * Math.pow(Math.max(0, p.income + k * p.step) / p.refIncome, p.exponent);
+  const base = Math.max(p.minPrice, Math.floor(scaled));
   return Math.max(1, Math.floor(base * (100 - p.discountPercent) / 100));
 }
 
@@ -1541,8 +1543,7 @@ function renderBoxPriceHelp(){
   document.getElementById('boxPriceNow').textContent = `지금 1개 ${formatGold(boxPriceAt(0))}G`;
   const rows = [];
   if (p) {
-    const seconds = Math.round(p.incomeMinutes * 60);
-    rows.push(['기준', `분당 수입의 ${seconds}초치`]);
+    rows.push(['기준', `분당 수입 ${formatGold(p.refIncome)}G까지 최소 가격`]);
     rows.push(['내 분당 수입', `${formatGold(p.income)}G`]);
     rows.push(['최소 가격 (할인 전)', `${formatGold(p.minPrice)}G`]);
     if (p.discountPercent > 0) rows.push(['🏷 할인 (아이템 효과·오늘의 규칙)', `-${p.discountPercent}%`]);
@@ -1552,7 +1553,7 @@ function renderBoxPriceHelp(){
   document.getElementById('boxPriceList').innerHTML =
     rows.map(([k, v]) => `<li><span>${escapeHtml(k)}</span><span class="golden-chance">${escapeHtml(v)}</span></li>`).join('');
   document.getElementById('boxPriceNote').textContent =
-    '상자 가격은 분당 수입에 맞춰 정해집니다. 아이템이 늘어 수입이 오르면 가격도 함께 오릅니다. '
+    `상자 가격은 분당 수입에 따라 오르지만 수입보다 완만하게 오릅니다(수입 10배 → 가격 약 ${Math.round(Math.pow(10, p ? p.exponent : 0.75) * 10) / 10}배). 성장할수록 같은 시간에 더 많은 상자를 살 수 있습니다. `
     + '여러 개를 한 번에 사면 뒤의 상자일수록 조금씩 비싸집니다(앞 상자로 오를 수입만큼). '
     + '자동 개봉 중에는 수입이 계속 올라 가격도 수시로 바뀝니다. 충전된 상자는 공짜이니 먼저 여는 것이 이득!';
 }
@@ -1639,6 +1640,7 @@ const STAT_UNIT = { boxes: '개', crafts: '번', legendary: '개', mythic: '개'
 
 function renderAchievements(){
   if (!lastStatus || !lastStatus.achievements) return;
+  renderMissions();
   const list = document.getElementById('achievementList');
   // 종류(stat)별로 묶어서, 받을 수 있는 단계 + 지금 도전 중인 단계 하나만 보여줍니다.
   const groups = {};
@@ -1835,6 +1837,9 @@ function maybeShowSeasonOverlay(season, seasonChange){
     title = `🎉 시즌 ${season.number} 시작!`;
     text = reset
       ? '기록모드 초기화! 모두 같은 출발선에서 이번 시즌 랭킹에 도전하세요. (지난 시즌 기록은 랭킹에서 확인 가능)'
+        + (seasonChange && seasonChange.convertedShards
+          ? ` 남은 환생 포인트 ${seasonChange.leftoverPoints}개는 수집모드 신화 조각 💎${seasonChange.convertedShards}개로 바뀌었습니다.`
+          : '')
       : '수집모드 진행과 신화 도감은 그대로 유지됩니다.';
   } else {
     title = '☀️ 오늘의 신화 교체';
@@ -1915,14 +1920,18 @@ async function loadCodex(){
       <p class="codex-rule">${nextText} · 칭호는 랭킹에서 닉네임 옆에 표시<br>
       매일 오전 9시 신화 10종 교체 · 놓치면 10일 뒤 재등장 · 천장은 아직 없는 신화부터 지급</p>`;
 
+    lastCodex = data;
+    renderShardBar();
+    renderSetPanel(data);
     groupsEl.innerHTML = data.groups.map(g => {
       const have = g.items.filter(i => i.obtained).length;
       const when = g.isCurrent
         ? `<span class="codex-when now">오늘 등장 중 · 교체까지 ${formatRemaining(new Date(data.dayEndsAt) - adjustedNow())}</span>`
         : `<span class="codex-when">${g.daysUntil === 1 ? '내일' : `${g.daysUntil}일 뒤`} · ${formatSeasonDate(g.nextStartsAt)} 오전 9시 등장</span>`;
       const cards = g.items.map(i => `
-        <div class="codex-card ${i.obtained ? 'have' : ''}" title="${escapeHtml(i.obtained ? `${i.flavor} (${new Date(i.firstObtainedAt).toLocaleDateString()} 획득)` : '아직 얻지 못한 신화')}">
+        <div class="codex-card ${i.obtained ? 'have' : ''} ${i.awaken ? `awaken-${i.awaken}` : ''}" ${i.obtained ? `data-awaken-key="${i.key}"` : ''} title="${escapeHtml(i.obtained ? `${i.flavor} (${new Date(i.firstObtainedAt).toLocaleDateString()} 획득)` : '아직 얻지 못한 신화')}">
           <span class="tier-badge">${'Ⅰ Ⅱ Ⅲ Ⅳ'.split(' ')[i.tier - 1]}</span>
+          ${i.awaken ? `<span class="awaken-badge">★${i.awaken}</span>` : ''}
           ${itemIconHtml(i.key, 'codex-icon', !i.obtained)}
           <div class="codex-name">${i.obtained ? escapeHtml(i.name) : '???'}</div>
           <div class="codex-effect">${escapeHtml(i.effect.per)}</div>
@@ -1936,6 +1945,142 @@ async function loadCodex(){
     groupsEl.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
   }
 }
+
+// -------------------------------
+// 수집모드 성장: 오늘의 미션 · 신화 조각(분해·상점) · 세트 효과 · 각성
+// -------------------------------
+let lastCodex = null;
+function collectionPost(path, body){
+  return authFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+    .then(async res => ({ ok: res.ok, data: await res.json() }));
+}
+
+function renderMissions(){
+  const box = document.getElementById('missionBox');
+  const c = lastStatus && lastStatus.collection;
+  if (!c) { box.innerHTML = ''; return; }
+  const m = c.missions;
+  const rows = m.list.map(x => {
+    const pct = Math.min(100, x.progress / x.goal * 100);
+    const action = x.claimable
+      ? `<button class="shop-btn achievement-btn" data-mission="${x.key}">받기</button>`
+      : `<span class="achievement-state">${x.claimed ? '✔ 완료' : `${x.progress}/${x.goal}`}</span>`;
+    return `<div class="achievement-row ${x.claimable ? 'claimable' : ''} ${x.claimed ? 'done' : ''}">
+      <span class="achievement-emoji">${x.emoji}</span>
+      <div class="achievement-info">
+        <div class="achievement-title">${escapeHtml(x.text)}</div>
+        <div class="achievement-goal">보상 💎 ${x.shards}</div>
+        <div class="time-bar-wrap"><div class="time-bar-fill" style="width:${pct}%"></div></div>
+      </div>${action}</div>`;
+  }).join('');
+  const all = m.allClear;
+  const allAction = all.claimable
+    ? `<button class="shop-btn achievement-btn" data-mission="allClear">받기</button>`
+    : `<span class="achievement-state">${all.claimed ? '✔ 완료' : '보너스'}</span>`;
+  box.innerHTML = `
+    <div class="mission-head"><span>📅 오늘의 미션</span><span class="mission-shards">💎 ${formatGold(c.shards)}</span></div>
+    <p class="mission-sub">교체까지 ${formatRemaining(new Date(m.resetsAt) - adjustedNow())} · 자리 비운 동안의 자동 개봉·합성은 집계되지 않음</p>
+    ${rows}
+    <div class="achievement-row mission-all ${all.claimable ? 'claimable' : ''} ${all.claimed ? 'done' : ''}">
+      <span class="achievement-emoji">🏆</span>
+      <div class="achievement-info"><div class="achievement-title">오늘의 미션 모두 완료</div><div class="achievement-goal">보상 💎 ${all.shards}</div></div>
+      ${allAction}</div>`;
+}
+document.getElementById('missionBox').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-mission]');
+  if (!btn) return;
+  btn.disabled = true;
+  const { ok, data } = await collectionPost('/api/box/mission', { key: btn.dataset.mission });
+  showToast(data.message, !ok);
+  await refreshStatus();
+  renderAchievements();
+});
+
+function renderShardBar(){
+  const bar = document.getElementById('shardBar');
+  const c = lastStatus && lastStatus.collection;
+  if (!c) { bar.innerHTML = ''; return; }
+  bar.innerHTML = `
+    <div class="shard-top"><span>💎 신화 조각 <strong>${formatGold(c.shards)}</strong></span><span class="shard-stars">각성 ★${c.stars}</span></div>
+    <div class="shard-actions">
+      <button class="shard-btn" id="dismantleBtn" ${c.dismantle.count ? '' : 'disabled'}>🔨 중복 분해${c.dismantle.count ? ` (${c.dismantle.count}개 → 💎${c.dismantle.shards})` : ''}</button>
+      <button class="shard-btn" id="shardShopBtn" ${c.shards >= c.choiceBoxPrice ? '' : 'disabled'}>🎁 선택 상자 (💎${c.choiceBoxPrice})</button>
+    </div>
+    <p class="shard-hint">신화는 3개까지 효과가 겹칩니다. 넘는 중복은 분해해서 조각으로 · 조각은 미션 보상으로도 획득</p>`;
+}
+document.getElementById('shardBar').addEventListener('click', async (e) => {
+  const btn = e.target.closest('#dismantleBtn, #shardShopBtn');
+  if (!btn || btn.disabled) return;
+  if (btn.id === 'dismantleBtn' && !confirm('3개를 넘는 중복 신화를 모두 분해할까요?\n(효과는 그대로, 넘는 개수만큼 수입이 조금 줄어듭니다)')) return;
+  btn.disabled = true;
+  const { ok, data } = btn.id === 'dismantleBtn'
+    ? await collectionPost('/api/box/dismantle')
+    : await collectionPost('/api/box/shard-shop', { item: 'choiceBox' });
+  showToast(data.message, !ok);
+  await refreshStatus();
+  renderShardBar();
+});
+
+function renderSetPanel(data){
+  const panel = document.getElementById('setPanel');
+  const sets = data.sets;
+  if (!sets) { panel.innerHTML = ''; return; }
+  const motifDone = sets.motifs.filter(m => m.complete).length;
+  const themeChips = sets.themes.map(t => `
+    <div class="set-chip ${t.complete ? 'done' : ''}">
+      <span class="set-chip-name">${t.emoji} ${escapeHtml(t.name)} <small>${t.have}/${t.total}</small></span>
+      <span class="set-chip-bonus">${escapeHtml(t.bonusText)}</span>
+    </div>`).join('');
+  const motifChips = sets.motifs.map(m => `<span class="motif-chip ${m.complete ? 'done' : ''}" title="${escapeHtml(m.name)}">${m.emoji}<small>${m.have}/${m.total}</small></span>`).join('');
+  panel.innerHTML = `
+    <h3 class="dex-heading">🧩 세트 효과</h3>
+    <div class="set-section">
+      <p class="set-title">테마 세트 <small>같은 색 테마를 모두 모으면 보너스</small></p>
+      <div class="set-chips">${themeChips}</div>
+      <p class="set-title">모양 세트 <strong>${motifDone}/${sets.motifs.length}</strong> <small>같은 모양 4종 완성마다 전체 수입 +${sets.motifBonusPercent}%</small></p>
+      <div class="motif-chips">${motifChips}</div>
+    </div>`;
+}
+
+// 각성 창
+let awakenKey = null;
+function openAwaken(key){
+  if (!lastCodex) return;
+  const item = lastCodex.groups.flatMap(g => g.items).find(i => i.key === key);
+  if (!item) return;
+  awakenKey = key;
+  const level = item.awaken || 0;
+  const max = lastCodex.awakenMax;
+  const shards = lastStatus && lastStatus.collection ? lastStatus.collection.shards : lastCodex.shards;
+  document.getElementById('awakenIcon').innerHTML = itemIconHtml(key, 'awaken-icon');
+  document.getElementById('awakenName').textContent = item.name;
+  document.getElementById('awakenStars').innerHTML = `${'★'.repeat(level)}<span class="off">${'★'.repeat(max - level)}</span>`;
+  document.getElementById('awakenEffect').textContent = `${item.effect.per} · 각성 ★마다 전체 수입 +${lastCodex.awakenIncomePercent}%`;
+  const btn = document.getElementById('awakenBtn');
+  if (level >= max) {
+    document.getElementById('awakenCost').textContent = '최고 단계 달성!';
+    btn.disabled = true;
+  } else {
+    const cost = lastCodex.awakenCosts[level];
+    document.getElementById('awakenCost').textContent = `★${level + 1} 각성: 💎 ${cost} (보유 ${formatGold(shards)})`;
+    btn.disabled = shards < cost;
+  }
+  document.getElementById('awakenOverlay').classList.add('show');
+}
+document.getElementById('codexGroups').addEventListener('click', (e) => {
+  const card = e.target.closest('[data-awaken-key]');
+  if (card) openAwaken(card.dataset.awakenKey);
+});
+document.getElementById('awakenCloseBtn').addEventListener('click', () => document.getElementById('awakenOverlay').classList.remove('show'));
+document.getElementById('awakenBtn').addEventListener('click', async function(){
+  if (!awakenKey) return;
+  this.disabled = true;
+  const { ok, data } = await collectionPost('/api/box/awaken', { key: awakenKey });
+  showToast(data.message, !ok);
+  await refreshStatus();
+  await loadCodex();
+  openAwaken(awakenKey);
+});
 
 // -------------------------------
 // 방명록
@@ -2103,6 +2248,7 @@ const OVERLAY_CLOSE_BUTTONS = {
   awayOverlay: 'awayCloseBtn', goldenInfoOverlay: 'goldenInfoCloseBtn', seasonOverlay: 'seasonOverlayCloseBtn',
   incomeOverlay: 'incomeHelpCloseBtn', settingsOverlay: 'settingsCloseBtn', modePickerOverlay: 'modePickerCloseBtn',
   choiceOverlay: 'choiceCloseBtn', deleteAccountOverlay: 'deleteAccountCancelBtn', boxPriceOverlay: 'boxPriceCloseBtn',
+  awakenOverlay: 'awakenCloseBtn',
 };
 function armBackGuard(){
   if (!history.state || !history.state.boxGameGuard) history.pushState({ boxGameGuard: true }, '');

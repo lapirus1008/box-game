@@ -10,6 +10,8 @@ const db = require('../db');
 const verifyToken = require('../middleware/auth');
 const { HttpError, handle } = require('../lib/http');
 const { collectorTitlesFor } = require('./box');
+const { normalizeMissionState } = require('../game/collection');
+const { getDay } = require('../game/season');
 
 const GUESTBOOK_PAGE_SIZE = 30;
 const GUESTBOOK_MAX_LENGTH = 200;
@@ -72,6 +74,13 @@ router.post('/', handle('글을 남기지 못했습니다.', async (req) => {
     [userId, message]
   );
   const row = inserted.rows[0];
+  // 수집모드 일일 미션 '방명록에 한마디' 진행 (그날 미션이 아니어도 기록만 해 둠)
+  const claimRow = await db.query(`SELECT daily_missions FROM box_claims WHERE user_id = $1 AND mode = 'collection'`, [userId]);
+  if (claimRow.rows[0]) {
+    const state = normalizeMissionState(claimRow.rows[0].daily_missions, getDay());
+    state.progress.guestbook = (state.progress.guestbook || 0) + 1;
+    await db.query(`UPDATE box_claims SET daily_missions = $2 WHERE user_id = $1 AND mode = 'collection'`, [userId, JSON.stringify(state)]);
+  }
   const titles = await collectorTitlesFor([userId]);
   // 방금 쓴 글을 그대로 돌려줘서 화면이 목록을 다시 불러오지 않고 맨 위에 끼워 넣게 합니다.
   return {

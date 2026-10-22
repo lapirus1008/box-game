@@ -40,7 +40,11 @@ const SEASON_RESET_PRESTIGE = true;
 // 골드로 상자를 즉시 구매할 때의 개당 가격 = max(최소 가격, 지금 분당 수입 × 0.25분(15초치))
 // 수입이 커질수록 상자도 비싸져서, "골드가 생기면 무조건 상자"가 정답이 되지 않게 합니다.
 const GOLD_PER_BOX_PURCHASE = 75;     // 최소 가격
-const BOX_PRICE_INCOME_MINUTES = 0.25;
+const BOX_PRICE_INCOME_MINUTES = 0.25; // (예전 공식: 분당 수입의 15초치) — 지금은 아래 완만한 공식을 씁니다
+// 골드 상자 가격 = 최소 가격 × (분당 수입 ÷ 기준 수입)^지수
+// 수입이 10배가 되면 가격은 약 5.6배만 올라서, 성장할수록 같은 시간에 더 많은 상자를 살 수 있습니다.
+const BOX_PRICE_REF_INCOME = 300;     // 이 수입까지는 최소 가격
+const BOX_PRICE_EXPONENT = 0.75;
 const MAX_GOLD_BOX_PURCHASE = 2000;
 const INITIAL_GOLD = 2000;            // 회원가입 시 지급하는 시작 골드
 const RESET_GOLD = 2000;              // 초심으로 돌아가기 / 환생 후 시작 골드
@@ -203,6 +207,9 @@ const PRESTIGE_PERKS = [
   { key: 'chargeSpeed', emoji: '⚡', name: '빠른 손',         cost: 3, maxLevel: 3,   desc: '충전 시간 -1초' },
   { key: 'autoCraft',   emoji: '⚙️', name: '타고난 장인',     cost: 3, maxLevel: 1,   desc: '새 판을 자동 합성 해금 상태로 시작' },
 ];
+// 같은 특성은 레벨이 오를수록 비싸집니다: 다음 레벨 비용 = 기본 비용 × (현재 레벨 + 1)
+// 시즌이 끝날 때 남은 환생 포인트는 수집모드 신화 조각으로 바뀝니다 (1포인트 = 2조각)
+const PRESTIGE_LEFTOVER_SHARDS_PER_POINT = 2;
 const PERK_INCOME_PERCENT = 5;
 const PERK_START_GOLD = 5000;
 const PERK_STORAGE_MS = 2 * HOUR_MS;
@@ -272,6 +279,9 @@ const COLLECTOR_RANKS = [
 ];
 
 module.exports = {
+  PRESTIGE_LEFTOVER_SHARDS_PER_POINT,
+  BOX_PRICE_REF_INCOME,
+  BOX_PRICE_EXPONENT,
   CHARGE_INTERVAL_MS,
   MAX_BOX_CHARGES,
   BASE_INCOME_PER_MINUTE,

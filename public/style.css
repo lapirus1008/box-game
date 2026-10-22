@@ -1685,3 +1685,54 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 /* 구매 칸 제목 옆 작은 ? 버튼 */
 .gold-open-title{ display:flex; align-items:center; gap:6px; }
 .help-btn.mini{ width:18px; height:18px; line-height:18px; font-size:11px; }
+
+/* -------------------------------
+   수집모드 성장: 미션 · 신화 조각 · 세트 · 각성
+   ------------------------------- */
+.mission-box{ margin:0 0 16px; padding:12px; border-radius:14px; background:linear-gradient(135deg, rgba(79,209,197,0.12), rgba(20,33,61,0.6)); border:1px solid var(--museum); }
+.mission-box:empty{ display:none; }
+.mission-head{ display:flex; justify-content:space-between; align-items:center; font-size:15px; font-weight:800; color:var(--museum); }
+.mission-shards{ font-size:13px; color:var(--ink); }
+.mission-sub{ margin:2px 0 10px; font-size:11px; color:var(--ink-dim); }
+.mission-box .achievement-row{ margin-bottom:6px; }
+.mission-all{ border:1px dashed var(--museum); }
+
+.shard-bar{ margin:10px 0 4px; padding:10px 12px; border-radius:12px; background:var(--surface-2); border:1px solid #2C3F6B; }
+.shard-bar:empty{ display:none; }
+.shard-top{ display:flex; justify-content:space-between; font-size:14px; color:var(--ink); }
+.shard-top strong{ color:#9be7ff; }
+.shard-stars{ font-size:12px; color:var(--gold); font-weight:700; }
+.shard-actions{ display:flex; gap:6px; margin:8px 0 6px; }
+.shard-btn{ flex:1; margin:0; padding:8px 6px; font-size:12px; font-weight:700; background:var(--bg); color:var(--ink); border:1px solid #2C3F6B; }
+.shard-hint{ margin:0; font-size:11px; color:var(--ink-dim); line-height:1.5; }
+
+.set-section{ padding:10px 12px; border-radius:12px; background:var(--surface-2); }
+.set-title{ margin:0 0 6px; font-size:12px; font-weight:700; color:var(--ink); }
+.set-title small{ font-weight:400; color:var(--ink-dim); }
+.set-title strong{ color:var(--gold); }
+.set-chips{ display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:12px; }
+.set-chip{ display:flex; flex-direction:column; gap:2px; padding:7px 8px; border-radius:10px; background:var(--bg); border:1px solid #2C3F6B; opacity:0.75; }
+.set-chip.done{ opacity:1; border-color:var(--gold); box-shadow:0 0 8px rgba(227,178,60,0.35); }
+.set-chip-name{ font-size:12px; font-weight:700; color:var(--ink); }
+.set-chip-name small{ font-weight:400; color:var(--ink-dim); }
+.set-chip-bonus{ font-size:10px; color:var(--ink-dim); }
+.set-chip.done .set-chip-bonus{ color:var(--gold); }
+.motif-chips{ display:flex; flex-wrap:wrap; gap:5px; }
+.motif-chip{ display:inline-flex; align-items:center; gap:2px; padding:3px 6px; border-radius:999px; background:var(--bg); border:1px solid #2C3F6B; font-size:13px; opacity:0.6; }
+.motif-chip small{ font-size:10px; color:var(--ink-dim); }
+.motif-chip.done{ opacity:1; border-color:var(--gold); }
+.dex-heading-sub{ font-size:11px; font-weight:400; color:var(--ink-dim); margin-left:6px; }
+
+.codex-card[data-awaken-key]{ cursor:pointer; }
+.awaken-badge{ position:absolute; top:3px; right:3px; font-size:9px; font-weight:800; color:#1A1305; background:var(--gold); padding:0 4px; border-radius:6px; }
+.codex-card.awaken-3, .codex-card.awaken-4{ box-shadow:inset 0 0 0 1px var(--gold), 0 0 8px rgba(227,178,60,0.4); }
+.codex-card.awaken-5{ box-shadow:inset 0 0 0 2px var(--gold), 0 0 14px rgba(227,178,60,0.7); }
+.awaken-card{ text-align:center; max-width:300px; }
+.awaken-icon{ width:72px; height:72px; margin:4px auto 6px; display:block; }
+.awaken-name{ margin:0; font-size:16px; font-weight:800; color:var(--ink); }
+.awaken-stars{ margin:4px 0; font-size:20px; color:var(--gold); letter-spacing:2px; }
+.awaken-stars .off{ color:#2C3F6B; }
+.awaken-effect{ margin:0 0 10px; font-size:12px; color:var(--ink-dim); }
+.awaken-cost{ margin:0 0 12px; font-size:13px; color:#9be7ff; font-weight:700; }
+#awakenBtn{ background:var(--gold); color:#1A1305; }
+#awakenCloseBtn{ display:block; margin:8px auto 0; font-size:12px; }

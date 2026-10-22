@@ -29,6 +29,8 @@ const {
   PERK_STORAGE_MS,
   ITEM_EFFECTS,
   GOLD_PER_BOX_PURCHASE,
+  BOX_PRICE_REF_INCOME,
+  BOX_PRICE_EXPONENT,
   BOX_PRICE_INCOME_MINUTES,
   INCOME_PER_MINUTE_BY_RARITY,
   EFFECT_TYPE_CAPS,
@@ -243,6 +245,11 @@ function getPerkLevel(claim, key) {
   return Number(perks[key]) || 0;
 }
 
+// 환생 특성 다음 레벨 비용: 레벨이 오를수록 비싸짐 (기본 비용 × (현재 레벨 + 1))
+function getPerkCost(perk, level) {
+  return perk.cost * (level + 1);
+}
+
 function getChargeIntervalMs(speedLevel) {
   return Math.max(MIN_CHARGE_INTERVAL_MS, CHARGE_INTERVAL_MS - speedLevel * CHARGE_SPEED_MS_PER_LEVEL);
 }
@@ -324,6 +331,8 @@ function getClaimStats(claim, owned = {}) {
   // 오늘의 규칙은 아이템 효과 최대치와 별개로 더해집니다.
   const rule = claim.season_rule;
   if (rule) effects[rule.type] += rule.value;
+  // 수집모드 세트 효과·각성 보너스 (game/collection.js)
+  for (const [type, value] of Object.entries(claim.collection_bonus || {})) effects[type] = (effects[type] || 0) + value;
   const baseChargeMs = getChargeIntervalMs(claim.upgrade_charge_speed + getPerkLevel(claim, 'chargeSpeed'));
   return {
     chargeIntervalMs: effects.chargeSpeed > 0
@@ -347,9 +356,12 @@ function getClaimStats(claim, owned = {}) {
   };
 }
 
-// 골드 상자 1개 가격 = max(최소 가격, 분당 수입 × 0.25분) 에서 용왕의 여의주 할인
+// 골드 상자 1개 가격 = max(최소 가격, 최소 가격 × (분당 수입 ÷ 기준 수입)^지수) 에서 할인
+// (수입에 정비례하던 예전 공식은 성장해도 체감이 없어서, 수입보다 완만하게 오르도록 바꿨습니다)
+// public/app.js 의 boxPriceAt 과 같은 공식이어야 합니다.
 function getBoxPrice(perMinuteIncome, discountPercent = 0) {
-  const base = Math.max(GOLD_PER_BOX_PURCHASE, Math.floor(perMinuteIncome * BOX_PRICE_INCOME_MINUTES));
+  const scaled = GOLD_PER_BOX_PURCHASE * Math.pow(Math.max(0, perMinuteIncome) / BOX_PRICE_REF_INCOME, BOX_PRICE_EXPONENT);
+  const base = Math.max(GOLD_PER_BOX_PURCHASE, Math.floor(scaled));
   return Math.max(1, Math.floor(base * (100 - discountPercent) / 100));
 }
 
@@ -417,6 +429,7 @@ module.exports = {
   getUpgradeCost,
   describeUpgradeEffect,
   getClaimStats,
+  getPerkCost,
   getItemEffects,
   describeItemEffect,
   getBoxPrice,

@@ -44,7 +44,8 @@ const {
   MAX_BOX_CHARGES,
   MAX_GOLD_BOX_PURCHASE,
   GOLD_PER_BOX_PURCHASE,
-  BOX_PRICE_INCOME_MINUTES,
+  BOX_PRICE_REF_INCOME,
+  BOX_PRICE_EXPONENT,
   MASTERY_THRESHOLDS,
   UPGRADES,
   AUTO_CRAFT,
@@ -82,6 +83,7 @@ const {
   getUpgradeCost,
   describeUpgradeEffect,
   getPerkLevel,
+  getPerkCost,
   getBoxPrice,
   getBoxPurchaseCost,
   getMaxAffordableBoxes,
@@ -93,6 +95,7 @@ const {
 } = require('../game/logic');
 const store = require('../game/store');
 const { MYTHICS } = require('../game/mythics');
+const collection = require('../game/collection');
 const { getSeason, getSeasonStart, getSeasonEnd, getDay, getDayStart, getDayEnd, getNextDayForRotation } = require('../game/season');
 
 const router = express.Router();
@@ -144,7 +147,8 @@ function boxPricingOf(save) {
     step: expectedIncomePerBox(s.luckPercent) * multiplier,
     discountPercent: s.boxDiscountPercent,
     minPrice: GOLD_PER_BOX_PURCHASE,
-    incomeMinutes: BOX_PRICE_INCOME_MINUTES,
+    refIncome: BOX_PRICE_REF_INCOME,
+    exponent: BOX_PRICE_EXPONENT,
   };
 }
 
@@ -312,7 +316,7 @@ function progressionResponse(mode, save) {
         emoji: perk.emoji,
         name: perk.name,
         desc: perk.desc,
-        cost: perk.cost,
+        cost: getPerkLevel(claim, perk.key) >= perk.maxLevel ? null : getPerkCost(perk, getPerkLevel(claim, perk.key)),
         level: getPerkLevel(claim, perk.key),
         maxLevel: perk.maxLevel,
       })),
@@ -451,6 +455,118 @@ function choiceBoxResponse(mode, save) {
   return { count: save.claim.mythic_choice_boxes || 0, remainingMythics: MYTHICS.length - save.codex.size };
 }
 
+// -------------------------------
+// 수집모드 성장: 신화 조각 · 각성 · 세트 · 일일 미션 (game/collection.js)
+// -------------------------------
+function missionsResponse(save) {
+  const state = collection.normalizeMissionState(save.claim.daily_missions, save.day);
+  const list = collection.getDailyMissions(save.day).map(m => {
+    const progress = Math.min(m.goal, state.progress[m.key] || 0);
+    return { key: m.key, emoji: m.emoji, text: m.text, goal: m.goal, progress, shards: m.shards,
+      claimed: Boolean(state.claimed[m.key]), claimable: !state.claimed[m.key] && progress >= m.goal };
+  });
+  const allDone = list.every(m => m.claimed);
+  return {
+    list,
+    allClear: { shards: collection.MISSION_ALL_CLEAR_SHARDS, claimed: Boolean(state.claimed.allClear), claimable: allDone && !state.claimed.allClear },
+    claimable: list.filter(m => m.claimable).length + (allDone && !state.claimed.allClear ? 1 : 0),
+    resetsAt: getDayEnd(save.day),
+  };
+}
+function collectionResponse(mode, save) {
+  if (mode !== MODES.COLLECTION) return null;
+  const bonus = collection.getCollectionBonus(save.codex, save.claim.mythic_awaken);
+  const dismantle = collection.getDismantlable(save.owned);
+  return {
+    shards: save.claim.mythic_shards || 0,
+    dismantle: { count: dismantle.count, shards: dismantle.shards },
+    sets: { motifComplete: bonus.motifComplete, motifTotal: bonus.motifs.length, themeComplete: bonus.themeComplete, themeTotal: bonus.themes.length },
+    stars: bonus.stars,
+    choiceBoxPrice: collection.CHOICE_BOX_SHARD_PRICE,
+    missions: missionsResponse(save),
+  };
+}
+function requireCollection(mode) {
+  if (mode !== MODES.COLLECTION) throw new HttpError(400, '수집모드 전용 기능입니다.');
+}
+
+// 중복 신화 분해: POST /api/box/dismantle — 효과가 겹치는 3개를 넘는 신화를 모두 신화 조각으로
+router.post('/dismantle', handle('서버 오류로 분해하지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+  return withSave(userId, async (client, mode, save) => {
+    requireCollection(mode);
+    const d = collection.getDismantlable(save.owned);
+    if (d.count === 0) throw new HttpError(400, '분해할 중복 신화가 없습니다. (신화는 3개까지 효과가 겹칩니다)');
+    await store.addItems(client, userId, mode, Object.fromEntries(d.list.map(x => [x.key, -x.count])));
+    const shards = (save.claim.mythic_shards || 0) + d.shards;
+    await store.updateClaim(client, userId, mode, { mythic_shards: shards });
+    return { message: `💎 중복 신화 ${d.count}개 분해 · 신화 조각 +${d.shards}`, mode, shards, gained: d.shards };
+  });
+}));
+
+// 신화 각성: POST /api/box/awaken { key } — 도감에 있는 신화를 조각으로 ★ 올리기
+router.post('/awaken', handle('서버 오류로 각성하지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+  const key = req.body.key;
+  return withSave(userId, async (client, mode, save) => {
+    requireCollection(mode);
+    if (!collection.MYTHIC_BY_KEY[key]) throw new HttpError(400, '존재하지 않는 신화입니다.');
+    if (!save.codex.has(key)) throw new HttpError(400, '도감에 있는 신화만 각성할 수 있습니다.');
+    const awaken = { ...(save.claim.mythic_awaken || {}) };
+    const level = collection.awakenLevel(awaken, key);
+    if (level >= collection.AWAKEN_MAX) throw new HttpError(400, '이미 최고 단계(★5)입니다.');
+    const cost = collection.AWAKEN_COSTS[level];
+    const shards = save.claim.mythic_shards || 0;
+    if (shards < cost) throw new HttpError(400, `신화 조각이 부족합니다. (필요 ${cost}, 보유 ${shards})`);
+    awaken[key] = level + 1;
+    await store.updateClaim(client, userId, mode, { mythic_awaken: JSON.stringify(awaken), mythic_shards: shards - cost });
+    const m = collection.MYTHIC_BY_KEY[key];
+    return { message: `✨ ${m.name} ★${level + 1} 각성! (전체 수입 +${collection.AWAKEN_INCOME_PERCENT}%)`, mode, key, level: level + 1, shards: shards - cost };
+  });
+}));
+
+// 조각 상점: POST /api/box/shard-shop { item: 'choiceBox' }
+router.post('/shard-shop', handle('서버 오류로 구매하지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+  return withSave(userId, async (client, mode, save) => {
+    requireCollection(mode);
+    if (req.body.item !== 'choiceBox') throw new HttpError(400, '없는 상품입니다.');
+    if (save.codex.size >= MYTHICS.length) throw new HttpError(400, '도감을 모두 채워서 고를 신화가 없습니다.');
+    const price = collection.CHOICE_BOX_SHARD_PRICE;
+    const shards = save.claim.mythic_shards || 0;
+    if (shards < price) throw new HttpError(400, `신화 조각이 부족합니다. (필요 ${price}, 보유 ${shards})`);
+    const boxes = (save.claim.mythic_choice_boxes || 0) + 1;
+    await store.updateClaim(client, userId, mode, { mythic_shards: shards - price, mythic_choice_boxes: boxes });
+    return { message: '🎁 신화 선택 상자 구매!', mode, shards: shards - price, choiceBoxes: boxes };
+  });
+}));
+
+// 일일 미션 보상: POST /api/box/mission { key } (key = 미션 key 또는 'allClear')
+router.post('/mission', handle('서버 오류로 보상을 받지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+  const key = req.body.key;
+  return withSave(userId, async (client, mode, save) => {
+    requireCollection(mode);
+    const missions = missionsResponse(save);
+    let reward;
+    if (key === 'allClear') {
+      if (!missions.allClear.claimable) throw new HttpError(400, '오늘의 미션을 모두 완료하면 받을 수 있습니다.');
+      reward = missions.allClear.shards;
+    } else {
+      const m = missions.list.find(x => x.key === key);
+      if (!m) throw new HttpError(400, '오늘의 미션이 아닙니다.');
+      if (m.claimed) throw new HttpError(400, '이미 보상을 받았습니다.');
+      if (!m.claimable) throw new HttpError(400, '아직 완료하지 않은 미션입니다.');
+      reward = m.shards;
+    }
+    const state = collection.normalizeMissionState(save.claim.daily_missions, save.day);
+    state.claimed[key] = true;
+    const shards = (save.claim.mythic_shards || 0) + reward;
+    await store.updateClaim(client, userId, mode, { daily_missions: JSON.stringify(state), mythic_shards: shards });
+    return { message: `📅 미션 보상 · 신화 조각 +${reward}`, mode, shards, gained: reward };
+  });
+}));
+
 function achievementsResponse(mode, claim) {
   const claimed = claim.achievements_claimed || {};
   if (store.isPrestigeMode(mode)) return { achievements: [], claimableAchievements: 0 };
@@ -528,6 +644,7 @@ router.post('/open', handle('서버 오류로 상자를 열지 못했습니다.'
     });
     await store.addItems(client, userId, mode, { [roll.treasure.key]: 1 });
     await store.saveStats(client, userId, mode, save.claim, store.boxStatDeltas(1, { [roll.treasure.key]: 1 }));
+    await store.bumpMission(client, userId, mode, save.claim, save.day, 'tapOpen');
 
     return {
       message: '상자를 열었습니다!',
@@ -649,6 +766,7 @@ router.post('/open-all', handle('서버 오류로 상자를 열지 못했습니�
     });
     await store.addItems(client, userId, mode, counts);
     await store.saveStats(client, userId, mode, save.claim, store.boxStatDeltas(quantity, counts));
+    await store.bumpMission(client, userId, mode, save.claim, save.day, 'tapOpen');
 
     return {
       message: `상자 ${quantity}개를 열었습니다!`,
@@ -694,6 +812,7 @@ router.post('/buy-boxes', handle('서버 오류로 구매에 실패했습니다.
     const { counts, pity, pityTriggered } = rollBoxes(save.claim.mythic_pity, quantity, store.rollContextOf(save));
     await store.addItems(client, userId, mode, counts);
     await store.saveStats(client, userId, mode, save.claim, store.boxStatDeltas(quantity, counts));
+    await store.bumpMission(client, userId, mode, save.claim, save.day, 'buy');
 
     const remainingGold = currentGold - totalCost;
     await store.updateClaim(client, userId, mode, { total_treasure: remainingGold, mythic_pity: pity });
@@ -743,6 +862,7 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       goldenBox,
       rankReward,
       choiceBox: choiceBoxResponse(mode, save),
+      collection: collectionResponse(mode, save),
       ...achievementsResponse(mode, claim),
       season: seasonResponse(mode, save),
       seasonChange: save.seasonChange,
@@ -995,6 +1115,7 @@ router.post('/golden-box', handle('서버 오류로 황금 상자를 열지 못�
 
     await store.updateClaim(client, userId, mode, fields);
     await store.saveStats(client, userId, mode, claim, statDeltas);
+    await store.bumpMission(client, userId, mode, claim, save.day, 'golden');
     return { ...result, mode, totalTreasure: gold };
   });
 }));
@@ -1053,13 +1174,14 @@ router.post('/prestige-shop', handle('서버 오류로 구매에 실패했습니
 
     const level = getPerkLevel(save.claim, perk.key);
     if (level >= perk.maxLevel) throw new HttpError(400, '이미 최대 레벨입니다.');
-    if (save.claim.prestige_points < perk.cost) {
-      throw new HttpError(400, `환생 포인트가 부족합니다. (필요: ${perk.cost}개)`);
+    const cost = getPerkCost(perk, level);
+    if (save.claim.prestige_points < cost) {
+      throw new HttpError(400, `환생 포인트가 부족합니다. (필요: ${cost}개)`);
     }
 
     const perks = { ...(save.claim.prestige_perks || {}), [perk.key]: level + 1 };
     const fields = {
-      prestige_points: save.claim.prestige_points - perk.cost,
+      prestige_points: save.claim.prestige_points - cost,
       prestige_perks: JSON.stringify(perks),
     };
     // 타고난 장인은 지금 판에도 바로 자동 합성을 열어줍니다.
@@ -1111,6 +1233,7 @@ router.post('/craft', handle('서버 오류로 합성에 실패했습니다.', a
     const resultItem = pickRandomFromRarity(nextRarity);
     await store.addItems(client, userId, mode, { [itemKey]: -CRAFT_COST, [resultItem.key]: 1 });
     await store.saveStats(client, userId, mode, save.claim, { crafts: 1, ...store.countRareGains({ [resultItem.key]: 1 }) });
+    await store.bumpMission(client, userId, mode, save.claim, save.day, 'craft');
 
     return {
       message: '합성 성공!',
@@ -1134,6 +1257,7 @@ router.post('/craft-all', handle('서버 오류로 일괄 합성에 실패했습
 
     await store.addItems(client, req.user.userId, mode, deltas);
     await store.saveStats(client, req.user.userId, mode, save.claim, { crafts: totalCrafts, ...store.countRareGains(deltas) });
+    await store.bumpMission(client, req.user.userId, mode, save.claim, save.day, 'craft', totalCrafts);
     return {
       message: `총 ${totalCrafts}번 합성했습니다!`,
       mode,
@@ -1500,6 +1624,12 @@ router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) 
   );
   const found = new Map(result.rows.map(r => [r.item_key, r]));
   const today = getDay();
+  const claimRow = await db.query(
+    `SELECT mythic_awaken, mythic_shards FROM box_claims WHERE user_id = $1 AND mode = 'collection'`,
+    [userId]
+  );
+  const awaken = (claimRow.rows[0] && claimRow.rows[0].mythic_awaken) || {};
+  const bonus = collection.getCollectionBonus(new Set(found.keys()), awaken);
 
   const groups = [];
   for (const m of MYTHICS) {
@@ -1525,6 +1655,9 @@ router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) 
       effect: itemEffectInfo(m.key, 0),
       obtained: Boolean(row),
       firstObtainedAt: row ? row.first_discovered_at : null,
+      awaken: row ? collection.awakenLevel(awaken, m.key) : 0,
+      theme: m.theme,
+      motif: m.motif,
     });
   }
   // 오늘 묶음을 맨 앞에, 그 뒤로는 다음에 나오는 순서대로
@@ -1536,6 +1669,16 @@ router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) 
     total: MYTHICS.length,
     collectorRank: getCollectorRank(found.size),
     groups,
+    shards: claimRow.rows[0] ? claimRow.rows[0].mythic_shards : 0,
+    awakenCosts: collection.AWAKEN_COSTS,
+    awakenMax: collection.AWAKEN_MAX,
+    awakenIncomePercent: collection.AWAKEN_INCOME_PERCENT,
+    stars: bonus.stars,
+    sets: {
+      motifBonusPercent: collection.MOTIF_SET_INCOME_PERCENT,
+      motifs: bonus.motifs,
+      themes: bonus.themes.map(t => ({ ...t, bonusText: describeItemEffect(t.bonus.type, t.bonus.value) })),
+    },
   };
 }));
 

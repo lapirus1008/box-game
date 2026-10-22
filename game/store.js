@@ -23,9 +23,13 @@ const {
   INCOME_BOOST_MULTIPLIER,
   TREASURE_BY_KEY,
   SEASON_RESET_PRESTIGE,
+  PRESTIGE_LEFTOVER_SHARDS_PER_POINT,
   REBIRTH_GOLD_REQUIRED,
   SPLIT_STEPS,
 } = require('./config');
+const { getCollectionBonus, normalizeMissionState } = require('./collection');
+// 이 간격 안에 다시 동기화했으면 "접속 중"으로 봅니다 (화면은 15초마다 동기화)
+const ONLINE_MISSION_GAP_MS = 2 * 60 * 1000;
 const { getItemStars, getClaimStats, getPerkLevel, rollBoxes, craftCascade, makeRollContext, getDailyRule } = require('./logic');
 const { MYTHICS } = require('./mythics');
 const { getSeason, getDay, getRotation } = require('./season');
@@ -40,6 +44,7 @@ const CLAIM_COLUMNS = [
   'golden_box_next_at', 'income_boost_until', 'lifetime_stats', 'achievements_claimed',
   'locked_items', 'season', 'run_splits', 'best_splits', 'best_run_ms', 'sealed_mythics',
   'mythic_choice_boxes', 'collector_rank_rewarded',
+  'mythic_shards', 'mythic_awaken', 'daily_missions',
 ];
 const MYTHIC_KEYS = MYTHICS.map(m => m.key);
 
@@ -251,7 +256,17 @@ function rollContextOf(save) {
 async function applyNewSeason(client, userId, mode, claim, season, now) {
   if (mode !== MODES.RECORD) {
     await updateClaim(client, userId, mode, { season });
-    return;
+    return null;
+  }
+  // 남은 환생 포인트는 사라지기 전에 수집모드 신화 조각으로 바꿔 줍니다.
+  let convertedShards = 0;
+  const leftover = Number(claim.prestige_points) || 0;
+  if (SEASON_RESET_PRESTIGE && leftover > 0) {
+    convertedShards = leftover * PRESTIGE_LEFTOVER_SHARDS_PER_POINT;
+    await client.query(
+      `UPDATE box_claims SET mythic_shards = mythic_shards + $2 WHERE user_id = $1 AND mode = 'collection'`,
+      [userId, convertedShards]
+    );
   }
   const keepClaim = SEASON_RESET_PRESTIGE ? {} : claim;
   await resetSave(client, userId, mode, now, { claim: keepClaim });
@@ -268,6 +283,7 @@ async function applyNewSeason(client, userId, mode, claim, season, now) {
     });
   }
   await updateClaim(client, userId, mode, fields);
+  return { convertedShards, leftoverPoints: leftover };
 }
 
 // 구간 기록: 지금 골드로 새로 넘은 구간이 있으면 경과 시간을 더한 배열을, 없으면 null을 돌려줍니다.
@@ -302,12 +318,15 @@ async function settle(client, userId, mode) {
   let seasonChange = null;
   if ((Number(claim.season) || 0) < season) {
     seasonChange = { from: Number(claim.season) || null, to: season, reset: mode === MODES.RECORD };
-    await applyNewSeason(client, userId, mode, claim, season, now);
+    const converted = await applyNewSeason(client, userId, mode, claim, season, now);
+    if (converted && converted.convertedShards > 0) Object.assign(seasonChange, converted);
     claim = await getClaim(client, userId, mode, CLAIM_COLUMNS, { forUpdate: true });
   }
   // 신화 도감은 수집모드에서만 씁니다. (천장이 도감에 없는 신화를 먼저 주는 데 사용)
   const codex = mode === MODES.COLLECTION ? await getCodexKeys(client, userId) : new Set();
   claim.season_rule = getDailyRule(day);
+  // 수집모드: 세트 효과·각성 보너스 (DB 컬럼이 아니라 능력치 계산용으로 붙여 둠)
+  claim.collection_bonus = mode === MODES.COLLECTION ? getCollectionBonus(codex, claim.mythic_awaken).effects : null;
 
   let owned = await getOwnedCounts(client, userId, mode, { forUpdate: true });
   // 능력치(보관 시간·행운·천장 등)는 정산 시작 시점의 보유 아이템 기준으로 계산합니다.
@@ -406,6 +425,16 @@ async function settle(client, userId, mode) {
     }
   }
 
+  // 접속 중(직전 동기화가 2분 이내)에 일어난 자동 합성은 오늘의 미션 '직접 합성'에도 셉니다.
+  // 오래 비웠다가 돌아와서 한꺼번에 정산된 자동 합성은 세지 않습니다.
+  let missionState = null;
+  const previousActive = claim.last_active_at ? new Date(claim.last_active_at) : null;
+  const wasOnline = previousActive && now - previousActive <= ONLINE_MISSION_GAP_MS;
+  if (mode === MODES.COLLECTION && autoCrafted && wasOnline) {
+    missionState = normalizeMissionState(claim.daily_missions, day);
+    missionState.progress.craft = (missionState.progress.craft || 0) + autoCrafted.count;
+  }
+
   await addItems(client, userId, mode, itemDeltas);
   if (mode === MODES.COLLECTION) {
     for (const [key, amount] of Object.entries(itemDeltas)) {
@@ -419,6 +448,7 @@ async function settle(client, userId, mode) {
   await updateClaim(client, userId, mode, {
     ...(runSplits ? { run_splits: JSON.stringify(runSplits) } : {}),
     ...(sealedMythics ? { sealed_mythics: JSON.stringify(sealedMythics) } : {}),
+    ...(missionState ? { daily_missions: JSON.stringify(missionState) } : {}),
     lifetime_stats: JSON.stringify(lifetimeStats),
     total_treasure: gold,
     run_gold_earned: runGoldEarned,
@@ -434,6 +464,7 @@ async function settle(client, userId, mode) {
     ...claim,
     ...(runSplits ? { run_splits: runSplits } : {}),
     ...(sealedMythics ? { sealed_mythics: sealedMythics } : {}),
+    ...(missionState ? { daily_missions: missionState } : {}),
     total_treasure: gold,
     run_gold_earned: runGoldEarned,
     last_income_collected_at: now,
@@ -516,7 +547,17 @@ function isPrestigeMode(mode) {
   return mode === MODES.RECORD;
 }
 
+// 일일 미션 진행 +amount (수집모드 전용). claim은 이미 FOR UPDATE로 읽은 행이어야 합니다.
+async function bumpMission(client, userId, mode, claim, day, key, amount = 1) {
+  if (mode !== MODES.COLLECTION || !(amount > 0)) return;
+  const state = normalizeMissionState(claim.daily_missions, day);
+  state.progress[key] = (state.progress[key] || 0) + amount;
+  claim.daily_missions = state;
+  await updateClaim(client, userId, mode, { daily_missions: JSON.stringify(state) });
+}
+
 module.exports = {
+  bumpMission,
   lockedSet,
   bumpStats,
   saveStats,

@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261017e">
+<link rel="stylesheet" href="style.css?v=20261021a">
 </head>
 <body>
 
@@ -143,6 +143,20 @@
     <ul class="away-details" id="boxPriceList"></ul>
     <p class="golden-info-note" id="boxPriceNote"></p>
     <button id="boxPriceCloseBtn">확인</button>
+  </div>
+</div>
+
+<!-- 신화 각성: 도감의 신화를 눌렀을 때 -->
+<div id="awakenOverlay" class="info-overlay">
+  <div class="away-card awaken-card">
+    <p class="away-eyebrow">✨ 신화 각성</p>
+    <div id="awakenIcon"></div>
+    <p class="awaken-name" id="awakenName"></p>
+    <p class="awaken-stars" id="awakenStars"></p>
+    <p class="awaken-effect" id="awakenEffect"></p>
+    <p class="awaken-cost" id="awakenCost"></p>
+    <button id="awakenBtn">각성하기</button>
+    <button class="link-btn" id="awakenCloseBtn">닫기</button>
   </div>
 </div>
 
@@ -373,7 +387,10 @@
     <!-- 도감 (수집모드 전용, 영구): 신화 100종(매일 10종씩 등장) + 일반~전설 -->
     <div id="collectionModeView" class="hidden">
       <div class="codex-head" id="codexHead"></div>
-      <h3 class="dex-heading">🌟 신화 100종</h3>
+      <!-- 신화 조각: 중복 분해 · 선택 상자 구매 / 세트 효과 -->
+      <div class="shard-bar" id="shardBar"></div>
+      <div id="setPanel"></div>
+      <h3 class="dex-heading">🌟 신화 100종 <small class="dex-heading-sub">눌러서 각성</small></h3>
       <div id="codexGroups"></div>
       <h3 class="dex-heading">📦 일반 ~ 전설</h3>
       <p class="mastery-hint">같은 아이템을 10·30·100·300개 모으면 ★ · ★당 그 아이템 수입 +10%</p>
@@ -407,7 +424,7 @@
       <h2 class="shop-heading" style="margin-top:0;">✨ 환생 상점</h2>
       <p class="prestige-info" id="prestigeInfo"></p>
       <p class="prestige-next" id="prestigeNext"></p>
-      <p class="prestige-rule">이번 판에 번 골드 5만G마다 환생 시 1포인트 · 특성은 환생해도 남고 새 시즌에 초기화</p>
+      <p class="prestige-rule">이번 판에 번 골드 5만G마다 환생 시 1포인트 · 같은 특성은 레벨이 오를수록 비싸짐 · 특성은 환생해도 남고 새 시즌에 초기화 · 시즌 종료 시 남은 포인트는 수집모드 💎신화 조각으로(1포인트 = 2조각)</p>
       <div class="shop-list" id="perkList" style="margin-top:10px;"></div>
     </div>
   </div>
@@ -415,11 +432,14 @@
   <!-- 업적 화면 -->
   <div class="card hidden" id="achievementScreen">
     <div class="top-row">
-      <h1 style="margin:0; font-size:20px;">업적</h1>
+      <h1 style="margin:0; font-size:20px;">미션 · 업적</h1>
       <button id="backFromAchievementBtn">← 돌아가기</button>
     </div>
-    <p class="screen-sub">목표 달성 시 보상 획득</p>
+    <p class="screen-sub">직접 플레이로 미션 달성 · 보상은 신화 조각(💎)</p>
     <div class="craft-result" id="achievementResult"></div>
+    <!-- 오늘의 미션 (매일 오전 9시 교체, 자동 개봉·자동 합성으로는 채워지지 않음) -->
+    <div class="mission-box" id="missionBox"></div>
+    <h3 class="dex-heading">🏅 업적</h3>
     <div class="achievement-list" id="achievementList"></div>
   </div>
 
@@ -469,12 +489,12 @@
   <button class="tab-item" data-tab="bag"><span class="tab-icon">🎒</span><small>가방</small></button>
   <button class="tab-item collection-only" data-tab="dex"><span class="tab-icon">📖</span><small>도감</small></button>
   <button class="tab-item" data-tab="upgrade"><span class="tab-icon">🛠</span><small>강화</small></button>
-  <button class="tab-item collection-only" data-tab="achievement"><span class="tab-icon">🏅</span><small>업적</small><span class="nav-badge hidden" id="achievementBadge"></span></button>
+  <button class="tab-item collection-only" data-tab="achievement"><span class="tab-icon">📅</span><small>미션</small><span class="nav-badge hidden" id="achievementBadge"></span></button>
   <button class="tab-item" data-tab="ranking"><span class="tab-icon">🏆</span><small>랭킹</small></button>
   <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
 </nav>
 
-<script src="app.js?v=20261017e"></script>
+<script src="app.js?v=20261021a"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {
