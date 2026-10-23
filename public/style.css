@@ -1736,3 +1736,15 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 .awaken-cost{ margin:0 0 12px; font-size:13px; color:#9be7ff; font-weight:700; }
 #awakenBtn{ background:var(--gold); color:#1A1305; }
 #awakenCloseBtn{ display:block; margin:8px auto 0; font-size:12px; }
+
+/* 게임 안 확인창 */
+.info-overlay.confirm-overlay{ z-index:1100; }
+.confirm-card{ max-width:310px; text-align:center; }
+.confirm-title{ margin:0 0 8px; font-size:17px; font-weight:800; color:var(--ink); }
+.confirm-text{ margin:0 0 18px; font-size:13px; line-height:1.6; color:var(--ink-dim); white-space:pre-line; }
+.confirm-buttons{ display:flex; gap:8px; }
+.confirm-buttons button{ flex:1; margin:0; }
+.confirm-cancel{ background:var(--surface-2); color:var(--ink); border:1px solid #2C3F6B; }
+.confirm-cancel.hidden{ display:none; }
+.confirm-ok{ background:var(--gold); color:#1A1305; }
+.confirm-ok.danger{ background:var(--danger); color:#fff; }

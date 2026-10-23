@@ -395,7 +395,7 @@ async function switchMode(targetMode){
       body: JSON.stringify({ mode: targetMode }),
     });
     const data = await res.json();
-    if (!res.ok) { alert(data.message); return; }
+    if (!res.ok) { showToast(data.message, true); return; }
 
     applyModeUI(data.mode);
     resetGameResultUI();
@@ -406,7 +406,7 @@ async function switchMode(targetMode){
     await refreshStatus();
     if (!collectionScreen.classList.contains('hidden')) await loadCollection(true);
   } catch (err) {
-    alert('모드를 전환하지 못했습니다.');
+    showToast('모드를 전환하지 못했습니다.', true);
   } finally {
     btn.disabled = false;
   }
@@ -1010,8 +1010,7 @@ async function performRebirth(btnEl){
     const data = await res.json();
 
     if (!res.ok) {
-      if (onMainScreen) alert(data.message);
-      else showToast(data.message, true);
+      showToast(data.message, true);
     } else {
       const vsBest = data.previousBestMs == null
         ? '🏁 이번 시즌 첫 기록!'
@@ -1044,14 +1043,18 @@ document.getElementById('rebirthBtn').addEventListener('click', function(){ perf
 document.getElementById('mainRebirthBtn').addEventListener('click', function(){ performRebirth(this); });
 
 document.getElementById('resetRunBtn').addEventListener('click', async function(){
-  const confirmed = confirm('초심으로 돌아가시겠습니까?\n지금 모은 골드·아이템·강화·자동화가 모두 사라지고 2000골드부터 다시 시작합니다.\n(환생이 아니므로 기록·환생 포인트는 생기지 않으며, 보유한 환생 포인트는 유지됩니다)');
+  const confirmed = await askConfirm({
+    title: '🔄 초심으로 돌아가기',
+    text: '골드·아이템·강화·자동화가 모두 사라지고 2,000G부터 다시 시작합니다.\n이번 판은 기록되지 않고, 가진 환생 포인트는 그대로 남습니다.',
+    ok: '처음부터', danger: true,
+  });
   if (!confirmed) return;
 
   this.disabled = true;
   try {
     const res = await authFetch('/api/box/reset-run', { method: 'POST' });
     const data = await res.json();
-    if (!res.ok) { alert(data.message); return; }
+    if (!res.ok) { showToast(data.message, true); return; }
 
     cachedRunStartedAt = new Date(data.runStartedAt);
     setGold(data.totalTreasure);
@@ -2011,7 +2014,15 @@ function renderShardBar(){
 document.getElementById('shardBar').addEventListener('click', async (e) => {
   const btn = e.target.closest('#dismantleBtn, #shardShopBtn');
   if (!btn || btn.disabled) return;
-  if (btn.id === 'dismantleBtn' && !confirm('3개를 넘는 중복 신화를 모두 분해할까요?\n(효과는 그대로, 넘는 개수만큼 수입이 조금 줄어듭니다)')) return;
+  if (btn.id === 'dismantleBtn') {
+    const d = lastStatus.collection.dismantle;
+    const ok = await askConfirm({
+      title: '🔨 중복 신화 분해',
+      text: `3개를 넘는 신화 ${d.count}개 → 💎 ${formatGold(d.shards)}\n효과는 그대로 유지되고, 분해한 만큼 수입만 조금 줄어듭니다.`,
+      ok: '분해',
+    });
+    if (!ok) return;
+  }
   btn.disabled = true;
   const { ok, data } = btn.id === 'dismantleBtn'
     ? await collectionPost('/api/box/dismantle')
@@ -2158,8 +2169,10 @@ document.getElementById('guestbookList').addEventListener('click', async (e) => 
   const del = e.target.closest('[data-gb-delete]');
   const rep = e.target.closest('[data-gb-report]');
   if (!del && !rep) return;
-  if (del && !confirm('이 글을 삭제하시겠습니까?')) return;
-  if (rep && !confirm('이 글을 신고하시겠습니까? 신고한 글은 즉시 숨겨집니다.')) return;
+  const ok = del
+    ? await askConfirm({ title: '글 삭제', text: '삭제한 글은 되돌릴 수 없습니다.', ok: '삭제', danger: true })
+    : await askConfirm({ title: '🚩 글 신고', text: '신고한 글은 바로 숨겨지고, 여러 명이 신고하면 모두에게 숨겨집니다.', ok: '신고', danger: true });
+  if (!ok) return;
   const id = (del || rep).dataset[del ? 'gbDelete' : 'gbReport'];
   const res = await authFetch(del ? `/api/guestbook/${id}` : `/api/guestbook/${id}/report`, { method: del ? 'DELETE' : 'POST' });
   const data = await res.json();
@@ -2237,6 +2250,33 @@ document.getElementById('choiceConfirmBtn').addEventListener('click', async func
 });
 
 // -------------------------------
+// 게임 안 확인창: askConfirm({ title, text, ok, cancel, danger }) → 확인하면 true
+// (브라우저 기본 confirm/alert 창은 쓰지 않습니다. cancel: null 이면 확인 버튼만)
+// -------------------------------
+const confirmOverlay = document.getElementById('confirmOverlay');
+let confirmResolve = null;
+function askConfirm({ title, text, ok = '확인', cancel = '취소', danger = false }){
+  if (confirmResolve) confirmResolve(false);
+  document.getElementById('confirmTitle').textContent = title || '';
+  document.getElementById('confirmText').textContent = text || '';
+  const okBtn = document.getElementById('confirmOkBtn');
+  const cancelBtn = document.getElementById('confirmCancelBtn');
+  okBtn.textContent = ok;
+  okBtn.classList.toggle('danger', danger);
+  cancelBtn.textContent = cancel || '';
+  cancelBtn.classList.toggle('hidden', !cancel);
+  confirmOverlay.classList.add('show');
+  return new Promise(resolve => { confirmResolve = resolve; });
+}
+function closeConfirm(result){
+  confirmOverlay.classList.remove('show');
+  if (confirmResolve) { const r = confirmResolve; confirmResolve = null; r(result); }
+}
+document.getElementById('confirmOkBtn').addEventListener('click', () => closeConfirm(true));
+document.getElementById('confirmCancelBtn').addEventListener('click', () => closeConfirm(false));
+confirmOverlay.addEventListener('click', (e) => { if (e.target === confirmOverlay) closeConfirm(false); });
+
+// -------------------------------
 // 뒤로가기 (안드로이드 뒤로 버튼 · 브라우저 뒤로)
 // 게임에 들어오면 history에 "보호용" 기록을 하나 쌓아 두고, 뒤로가기가 그 기록을 지우면(popstate) 직접 처리합니다.
 //   1) 창(오버레이)이 열려 있으면 → 그 창만 닫기
@@ -2257,6 +2297,7 @@ window.addEventListener('popstate', () => {
   if (!document.body.classList.contains('in-game')) return; // 로그인 화면에서는 기본 동작(종료)
   if (exitOverlay.classList.contains('show')) return; // 종료 창에서 한 번 더 누름 → 이미 앱 밖으로 나가는 중
   if (!guideLayer.classList.contains('hidden')) { endGuide(); armBackGuard(); return; }
+  if (confirmOverlay.classList.contains('show')) { closeConfirm(false); armBackGuard(); return; }
   const openOverlay = Object.keys(OVERLAY_CLOSE_BUTTONS).find(id => document.getElementById(id).classList.contains('show'));
   if (openOverlay) {
     document.getElementById(OVERLAY_CLOSE_BUTTONS[openOverlay]).click();
@@ -2420,7 +2461,7 @@ installAppBtn.addEventListener('click', async () => {
     deferredInstallPrompt = null; // 한 번 쓴 설치 창은 다시 쓸 수 없어요.
     updateInstallButton();
   } else if (isIosSafari()) {
-    alert('아이폰: 아래 공유 버튼(□↑) → "홈 화면에 추가"를 선택하면 앱처럼 설치됩니다.');
+    askConfirm({ title: '📲 홈 화면에 추가', text: 'Safari 아래쪽 공유 버튼(□↑)\n→ "홈 화면에 추가"', ok: '확인', cancel: null });
   }
 });
 updateInstallButton();
@@ -2440,7 +2481,8 @@ document.getElementById('deleteAccountForm').addEventListener('submit', async (e
   e.preventDefault();
   const btn = document.getElementById('deleteAccountSubmitBtn');
   const errorEl = document.getElementById('deleteAccountError');
-  if (!confirm('정말 계정을 삭제하시겠습니까? 복구할 수 없습니다.')) return;
+  const sure = await askConfirm({ title: '⚠️ 계정 삭제', text: '모든 기록이 즉시 삭제되고 복구할 수 없습니다.', ok: '영구 삭제', danger: true });
+  if (!sure) return;
   btn.disabled = true;
   try {
     const res = await fetch(`${API_BASE}/api/auth/delete-account`, {
@@ -2455,7 +2497,7 @@ document.getElementById('deleteAccountForm').addEventListener('submit', async (e
       return;
     }
     document.getElementById('deleteAccountOverlay').classList.remove('show');
-    alert(data.message);
+    showToast(data.message);
     document.getElementById('logoutBtn').click();
   } catch (err) {
     errorEl.textContent = '서버에 연결할 수 없습니다.';
