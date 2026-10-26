@@ -96,6 +96,7 @@ const {
 const store = require('../game/store');
 const { MYTHICS } = require('../game/mythics');
 const collection = require('../game/collection');
+const skills = require('../game/skills');
 const { getSeason, getSeasonStart, getSeasonEnd, getDay, getDayStart, getDayEnd, getNextDayForRotation } = require('../game/season');
 
 const router = express.Router();
@@ -269,7 +270,9 @@ function autoEventResponse(save) {
 function progressionResponse(mode, save) {
   const { claim, stats } = save;
   const prestigeEnabled = store.isPrestigeMode(mode);
-  const pointsOnRebirth = prestigeEnabled ? getPrestigePointsForRun(claim.run_gold_earned) : 0;
+  const basePoints = prestigeEnabled ? getPrestigePointsForRun(claim.run_gold_earned) : 0;
+  const mythicBonus = prestigeEnabled ? mythicKindsThisRun(save) : 0;
+  const pointsOnRebirth = basePoints + mythicBonus;
   const autoOpenRemainingMs = Number(claim.auto_open_remaining_ms);
   return {
     storageMs: stats.storageMs,
@@ -283,7 +286,7 @@ function progressionResponse(mode, save) {
         emoji: upgrade.emoji,
         level,
         maxLevel: upgrade.maxLevel,
-        cost: isMax ? null : getUpgradeCost(upgrade, level, stats.upgradeDiscountPercent),
+        cost: isMax ? null : skillDiscountedUpgradeCost(getUpgradeCost(upgrade, level, stats.upgradeDiscountPercent), claim),
         effect: describeUpgradeEffect(upgrade.key, level),
         nextEffect: isMax ? null : describeUpgradeEffect(upgrade.key, level + 1),
       };
@@ -310,7 +313,8 @@ function progressionResponse(mode, save) {
       incomeBonusPercent: getPerkLevel(claim, 'income') * PERK_INCOME_PERCENT,
       runGoldEarned: parseInt(claim.run_gold_earned, 10),
       pointsOnRebirth,
-      nextPointAt: (pointsOnRebirth + 1) * PRESTIGE_GOLD_PER_POINT,
+      nextPointAt: (basePoints + 1) * PRESTIGE_GOLD_PER_POINT,
+      mythicBonus,
       perks: PRESTIGE_PERKS.map(perk => ({
         key: perk.key,
         emoji: perk.emoji,
@@ -366,8 +370,10 @@ function incomeResponse(save) {
 // -------------------------------
 // 황금 상자 일정
 // -------------------------------
-function randomGoldenGap() {
-  return GOLDEN_BOX_MIN_GAP_MS + Math.floor(Math.random() * (GOLDEN_BOX_MAX_GAP_MS - GOLDEN_BOX_MIN_GAP_MS));
+// 도감 40종 마일스톤: 등장 간격 ×0.75
+function randomGoldenGap(save) {
+  const factor = save && save.milestones ? save.milestones.goldenGapFactor : 1;
+  return Math.round((GOLDEN_BOX_MIN_GAP_MS + Math.random() * (GOLDEN_BOX_MAX_GAP_MS - GOLDEN_BOX_MIN_GAP_MS)) * factor);
 }
 
 // 접속 중(상태 조회)일 때만 호출합니다. 다음 등장 시각이 없거나 이미 놓쳤다면 새로 잡습니다.
@@ -375,7 +381,7 @@ async function syncGoldenBox(client, userId, mode, save) {
   const now = save.now;
   let nextAt = save.claim.golden_box_next_at ? new Date(save.claim.golden_box_next_at) : null;
   if (!nextAt || now - nextAt > GOLDEN_BOX_WINDOW_MS) {
-    nextAt = new Date(now.getTime() + randomGoldenGap());
+    nextAt = new Date(now.getTime() + randomGoldenGap(save));
     await store.updateClaim(client, userId, mode, { golden_box_next_at: nextAt });
     save.claim.golden_box_next_at = nextAt;
   }
@@ -484,11 +490,118 @@ function collectionResponse(mode, save) {
     stars: bonus.stars,
     choiceBoxPrice: collection.CHOICE_BOX_SHARD_PRICE,
     missions: missionsResponse(save),
+    milestones: save.milestones ? { list: save.milestones.list, next: save.milestones.next } : null,
   };
 }
 function requireCollection(mode) {
   if (mode !== MODES.COLLECTION) throw new HttpError(400, '수집모드 전용 기능입니다.');
 }
+
+// 기록모드 환생 보너스: 이번 판에 가진 신화 종류 수만큼 환생 포인트 추가
+function mythicKindsThisRun(save) {
+  return MYTHIC_KEYS.filter(key => (save.owned[key] || 0) > 0).length;
+}
+
+// '장인의 손' 스킬 할인 적용
+function skillDiscountedUpgradeCost(cost, claim) {
+  const discount = Number((claim.skill_buffs || {}).upgradeDiscount) || 0;
+  return discount > 0 ? Math.floor(cost * Math.max(0, 100 - discount) / 100) : cost;
+}
+
+// -------------------------------
+// 신화 스킬 (game/skills.js)
+// -------------------------------
+function skillStatesOf(mode, save) {
+  const isCollection = mode === MODES.COLLECTION;
+  return skills.getSkillStates({
+    have: isCollection ? (key => save.codex.has(key)) : (key => (save.owned[key] || 0) > 0),
+    awaken: isCollection ? (save.claim.mythic_awaken || {}) : {},
+    cooldowns: save.claim.skill_cooldowns || {},
+    cooldownBonus: save.milestones ? save.milestones.skillCooldownBonus : 0,
+    now: save.now,
+  });
+}
+function skillsResponse(mode, save) {
+  const buffs = skills.activeSkillBuffs(save.claim.skill_buffs || {}, save.now);
+  const b = save.claim.skill_buffs || {};
+  return {
+    list: skillStatesOf(mode, save),
+    active: {
+      luck: buffs.luck ? { value: buffs.luck, until: b.luckUntil } : null,
+      boxDiscount: buffs.boxDiscount ? { value: buffs.boxDiscount, until: b.discountUntil } : null,
+      upgradeDiscount: buffs.upgradeDiscount || 0,
+    },
+  };
+}
+
+// 스킬 사용: POST /api/box/skill { type }
+router.post('/skill', handle('서버 오류로 스킬을 쓰지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+  const type = req.body.type;
+  const def = skills.SKILL_BY_TYPE[type];
+  if (!def) throw new HttpError(400, '없는 스킬입니다.');
+
+  return withSave(userId, async (client, mode, save) => {
+    const state = skillStatesOf(mode, save).find(s => s.type === type);
+    if (!state.unlocked) throw new HttpError(400, `${def.name}: 이 종류의 신화를 가지면 열립니다.`);
+    if (!state.ready) throw new HttpError(400, `${def.name}: ${Math.ceil(state.remainingMs / 60000)}분 뒤에 다시 쓸 수 있습니다.`);
+
+    const t = state.tier;
+    const { claim, now } = save;
+    const fields = {};
+    const buffs = { ...(claim.skill_buffs || {}) };
+    let gold = claim.total_treasure;
+    let extra = '';
+
+    switch (type) {
+      case 'incomePercent': {
+        const current = claim.income_boost_until && new Date(claim.income_boost_until) > now ? new Date(claim.income_boost_until) : now;
+        fields.income_boost_until = new Date(current.getTime() + (3 + 2 * t) * 60000);
+        break;
+      }
+      case 'chargeSpeed':
+        fields.box_charges = Math.min(save.stats.maxCharges, save.chargeInfo.charges + 25 * t);
+        break;
+      case 'golden':
+        fields.golden_box_next_at = now;
+        break;
+      case 'luck':
+        buffs.luckUntil = new Date(now.getTime() + skills.SKILL_BUFF_MS);
+        buffs.luckValue = 10 * t;
+        break;
+      case 'pity':
+        fields.mythic_pity = Math.min(save.stats.pityLimit - 1, claim.mythic_pity + 100 * t);
+        break;
+      case 'boxDiscount':
+        buffs.discountUntil = new Date(now.getTime() + skills.SKILL_BUFF_MS);
+        buffs.discountValue = 10 + 5 * t;
+        break;
+      case 'upgradeDiscount':
+        buffs.upgradeDiscount = Math.min(100, 25 * t);
+        break;
+      case 'autoOpenDiscount':
+        fields.auto_open_remaining_ms = Math.min(save.stats.storageMs, Number(claim.auto_open_remaining_ms) + 30 * t * 60000);
+        fields.auto_open_enabled = true;
+        break;
+      case 'storageMinutes': {
+        const earned = Math.floor(save.income.perMinuteIncome * 15 * t);
+        gold += earned;
+        fields.total_treasure = gold;
+        fields.run_gold_earned = Number(claim.run_gold_earned) + earned;
+        extra = ` (+${earned.toLocaleString()}G)`;
+        break;
+      }
+      default: break;
+    }
+    const cooldowns = { ...(claim.skill_cooldowns || {}), [type]: new Date(now.getTime() + state.cooldownMs) };
+    await store.updateClaim(client, userId, mode, {
+      ...fields,
+      skill_buffs: JSON.stringify(buffs),
+      skill_cooldowns: JSON.stringify(cooldowns),
+    });
+    return { message: `${def.emoji} ${def.name}! ${state.desc}${extra}`, mode, type, totalTreasure: gold };
+  });
+}));
 
 // 중복 신화 분해: POST /api/box/dismantle — 효과가 겹치는 3개를 넘는 신화를 모두 신화 조각으로
 router.post('/dismantle', handle('서버 오류로 분해하지 못했습니다.', async (req) => {
@@ -863,6 +976,8 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       rankReward,
       choiceBox: choiceBoxResponse(mode, save),
       collection: collectionResponse(mode, save),
+      skills: skillsResponse(mode, save),
+      dailyGrant: save.dailyGrant || null,
       ...achievementsResponse(mode, claim),
       season: seasonResponse(mode, save),
       seasonChange: save.seasonChange,
@@ -917,13 +1032,16 @@ router.post('/upgrade', handle('서버 오류로 업그레이드에 실패했습
     const level = save.claim[upgrade.column];
     if (level >= upgrade.maxLevel) throw new HttpError(400, '이미 최대 레벨입니다.');
 
-    const cost = getUpgradeCost(upgrade, level, save.stats.upgradeDiscountPercent);
+    const cost = skillDiscountedUpgradeCost(getUpgradeCost(upgrade, level, save.stats.upgradeDiscountPercent), save.claim);
     const gold = save.claim.total_treasure;
     if (gold < cost) throw new HttpError(400, `골드가 부족합니다. (필요: ${cost.toLocaleString()}G)`);
 
+    const buffs = save.claim.skill_buffs || {};
     await store.updateClaim(client, userId, mode, {
       total_treasure: gold - cost,
       [upgrade.column]: level + 1,
+      // '장인의 손' 할인은 한 번 쓰면 사라짐
+      ...(buffs.upgradeDiscount ? { skill_buffs: JSON.stringify({ ...buffs, upgradeDiscount: 0 }) } : {}),
     });
 
     return {
@@ -1066,7 +1184,7 @@ router.post('/golden-box', handle('서버 오류로 황금 상자를 열지 못�
     }
 
     const { claim, now } = save;
-    const fields = { golden_box_next_at: new Date(now.getTime() + randomGoldenGap()) };
+    const fields = { golden_box_next_at: new Date(now.getTime() + randomGoldenGap(save)) };
     const result = { reward: pickGoldenReward() };
     let gold = claim.total_treasure;
     const statDeltas = { golden: 1 };
@@ -1394,7 +1512,8 @@ router.post('/rebirth', handle('서버 오류로 환생에 실패했습니다.',
     const now = save.now;
     const durationMs = now - new Date(claim.run_started_at);
     const rebirthNumber = claim.rebirth_count + 1;
-    const prestigeGained = getPrestigePointsForRun(claim.run_gold_earned);
+    const mythicBonus = mythicKindsThisRun(save);
+    const prestigeGained = getPrestigePointsForRun(claim.run_gold_earned) + mythicBonus;
 
     await client.query(
       `INSERT INTO rebirth_history (user_id, mode, rebirth_number, duration_ms, completed_at, season)
@@ -1674,6 +1793,7 @@ router.get('/codex', handle('서버 오류가 발생했습니다.', async (req) 
     awakenMax: collection.AWAKEN_MAX,
     awakenIncomePercent: collection.AWAKEN_INCOME_PERCENT,
     stars: bonus.stars,
+    milestones: collection.getMilestones(found.size).list,
     sets: {
       motifBonusPercent: collection.MOTIF_SET_INCOME_PERCENT,
       motifs: bonus.motifs,

@@ -38,6 +38,7 @@ const {
   NON_MYTHIC_TREASURES,
   SEASON_RULES,
 } = require('./config');
+const { activeSkillBuffs } = require('./skills');
 const { MYTHICS } = require('./mythics');
 
 // weight 기반으로 목록 중 하나를 랜덤하게 뽑습니다. (pool 원소는 { treasure, weight })
@@ -333,12 +334,16 @@ function getClaimStats(claim, owned = {}) {
   if (rule) effects[rule.type] += rule.value;
   // 수집모드 세트 효과·각성 보너스 (game/collection.js)
   for (const [type, value] of Object.entries(claim.collection_bonus || {})) effects[type] = (effects[type] || 0) + value;
+  // 신화 스킬의 시간제 효과 (행운의 손길 · 떨이)
+  const buffs = activeSkillBuffs(claim.skill_buffs || {});
+  effects.luck += buffs.luck;
+  effects.boxDiscount = Math.min(80, effects.boxDiscount + buffs.boxDiscount);
   const baseChargeMs = getChargeIntervalMs(claim.upgrade_charge_speed + getPerkLevel(claim, 'chargeSpeed'));
   return {
     chargeIntervalMs: effects.chargeSpeed > 0
       ? Math.max(MIN_ITEM_CHARGE_INTERVAL_MS, Math.round(baseChargeMs * (100 - effects.chargeSpeed) / 100))
       : baseChargeMs,
-    maxCharges: MAX_BOX_CHARGES,
+    maxCharges: MAX_BOX_CHARGES + (Number(claim.milestone_max_charges) || 0),
     storageMs: getStorageMs(claim.upgrade_capacity, getPerkLevel(claim, 'storage')) + effects.storageMinutes * 60000,
     luckPercent: (claim.upgrade_luck + getPerkLevel(claim, 'luck')) * LUCK_PERCENT_PER_LEVEL + effects.luck,
     pityLimit: Math.max(300, MYTHIC_PITY_LIMIT - effects.pity),

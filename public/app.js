@@ -526,6 +526,13 @@ async function refreshStatus(){
 
     renderCollectorRank(data.collectorRank);
     applyChoiceBox(data.choiceBox, data.rankReward);
+    applySkills(data.skills);
+    if (data.dailyGrant) {
+      const parts = [];
+      if (data.dailyGrant.autoOpenMs) parts.push(`⏳ 자동 개봉 +${Math.round(data.dailyGrant.autoOpenMs / 3600000)}시간`);
+      if (data.dailyGrant.shards) parts.push(`💎 +${data.dailyGrant.shards}`);
+      if (parts.length) showToast(`📖 도감 보상 · ${parts.join(' · ')}`);
+    }
     applySeason(data.season, data.seasonChange, data.codex);
     renderPace(data.pace, data.seasonBest);
     applySealed(data.sealed);
@@ -642,9 +649,10 @@ function applyRebirthGoal(goal){
 function renderPrestigeHint(prestige){
   const el = document.getElementById('prestigeHint');
   if (!prestige || !prestige.enabled) { el.textContent = ''; return; }
+  const mythicText = prestige.mythicBonus > 0 ? ` (신화 ${prestige.mythicBonus}종 +${prestige.mythicBonus}P 포함)` : ' · 신화 1종마다 +1P';
   el.textContent = prestige.pointsOnRebirth > 0
-    ? `✨ 지금 환생하면 특성 포인트 +${prestige.pointsOnRebirth}P`
-    : `✨ ${formatGold(prestige.nextPointAt - prestige.runGoldEarned)}G 더 벌면 특성 포인트 +1P`;
+    ? `✨ 지금 환생하면 특성 포인트 +${prestige.pointsOnRebirth}P${mythicText}`
+    : `✨ ${formatGold(prestige.nextPointAt - prestige.runGoldEarned)}G 더 벌면 특성 포인트 +1P${mythicText}`;
 }
 
 // 0.2초마다 호출: 네트워크 없이 로컬 계산만으로 화면을 그림
@@ -752,6 +760,7 @@ function renderTick(){
   }
   renderGoldenBox();
   renderSeasonCountdown();
+  renderSkillTimers();
 }
 
 // 골드 상자 가격은 수입에 따라 바뀌므로 서버가 알려준 기준값으로 계산합니다 (상태 조회 때마다 갱신)
@@ -2043,7 +2052,15 @@ function renderSetPanel(data){
       <span class="set-chip-bonus">${escapeHtml(t.bonusText)}</span>
     </div>`).join('');
   const motifChips = sets.motifs.map(m => `<span class="motif-chip ${m.complete ? 'done' : ''}" title="${escapeHtml(m.name)}">${m.emoji}<small>${m.have}/${m.total}</small></span>`).join('');
+  const milestones = (data.milestones || []).map(m => `
+    <div class="milestone ${m.reached ? 'done' : ''}">
+      <span class="milestone-count">${m.count}종</span>
+      <span class="milestone-text">${m.emoji} ${escapeHtml(m.text)}</span>
+      <span class="milestone-state">${m.reached ? '✔' : `${Math.max(0, m.count - data.obtained)}종 남음`}</span>
+    </div>`).join('');
   panel.innerHTML = `
+    <h3 class="dex-heading">🏁 도감 마일스톤</h3>
+    <div class="milestone-list">${milestones}</div>
     <h3 class="dex-heading">🧩 세트 효과</h3>
     <div class="set-section">
       <p class="set-title">테마 세트 <small>같은 색 테마를 모두 모으면 보너스</small></p>
@@ -2091,6 +2108,81 @@ document.getElementById('awakenBtn').addEventListener('click', async function(){
   await refreshStatus();
   await loadCodex();
   openAwaken(awakenKey);
+});
+
+// -------------------------------
+// 신화 스킬 (홈 화면 스킬 줄)
+// 효과 종류별 신화를 가지면 열리고, 누르면 사용 → 대기시간. 높은 단계 신화일수록 강함.
+// -------------------------------
+let cachedSkills = [];
+let skillReadyAt = {};
+let skillBuffEnds = {};
+const TIER_MARKS = ['Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ'];
+function applySkills(skills){
+  if (!skills) return;
+  cachedSkills = skills.list;
+  const now = adjustedNow().getTime();
+  skillReadyAt = Object.fromEntries(skills.list.map(s => [s.type, now + s.remainingMs]));
+  skillBuffEnds = {
+    luck: skills.active.luck ? { value: skills.active.luck.value, until: new Date(skills.active.luck.until).getTime() } : null,
+    boxDiscount: skills.active.boxDiscount ? { value: skills.active.boxDiscount.value, until: new Date(skills.active.boxDiscount.until).getTime() } : null,
+    upgradeDiscount: skills.active.upgradeDiscount,
+  };
+  document.getElementById('skillRow').innerHTML = skills.list.map(s => `
+    <button class="skill-btn ${s.unlocked ? '' : 'locked'}" data-skill="${s.type}" aria-label="${escapeHtml(s.name)}">
+      <span class="skill-emoji">${s.unlocked ? s.emoji : '🔒'}</span>
+      ${s.unlocked ? `<span class="skill-tier">${TIER_MARKS[s.tier - 1]}</span>` : ''}
+      <span class="skill-cd" data-skill-cd="${s.type}"></span>
+    </button>`).join('');
+  renderSkillTimers();
+}
+function renderSkillTimers(){
+  if (!cachedSkills.length) return;
+  const now = adjustedNow().getTime();
+  for (const s of cachedSkills) {
+    const el = document.querySelector(`[data-skill-cd="${s.type}"]`);
+    if (!el) continue;
+    const left = s.unlocked ? Math.max(0, skillReadyAt[s.type] - now) : 0;
+    el.textContent = left <= 0 ? ''
+      : left >= 3600000 ? `${Math.floor(left / 3600000)}h${String(Math.floor(left % 3600000 / 60000)).padStart(2, '0')}`
+      : `${Math.ceil(left / 60000)}분`;
+    el.parentElement.classList.toggle('cooling', left > 0);
+    el.parentElement.classList.toggle('ready', s.unlocked && left === 0);
+  }
+  const buffs = [];
+  const clock = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms % 60000 / 1000)).padStart(2, '0')}`;
+  if (skillBuffEnds.luck && skillBuffEnds.luck.until > now) buffs.push(`🍀 +${skillBuffEnds.luck.value}% ${clock(skillBuffEnds.luck.until - now)}`);
+  if (skillBuffEnds.boxDiscount && skillBuffEnds.boxDiscount.until > now) buffs.push(`🏷️ -${skillBuffEnds.boxDiscount.value}% ${clock(skillBuffEnds.boxDiscount.until - now)}`);
+  if (skillBuffEnds.upgradeDiscount) buffs.push(skillBuffEnds.upgradeDiscount >= 100 ? '🔨 다음 강화 무료' : `🔨 다음 강화 -${skillBuffEnds.upgradeDiscount}%`);
+  document.getElementById('skillBuffs').textContent = buffs.join(' · ');
+}
+document.getElementById('skillRow').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-skill]');
+  if (!btn) return;
+  const s = cachedSkills.find(x => x.type === btn.dataset.skill);
+  if (!s) return;
+  if (!s.unlocked) {
+    askConfirm({ title: `🔒 ${s.name}`, text: `${s.desc}\n이 종류의 신화를 하나라도 가지면 열립니다.\n높은 단계(Ⅰ~Ⅳ) 신화일수록 강해집니다.`, ok: '확인', cancel: null });
+    return;
+  }
+  const left = Math.max(0, skillReadyAt[s.type] - adjustedNow().getTime());
+  if (left > 0) {
+    showToast(`${s.emoji} ${s.name}: ${Math.ceil(left / 60000)}분 뒤 사용 가능`);
+    return;
+  }
+  const hours = Math.floor(s.cooldownMs / 3600000);
+  const mins = Math.round(s.cooldownMs % 3600000 / 60000);
+  const cdText = `${hours ? `${hours}시간` : ''}${hours && mins ? ' ' : ''}${mins ? `${mins}분` : ''}`;
+  const ok = await askConfirm({
+    title: `${s.emoji} ${s.name} ${TIER_MARKS[s.tier - 1]}`,
+    text: `${s.desc}\n사용 후 대기시간 ${cdText}${s.stars ? ` (각성 ★${s.stars} 단축)` : ''}`,
+    ok: '사용',
+  });
+  if (!ok) return;
+  const { ok: done, data } = await collectionPost('/api/box/skill', { type: s.type });
+  showToast(data.message, !done);
+  if (done && data.totalTreasure != null) setGold(data.totalTreasure);
+  await refreshStatus();
 });
 
 // -------------------------------
@@ -2334,6 +2426,7 @@ const GUIDE_STEPS = [
     text: () => currentMode === 'collection'
       ? '신화 100종 도감을 채우는 모드. 도감이 늘어날수록 칭호가 오르고, 칭호마다 원하는 신화를 고르는 선택 상자를 받습니다.'
       : '30만 골드를 최대한 빨리 모으는 레이스. 다 모으면 환생하고 기록이 랭킹에 올라갑니다. 환생할수록 특성이 쌓여 더 빨라집니다.' },
+  { target: '#skillBar', title: '✨ 신화 스킬', text: '신화를 모으면 종류별 스킬이 열립니다. 누르면 바로 사용, 쓰고 나면 대기시간. 높은 단계 신화일수록 강해집니다.' },
   { target: '#pityBox', title: '🌸 신화 천장', text: '상자를 열 때마다 게이지가 찹니다. 가득 차면 아직 없는 신화가 확정으로 나옵니다.' },
   { target: '#seasonBanner', title: '🗓 오늘의 신화', text: '매일 오전 9시에 신화 10종이 바뀝니다. 오늘 놓친 신화는 10일 뒤 다시 등장합니다.' },
   { target: '#tabBar [data-tab="bag"]', title: '🎒 가방 · 합성', text: '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있습니다. 등급이 높을수록 골드를 더 많이 법니다.' },

@@ -106,12 +106,45 @@ function getDailyMissions(day) {
 }
 
 // 저장된 미션 진행(JSONB)을 오늘 날짜 기준으로 정리합니다. 날짜가 바뀌었으면 비웁니다.
+// granted: 도감 마일스톤의 '매일 지급' 보상을 오늘 이미 줬는지
 function normalizeMissionState(state, day) {
-  if (!state || state.day !== day) return { day, progress: {}, claimed: {} };
-  return { day, progress: state.progress || {}, claimed: state.claimed || {} };
+  if (!state || state.day !== day) return { day, progress: {}, claimed: {}, granted: false };
+  return { day, progress: state.progress || {}, claimed: state.claimed || {}, granted: Boolean(state.granted) };
+}
+
+// -------------------------------
+// 도감 마일스톤 (수집모드): 신화 도감 수가 쌓이면 편의 기능이 열립니다.
+// -------------------------------
+const CODEX_MILESTONES = [
+  { count: 20,  key: 'charges',     emoji: '📦', text: '상자 최대 충전 +20' },
+  { count: 40,  key: 'golden',      emoji: '🎁', text: '황금 상자 등장 간격 -25%' },
+  { count: 60,  key: 'freeAuto',    emoji: '⏳', text: '매일 자동 개봉 1시간 무료' },
+  { count: 80,  key: 'skillCd',     emoji: '✨', text: '신화 스킬 대기시간 -20%' },
+  { count: 100, key: 'dailyShards', emoji: '💎', text: '매일 신화 조각 +30' },
+];
+const MILESTONE_MAX_CHARGES_BONUS = 20;
+const MILESTONE_GOLDEN_GAP_FACTOR = 0.75;
+const MILESTONE_FREE_AUTO_MS = 60 * 60 * 1000;
+const MILESTONE_SKILL_COOLDOWN_BONUS = 0.2;
+const MILESTONE_DAILY_SHARDS = 30;
+
+function getMilestones(codexSize) {
+  const reached = new Set(CODEX_MILESTONES.filter(m => codexSize >= m.count).map(m => m.key));
+  return {
+    reached,
+    list: CODEX_MILESTONES.map(m => ({ ...m, reached: reached.has(m.key) })),
+    next: CODEX_MILESTONES.find(m => codexSize < m.count) || null,
+    maxChargesBonus: reached.has('charges') ? MILESTONE_MAX_CHARGES_BONUS : 0,
+    goldenGapFactor: reached.has('golden') ? MILESTONE_GOLDEN_GAP_FACTOR : 1,
+    skillCooldownBonus: reached.has('skillCd') ? MILESTONE_SKILL_COOLDOWN_BONUS : 0,
+    dailyAutoOpenMs: reached.has('freeAuto') ? MILESTONE_FREE_AUTO_MS : 0,
+    dailyShards: reached.has('dailyShards') ? MILESTONE_DAILY_SHARDS : 0,
+  };
 }
 
 module.exports = {
+  CODEX_MILESTONES,
+  getMilestones,
   MOTIF_SET_INCOME_PERCENT,
   THEME_SETS,
   AWAKEN_MAX,

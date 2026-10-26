@@ -27,7 +27,7 @@ const {
   REBIRTH_GOLD_REQUIRED,
   SPLIT_STEPS,
 } = require('./config');
-const { getCollectionBonus, normalizeMissionState } = require('./collection');
+const { getCollectionBonus, normalizeMissionState, getMilestones } = require('./collection');
 // 이 간격 안에 다시 동기화했으면 "접속 중"으로 봅니다 (화면은 15초마다 동기화)
 const ONLINE_MISSION_GAP_MS = 2 * 60 * 1000;
 const { getItemStars, getClaimStats, getPerkLevel, rollBoxes, craftCascade, makeRollContext, getDailyRule } = require('./logic');
@@ -45,6 +45,7 @@ const CLAIM_COLUMNS = [
   'locked_items', 'season', 'run_splits', 'best_splits', 'best_run_ms', 'sealed_mythics',
   'mythic_choice_boxes', 'collector_rank_rewarded',
   'mythic_shards', 'mythic_awaken', 'daily_missions',
+  'skill_cooldowns', 'skill_buffs',
 ];
 const MYTHIC_KEYS = MYTHICS.map(m => m.key);
 
@@ -327,6 +328,9 @@ async function settle(client, userId, mode) {
   claim.season_rule = getDailyRule(day);
   // 수집모드: 세트 효과·각성 보너스 (DB 컬럼이 아니라 능력치 계산용으로 붙여 둠)
   claim.collection_bonus = mode === MODES.COLLECTION ? getCollectionBonus(codex, claim.mythic_awaken).effects : null;
+  // 수집모드: 도감 마일스톤 (최대 충전 +20 등)
+  const milestones = mode === MODES.COLLECTION ? getMilestones(codex.size) : null;
+  claim.milestone_max_charges = milestones ? milestones.maxChargesBonus : 0;
 
   let owned = await getOwnedCounts(client, userId, mode, { forUpdate: true });
   // 능력치(보관 시간·행운·천장 등)는 정산 시작 시점의 보유 아이템 기준으로 계산합니다.
@@ -434,6 +438,19 @@ async function settle(client, userId, mode) {
     missionState = normalizeMissionState(claim.daily_missions, day);
     missionState.progress.craft = (missionState.progress.craft || 0) + autoCrafted.count;
   }
+  // 도감 마일스톤의 매일 지급 보상 (자동 개봉 1시간 · 신화 조각 30) — 하루 한 번
+  let dailyGrant = null;
+  let shardsAfterGrant = null;
+  if (milestones && (milestones.dailyAutoOpenMs || milestones.dailyShards)) {
+    const state = missionState || normalizeMissionState(claim.daily_missions, day);
+    if (!state.granted) {
+      state.granted = true;
+      missionState = state;
+      dailyGrant = { autoOpenMs: milestones.dailyAutoOpenMs, shards: milestones.dailyShards };
+      if (milestones.dailyAutoOpenMs) autoOpenRemainingMs = Math.min(stats.storageMs, autoOpenRemainingMs + milestones.dailyAutoOpenMs);
+      if (milestones.dailyShards) shardsAfterGrant = (Number(claim.mythic_shards) || 0) + milestones.dailyShards;
+    }
+  }
 
   await addItems(client, userId, mode, itemDeltas);
   if (mode === MODES.COLLECTION) {
@@ -449,6 +466,7 @@ async function settle(client, userId, mode) {
     ...(runSplits ? { run_splits: JSON.stringify(runSplits) } : {}),
     ...(sealedMythics ? { sealed_mythics: JSON.stringify(sealedMythics) } : {}),
     ...(missionState ? { daily_missions: JSON.stringify(missionState) } : {}),
+    ...(shardsAfterGrant !== null ? { mythic_shards: shardsAfterGrant } : {}),
     lifetime_stats: JSON.stringify(lifetimeStats),
     total_treasure: gold,
     run_gold_earned: runGoldEarned,
@@ -465,6 +483,7 @@ async function settle(client, userId, mode) {
     ...(runSplits ? { run_splits: runSplits } : {}),
     ...(sealedMythics ? { sealed_mythics: sealedMythics } : {}),
     ...(missionState ? { daily_missions: missionState } : {}),
+    ...(shardsAfterGrant !== null ? { mythic_shards: shardsAfterGrant } : {}),
     total_treasure: gold,
     run_gold_earned: runGoldEarned,
     last_income_collected_at: now,
@@ -494,6 +513,8 @@ async function settle(client, userId, mode) {
     storageCapped,
     autoOpened,
     autoCrafted,
+    dailyGrant,
+    milestones,
     // 아이템이 바뀌었을 수 있으니 수입은 정산 후 보유 기준으로 다시 계산해서 돌려줍니다.
     income: computeIncome(owned, updatedClaim),
     chargeInfo: { charges, maxCharges: stats.maxCharges, nextChargeInMs, serverTime: now },
