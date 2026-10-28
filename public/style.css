@@ -1840,3 +1840,25 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 .milestone-text{ flex:1; color:var(--ink); }
 .milestone-state{ flex-shrink:0; font-size:11px; color:var(--ink-dim); }
 .milestone.done .milestone-state{ color:var(--museum); font-weight:800; }
+
+/* -------------------------------
+   성능: 휴대폰 버벅임 방지 (매 프레임 다시 그리는 무한 애니메이션 제거)
+   - 목록 카드의 홀로그램은 멈춘 그라데이션으로 (색은 그대로)
+   - 빛 쓸기(sheen)는 목록에서 끄기
+   - 반짝이는 그림자(box-shadow) 애니메이션 → 가벼운 크기 변화(transform)로
+   - 황금 상자 이동은 left/top 대신 transform 으로 (배치 재계산 없음)
+   ------------------------------- */
+.item-card.mythic, .codex-card.have, .obtained-chip.mythic{ animation:none; background-position:0 0, 30% 50%; }
+.item-card.legendary::after, .item-card.mythic::after, .codex-card.have::after{ display:none; }
+.skill-btn.ready{ animation:none; box-shadow:0 0 8px rgba(227,178,60,0.6); }
+@keyframes pityPulse{ 0%, 100%{ transform:scale(1); } 50%{ transform:scale(1.015); } }
+
+.golden-box{ left:50%; top:0; will-change:transform; animation:goldenWanderFast 16s ease-in-out infinite alternate; }
+@keyframes goldenWanderFast{
+  0%  { transform:translate(calc(-50% - min(110px, 50vw - 90px)), 22vh) rotate(-4deg); }
+  20% { transform:translate(calc(-50% + min(90px, 50vw - 90px)), 38vh) rotate(3deg); }
+  40% { transform:translate(calc(-50% - min(60px, 50vw - 90px)), 58vh) rotate(-3deg); }
+  60% { transform:translate(calc(-50% + min(80px, 50vw - 90px)), 70vh) rotate(4deg); }
+  80% { transform:translate(calc(-50% - min(100px, 50vw - 90px)), 46vh) rotate(-2deg); }
+  100%{ transform:translate(calc(-50% + min(70px, 50vw - 90px)), 26vh) rotate(3deg); }
+}
