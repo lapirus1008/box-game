@@ -503,6 +503,35 @@ async function authFetch(path, options = {}){
   });
 }
 
+// 화면에서 난 오류를 서버(Render 로그)로 보내 둡니다. 사용자가 캡처해 주지 않아도 원인을 볼 수 있게.
+// 같은 오류는 한 번만, 한 번 접속에 최대 5번까지만 보냅니다. 보내기에 실패해도 게임에는 영향이 없습니다.
+const reportedClientErrors = new Set();
+function reportClientError(where, err){
+  try {
+    const message = String(err && err.message || err).slice(0, 300);
+    const dedupeKey = `${where}|${message}`;
+    if (reportedClientErrors.has(dedupeKey) || reportedClientErrors.size >= 5) return;
+    reportedClientErrors.add(dedupeKey);
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+    fetch(`${API_BASE}/api/client-error`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ where, message, stack: String(err && err.stack || '').slice(0, 600) }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch (e) { /* 보고 자체가 실패해도 무시 */ }
+}
+// 네트워크 끊김(요청 실패·시간 초과)은 화면 오류가 아니라 연결 문제라 보내지 않습니다. (연결 안내 배너가 따로 뜸)
+const isNetworkError = (err) => err && (err.name === 'AbortError' || /Failed to fetch|NetworkError|Load failed/i.test(err.message || ''));
+window.addEventListener('error', (event) => {
+  if (!event.error && !event.message) return; // 이미지 등 파일을 못 불러온 경우
+  reportClientError('window', event.error || event.message);
+});
+window.addEventListener('unhandledrejection', (event) => {
+  if (!isNetworkError(event.reason)) reportClientError('promise', event.reason);
+});
+
 // 서버에서 정확한 상태를 받아와 기준값을 갱신
 // 상태를 못 받아오면(서버 재시작·요청 제한·네트워크) 화면이 멈춘 것처럼 보이므로
 // 위에 안내를 띄우고, 15초 주기를 기다리지 않고 몇 초 뒤 다시 시도합니다.
@@ -579,6 +608,7 @@ async function refreshStatus(){
   } catch (err) {
     // 받은 값을 화면에 그리다 오류가 난 경우: 원인을 짧게 보여줘서 제보받을 수 있게 합니다.
     console.error(err);
+    reportClientError('refreshStatus', err);
     setStatusFailed(true, String(err && err.message || err).slice(0, 60), '화면을 그리지 못했습니다');
   }
 }

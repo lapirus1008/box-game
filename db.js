@@ -4,15 +4,18 @@
 // db.query(...) 형태로 SQL을 실행하게 됩니다.
 
 const { Pool } = require('pg');
-require('dotenv').config();
+require('dotenv').config({ quiet: true }); // quiet: dotenv 홍보 문구가 Render 로그에 찍히지 않게
 
 // Pool은 DB 연결을 여러 개 미리 만들어두고 재사용하는 방식입니다.
 // 매번 새로 연결하는 것보다 훨씬 효율적입니다.
 // 진단용 로그: DATABASE_URL이 아예 비어있는지부터 확인
+// (주소 안의 아이디·비밀번호는 남기지 않고, 어느 서버에 붙는지만 남깁니다)
 if (!process.env.DATABASE_URL) {
   console.error('[DB] DATABASE_URL 환경변수가 설정되어 있지 않습니다. Render의 Environment 탭을 확인하세요.');
 } else {
-  console.log('[DB] DATABASE_URL이 등록되어 있습니다 (앞 15자):', process.env.DATABASE_URL.slice(0, 15));
+  let host = '알 수 없음';
+  try { host = new URL(process.env.DATABASE_URL).host; } catch (err) { /* 형식이 이상해도 연결 시도에서 오류가 납니다 */ }
+  console.log(`[DB] DATABASE_URL이 등록되어 있습니다 (서버: ${host})`);
 }
 
 const pool = new Pool({
@@ -50,4 +53,6 @@ module.exports = {
   // 여러 쿼리를 하나의 트랜잭션(전부 성공 or 전부 취소)으로 묶어야 할 때 사용합니다.
   // 예: 아이템 합성처럼 "차감 + 지급"을 동시에 안전하게 처리해야 하는 경우.
   getClient: () => pool.connect(),
+  // 연결 풀 상태 (오류 로그용): 전체 / 놀고 있는 연결 / 연결을 기다리는 요청 수
+  poolStats: () => ({ total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount }),
 };

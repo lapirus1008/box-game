@@ -8,7 +8,7 @@
 const express = require('express');
 const db = require('../db');
 const verifyToken = require('../middleware/auth');
-const { HttpError, handle } = require('../lib/http');
+const { HttpError, withUserTransaction, handle } = require('../lib/http');
 const { collectorTitlesFor } = require('./box');
 const { normalizeMissionState } = require('../game/collection');
 const { getDay } = require('../game/season');
@@ -21,9 +21,17 @@ const GUESTBOOK_HIDE_REPORTS = 3;
 const router = express.Router();
 router.use(verifyToken);
 
+// 주소에 들어온 글 번호를 DB의 INT 범위 안의 양의 정수로 바꿉니다. 아니면 null.
+// (범위를 넘는 숫자를 그대로 넘기면 DB가 "out of range for type integer"로 거부해서 500이 났습니다)
+const MAX_INT = 2147483647;
+function parseId(raw) {
+  const id = Number(raw);
+  return Number.isInteger(id) && id >= 1 && id <= MAX_INT ? id : null;
+}
+
 router.get('/', handle('방명록을 불러오지 못했습니다.', async (req) => {
   const userId = req.user.userId;
-  const before = parseInt(req.query.before, 10);
+  const before = parseId(req.query.before);
   const result = await db.query(
     `SELECT g.id, g.user_id, g.message, g.created_at, u.nickname
      FROM guestbook_entries g
@@ -33,7 +41,7 @@ router.get('/', handle('방명록을 불러오지 못했습니다.', async (req)
        AND (SELECT COUNT(*) FROM guestbook_reports r WHERE r.entry_id = g.id) < $3
      ORDER BY g.id DESC
      LIMIT $4`,
-    [Number.isFinite(before) ? before : null, userId, GUESTBOOK_HIDE_REPORTS, GUESTBOOK_PAGE_SIZE + 1]
+    [before, userId, GUESTBOOK_HIDE_REPORTS, GUESTBOOK_PAGE_SIZE + 1]
   );
   const rows = result.rows.slice(0, GUESTBOOK_PAGE_SIZE);
   const titles = await collectorTitlesFor([...new Set(rows.map(r => r.user_id))]);
@@ -75,12 +83,17 @@ router.post('/', handle('글을 남기지 못했습니다.', async (req) => {
   );
   const row = inserted.rows[0];
   // 수집모드 일일 미션 '방명록에 한마디' 진행 (그날 미션이 아니어도 기록만 해 둠)
-  const claimRow = await db.query(`SELECT daily_missions FROM box_claims WHERE user_id = $1 AND mode = 'collection'`, [userId]);
-  if (claimRow.rows[0]) {
+  // 같은 세이브를 정산하는 다른 요청과 겹쳐도 진행이 덮어써지지 않게 잠근 뒤 읽고 씁니다.
+  await withUserTransaction(userId, async (client) => {
+    const claimRow = await client.query(
+      `SELECT daily_missions FROM box_claims WHERE user_id = $1 AND mode = 'collection' FOR UPDATE`,
+      [userId]
+    );
+    if (!claimRow.rows[0]) return;
     const state = normalizeMissionState(claimRow.rows[0].daily_missions, getDay());
     state.progress.guestbook = (state.progress.guestbook || 0) + 1;
-    await db.query(`UPDATE box_claims SET daily_missions = $2 WHERE user_id = $1 AND mode = 'collection'`, [userId, JSON.stringify(state)]);
-  }
+    await client.query(`UPDATE box_claims SET daily_missions = $2 WHERE user_id = $1 AND mode = 'collection'`, [userId, JSON.stringify(state)]);
+  });
   const titles = await collectorTitlesFor([userId]);
   // 방금 쓴 글을 그대로 돌려줘서 화면이 목록을 다시 불러오지 않고 맨 위에 끼워 넣게 합니다.
   return {
@@ -90,16 +103,19 @@ router.post('/', handle('글을 남기지 못했습니다.', async (req) => {
 }));
 
 router.delete('/:id', handle('글을 지우지 못했습니다.', async (req) => {
+  const entryId = parseId(req.params.id);
+  if (!entryId) throw new HttpError(404, '삭제할 수 있는 글이 없습니다.');
   const result = await db.query(
     'DELETE FROM guestbook_entries WHERE id = $1 AND user_id = $2',
-    [parseInt(req.params.id, 10) || 0, req.user.userId]
+    [entryId, req.user.userId]
   );
   if (result.rowCount === 0) throw new HttpError(404, '삭제할 수 있는 글이 없습니다.');
   return { message: '글을 삭제했습니다.' };
 }));
 
 router.post('/:id/report', handle('신고하지 못했습니다.', async (req) => {
-  const entryId = parseInt(req.params.id, 10) || 0;
+  const entryId = parseId(req.params.id);
+  if (!entryId) throw new HttpError(404, '이미 삭제된 글입니다.');
   const entry = await db.query('SELECT user_id FROM guestbook_entries WHERE id = $1', [entryId]);
   if (!entry.rows[0]) throw new HttpError(404, '이미 삭제된 글입니다.');
   if (entry.rows[0].user_id === req.user.userId) throw new HttpError(400, '내 글은 신고할 수 없습니다.');

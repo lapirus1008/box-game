@@ -3,11 +3,12 @@
 // "node server.js"로 실행하면 이 파일부터 시작해서 서버가 켜집니다.
 
 // 1. 필요한 모듈 불러오기
-require('dotenv').config(); // .env 파일의 값을 process.env로 읽어올 수 있게 함
+require('dotenv').config({ quiet: true }); // .env 파일의 값을 process.env로 읽어올 수 있게 함 (quiet: 홍보 문구를 로그에 안 찍음)
 const express = require('express');
 const cors = require('cors');
 const db = require('./db'); // 방금 만든 db.js를 불러옴
 const { createLimiter, userOrIpKey } = require('./lib/rateLimit');
+const { logRequestError } = require('./lib/http');
 
 // 2. express 앱 생성
 const app = express();
@@ -27,6 +28,7 @@ app.use(express.json({ limit: '10kb' })); // 요청 body를 JSON으로 자동 �
 // 모바일 통신망·같은 와이파이는 여러 사람이 IP 하나를 같이 쓰므로 넉넉하게 둡니다.
 // (계정별 제한은 아래 boxLimiter, 로그인/가입은 routes/auth.js에 더 엄격한 제한이 따로 있습니다.)
 const globalLimiter = createLimiter({
+  name: 'global',
   windowMs: 60 * 1000, // 1분
   max: 600,            // 같은 IP에서 분당 600회까지
 });
@@ -51,7 +53,7 @@ app.get('/health', async (req, res) => {
       dbTime: result.rows[0].now,
     });
   } catch (err) {
-    console.error(err);
+    logRequestError(req, err, '[HEALTH]');
     res.status(500).json({ status: 'error', message: 'DB 연결에 실패했습니다.' });
   }
 });
@@ -63,6 +65,7 @@ app.use('/api/auth', authRoutes);
 // 골드/아이템 계산은 전부 서버가 하고 있어서 값 자체를 조작당할 위험은 없지만,
 // 초당 수십~수백 번씩 스크립트로 두드리는 건 서버 부하와 DB 커넥션을 불필요하게 소모시키므로 별도로 더 제한합니다.
 const boxLimiter = createLimiter({
+  name: 'box',
   windowMs: 60 * 1000, // 1분
   max: 120,            // 계정마다 분당 120회까지 (초당 2회꼴 - 정상적인 클릭 플레이로는 충분한 수치)
   keyGenerator: userOrIpKey,
@@ -74,6 +77,49 @@ app.use('/api/box', boxLimiter, boxRoutes);
 // 방명록: 글쓰기 간격은 라우트에서 따로 제한합니다.
 const guestbookRoutes = require('./routes/guestbook');
 app.use('/api/guestbook', boxLimiter, guestbookRoutes);
+
+// 화면(브라우저)에서 난 오류를 Render 로그로 받아 둡니다.
+// 사용자가 캡처해 주지 않아도 "화면을 그리지 못했습니다" 같은 오류를 서버에서 확인할 수 있습니다.
+// 로그만 남기고 DB는 쓰지 않습니다. 너무 자주 보내지 않도록 별도로 제한합니다.
+const clientErrorLimiter = createLimiter({
+  name: 'client-error',
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: userOrIpKey,
+});
+const clip = (value, max) => String(value == null ? '' : value).replace(/\s+/g, ' ').slice(0, max);
+app.post('/api/client-error', clientErrorLimiter, (req, res) => {
+  const body = req.body || {};
+  const key = userOrIpKey(req);
+  console.warn(
+    `[CLIENT] ${key} · ${clip(body.where, 40)} · ${clip(body.message, 300)}` +
+    (body.stack ? `\n  ${clip(body.stack, 600)}` : '') +
+    ` · ${clip(req.headers['user-agent'], 120)}`
+  );
+  res.status(204).end();
+});
+
+// 위의 라우트에서 처리하지 못한 오류가 마지막으로 오는 곳입니다.
+// - 잘못된 JSON 본문(예: 깨진 요청): 서버 오류가 아니라 400으로 짧게 답합니다.
+// - 그 밖의 오류: 어느 요청에서 났는지와 함께 로그를 남기고 500 JSON으로 답합니다.
+//   (기본 처리기는 HTML 오류 페이지를 돌려줘서 화면이 응답을 읽지 못했습니다)
+app.use((err, req, res, next) => {
+  if (err && (err.type === 'entity.parse.failed' || err.type === 'entity.too.large')) {
+    return res.status(err.status || 400).json({ message: '요청 형식이 올바르지 않습니다.' });
+  }
+  logRequestError(req, err, '[SERVER 500]');
+  if (res.headersSent) return next(err);
+  res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+});
+
+// 어디서도 잡지 못한 오류도 로그에 머리말을 붙여 남깁니다. (서버가 갑자기 재시작될 때 원인 확인용)
+process.on('unhandledRejection', (reason) => {
+  console.error('[PROCESS] 처리되지 않은 Promise 오류:', reason && reason.stack ? reason.stack : reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[PROCESS] 처리되지 않은 오류로 서버를 재시작합니다:', err && err.stack ? err.stack : err);
+  process.exit(1);
+});
 
 // Render 무료 서버는 15분 동안 외부 요청이 없으면 잠듭니다(다음 접속 때 깨어나는 데 30초~1분).
 // 서버가 10분마다 자기 공개 주소의 /ping 을 호출해서 스스로 깨어 있게 합니다. (DB는 건드리지 않음)
@@ -92,10 +138,15 @@ function startSelfPing() {
 // 6. DB 구조를 최신으로 맞춘 뒤 서버 실행
 // 마이그레이션이 실패하면 새 기능이 동작하지 않으므로 로그를 크게 남깁니다.
 // (그래도 서버는 켜서, 기존 기능과 /health 확인은 가능하게 둡니다)
-const { runMigrations } = require('./lib/migrate');
+const { runMigrations, logSchemaChecks } = require('./lib/migrate');
+const { describeError } = require('./lib/http');
 const PORT = process.env.PORT || 3000;
 runMigrations()
-  .catch(err => console.error('[MIGRATE] 마이그레이션 실패! migrations 폴더의 SQL을 Neon 콘솔에서 직접 실행해주세요.', err))
+  .catch(err => console.error(
+    `[MIGRATE] 마이그레이션 실패! ${err.migrationFile || ''} 부터 Neon 콘솔에서 직접 실행해주세요. · ${describeError(err)}`
+  ))
+  .then(() => logSchemaChecks())
+  .catch(err => console.error(`[DB] CHECK 제약 확인 실패 · ${describeError(err)}`))
   .finally(() => {
     app.listen(PORT, () => {
       console.log(`[SERVER] 서버가 포트 ${PORT} 에서 실행 중입니다`);

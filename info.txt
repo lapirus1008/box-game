@@ -54,3 +54,14 @@ https://console.neon.tech 접속 후 로그인
 프로젝트 클릭
 왼쪽 메뉴에서 "SQL Editor" 클릭
 쿼리 입력창에 SQL을 쓰고 Run
+
+Render 서버 로그 읽는 법 (Render 대시보드 → 서비스 → Logs)
+[DB] / [MIGRATE] / [SERVER] / [SELF-PING]   서버가 켜질 때 찍히는 정상 기록
+[DB] CHECK 제약 ...    DB에 걸린 값 범위 제한 목록 (서버 시작 때마다 출력)
+[API 500] POST /api/box/open user=12 · 원인 · code=... · constraint=...
+                       게임 API 오류. 어느 API·어느 계정(user=번호)에서 났는지와 DB 오류 원인이 한 줄에 나옴
+                       pool(total=… waiting=…) 이 붙어 있으면 DB 연결이 몰려서 막힌 것
+[SERVER 500]           라우트 밖에서 난 오류
+[RATE-LIMIT]           요청 제한(429)에 걸림. 같은 계정/IP는 1분에 한 줄만 기록
+[CLIENT]               사용자 화면(브라우저)에서 난 오류
+[PROCESS]              잡히지 않은 오류 (서버가 재시작됐다면 원인)

@@ -29,7 +29,7 @@
 const express = require('express');
 const db = require('../db');
 const verifyToken = require('../middleware/auth');
-const { HttpError, withTransaction, handle } = require('../lib/http');
+const { HttpError, withUserTransaction, handle } = require('../lib/http');
 const {
   MODES,
   VALID_MODES,
@@ -121,8 +121,9 @@ function parseQuantity(rawQuantity, max, overMaxMessage) {
 
 // 트랜잭션을 열고, 현재 모드의 세이브를 "지금" 기준으로 정산한 뒤 fn을 실행합니다.
 // 거의 모든 API가 이 순서(모드 확인 → 정산 → 작업)를 따릅니다.
+// 같은 계정의 요청은 서버 안에서 차례로 처리합니다. (lib/http.js withUserTransaction 참고)
 function withSave(userId, fn) {
-  return withTransaction(async (client) => {
+  return withUserTransaction(userId, async (client) => {
     const mode = await store.getActiveMode(client, userId);
     const save = await store.settle(client, userId, mode);
     if (!save) throw new HttpError(400, NOT_STARTED_MESSAGE);
@@ -951,7 +952,7 @@ router.post('/buy-boxes', handle('서버 오류로 구매에 실패했습니다.
 router.get('/status', handle('서버 오류가 발생했습니다.', async (req) => {
   const userId = req.user.userId;
 
-  return withTransaction(async (client) => {
+  return withUserTransaction(userId, async (client) => {
     const mode = await store.getActiveMode(client, userId);
     const isRecordMode = mode === MODES.RECORD;
 
@@ -984,7 +985,7 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       codex: codexSummary(mode, save),
       pace: paceResponse(mode, save),
       sealed: sealedResponse(save),
-      seasonBest: isRecordMode ? await findMyRank(userId, save.season) : null,
+      seasonBest: isRecordMode ? await findMyRank(client, userId, save.season) : null,
       ...chargeResponse(save.chargeInfo),
       chargeIntervalMs: save.stats.chargeIntervalMs,
       totalTreasure: claim.total_treasure,
@@ -1462,7 +1463,7 @@ router.get('/collection', handle('서버 오류가 발생했습니다.', async (
 router.post('/reset-run', handle('서버 오류가 발생했습니다.', async (req) => {
   const userId = req.user.userId;
 
-  return withTransaction(async (client) => {
+  return withUserTransaction(userId, async (client) => {
     const mode = await store.getActiveMode(client, userId);
 
     // [보안/밸런스] 수집모드에서는 초심으로 돌아가기를 막습니다.
@@ -1494,7 +1495,7 @@ router.post('/reset-run', handle('서버 오류가 발생했습니다.', async (
 router.post('/rebirth', handle('서버 오류로 환생에 실패했습니다.', async (req) => {
   const userId = req.user.userId;
 
-  return withTransaction(async (client) => {
+  return withUserTransaction(userId, async (client) => {
     const mode = await store.getActiveMode(client, userId);
     if (mode !== MODES.RECORD) {
       throw new HttpError(400, '수집모드에서는 환생할 수 없습니다. 기록모드로 전환해주세요.');
@@ -1581,8 +1582,10 @@ router.get('/rebirth/history', handle('서버 오류가 발생했습니다.', as
 // 랭킹 조회: GET /api/box/leaderboard (페이지네이션, 기록모드 전용)
 // -------------------------------
 // 랭킹 화면에서 페이지에 내가 안 보일 때, 내 최고 기록과 전체 순위를 따로 계산합니다.
-async function findMyRank(userId, season) {
-  const myBestResult = await db.query(
+// runner: 트랜잭션 안(상태 조회)에서는 그 client를 넘겨야 합니다. 트랜잭션이 연결을 쥔 채로
+// 연결을 하나 더 빌리면, 요청이 몰릴 때 연결 풀이 바닥나 서로 기다리다 500이 납니다.
+async function findMyRank(runner, userId, season) {
+  const myBestResult = await runner.query(
     `SELECT MIN(duration_ms) AS best_duration_ms FROM rebirth_history
      WHERE user_id = $1 AND mode = 'record' AND season = $2`,
     [userId, season]
@@ -1590,7 +1593,7 @@ async function findMyRank(userId, season) {
   const myBest = myBestResult.rows[0]?.best_duration_ms;
   if (!myBest) return null;
 
-  const rankResult = await db.query(
+  const rankResult = await runner.query(
     `SELECT COUNT(*) + 1 AS rank FROM (
        SELECT user_id, MIN(duration_ms) AS best FROM rebirth_history
        WHERE mode = 'record' AND season = $2 GROUP BY user_id
@@ -1717,7 +1720,7 @@ router.get('/leaderboard', handle('서버 오류가 발생했습니다.', async 
     isMe: row.user_id === userId,
   }));
 
-  const myRank = leaderboard.find(r => r.isMe) || await findMyRank(userId, season);
+  const myRank = leaderboard.find(r => r.isMe) || await findMyRank(db, userId, season);
 
   return {
     type: 'record',
