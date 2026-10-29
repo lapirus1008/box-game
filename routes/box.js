@@ -278,7 +278,7 @@ function progressionResponse(mode, save) {
   return {
     storageMs: stats.storageMs,
     upgradeDiscountPercent: stats.upgradeDiscountPercent,
-    upgrades: UPGRADES.map(upgrade => {
+    upgrades: UPGRADES.filter(upgrade => !upgrade.collectionOnly || mode === MODES.COLLECTION).map(upgrade => {
       const level = claim[upgrade.column];
       const isMax = level >= upgrade.maxLevel;
       return {
@@ -628,7 +628,7 @@ router.post('/awaken', handle('서버 오류로 각성하지 못했습니다.', 
     if (!save.codex.has(key)) throw new HttpError(400, '도감에 있는 신화만 각성할 수 있습니다.');
     const awaken = { ...(save.claim.mythic_awaken || {}) };
     const level = collection.awakenLevel(awaken, key);
-    if (level >= collection.AWAKEN_MAX) throw new HttpError(400, '이미 최고 단계(★5)입니다.');
+    if (level >= collection.AWAKEN_MAX) throw new HttpError(400, `이미 최고 단계(★${collection.AWAKEN_MAX})입니다.`);
     const cost = collection.AWAKEN_COSTS[level];
     const shards = save.claim.mythic_shards || 0;
     if (shards < cost) throw new HttpError(400, `신화 조각이 부족합니다. (필요 ${cost}, 보유 ${shards})`);
@@ -1030,6 +1030,7 @@ router.post('/upgrade', handle('서버 오류로 업그레이드에 실패했습
   if (!upgrade) throw new HttpError(400, '존재하지 않는 업그레이드입니다.');
 
   return withSave(userId, async (client, mode, save) => {
+    if (upgrade.collectionOnly && mode !== MODES.COLLECTION) throw new HttpError(400, '수집모드 전용 강화입니다.');
     const level = save.claim[upgrade.column];
     if (level >= upgrade.maxLevel) throw new HttpError(400, '이미 최대 레벨입니다.');
 

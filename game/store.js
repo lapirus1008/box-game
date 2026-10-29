@@ -38,7 +38,7 @@ const { getSeason, getDay, getRotation } = require('./season');
 const CLAIM_COLUMNS = [
   'total_treasure', 'box_charges', 'last_charge_calculated_at', 'last_income_collected_at',
   'mythic_pity', 'rebirth_count', 'run_started_at',
-  'upgrade_income', 'upgrade_charge_speed', 'upgrade_capacity', 'upgrade_luck',
+  'upgrade_income', 'upgrade_charge_speed', 'upgrade_capacity', 'upgrade_luck', 'upgrade_research',
   'auto_open_enabled', 'auto_open_remaining_ms', 'auto_craft_unlocked', 'auto_craft_enabled',
   'prestige_points', 'prestige_perks', 'run_gold_earned', 'last_active_at',
   'golden_box_next_at', 'income_boost_until', 'lifetime_stats', 'achievements_claimed',

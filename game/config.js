@@ -173,7 +173,13 @@ const UPGRADES = [
     maxLevel: (CHARGE_INTERVAL_MS - MIN_CHARGE_INTERVAL_MS) / CHARGE_SPEED_MS_PER_LEVEL },
   { key: 'capacity',    column: 'upgrade_capacity',     name: '창고',      emoji: '📦', baseCost: 800,  maxLevel: 20 },
   { key: 'luck',        column: 'upgrade_luck',         name: '행운',      emoji: '🍀', baseCost: 2000, maxLevel: 10 },
+  // 수집모드 전용 골드 사용처: 도감을 다 채운 뒤 쌓이는 수십억~수백억 골드를 꾸준히 쓰는 장기 강화.
+  // 레벨마다 가격이 ×1.25씩 올라서(10억 → Lv.20 약 870억 → Lv.40 약 7.5조) 사실상 끝이 없습니다.
+  // 최대 레벨은 골드 계산이 정확한 범위(약 900조) 안에서 끊었습니다.
+  { key: 'research',    column: 'upgrade_research',     name: '수집가의 연구', emoji: '🔬', baseCost: 1000000000,
+    costGrowth: 1.25, maxLevel: 70, collectionOnly: true },
 ];
+const RESEARCH_INCOME_PERCENT_PER_LEVEL = 5; // 수집가의 연구: 레벨당 전체 수입 +5%
 
 // -------------------------------
 // 자동 개봉 시간 (시간 충전식)
@@ -321,6 +327,7 @@ module.exports = {
   BASE_STORAGE_MS,
   STORAGE_MS_PER_LEVEL,
   UPGRADES,
+  RESEARCH_INCOME_PERCENT_PER_LEVEL,
   AUTO_OPEN_MIN_COST_PER_HOUR,
   AUTO_OPEN_COST_INCOME_MINUTES,
   AUTO_CRAFT,
