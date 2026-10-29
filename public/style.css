@@ -1606,8 +1606,15 @@ body.in-game .tab-bar{
    모드별 분위기 · 모드 카드 · 모드 선택 창
    기록모드 = 붉은 레이스, 수집모드 = 청록 박물관
    ------------------------------- */
-body.in-game{ background:radial-gradient(120% 60% at 50% -10%, rgba(255,122,69,0.22), transparent 60%) fixed, var(--bg); }
-body.in-game.mode-collection{ background:radial-gradient(120% 60% at 50% -10%, rgba(79,209,197,0.2), transparent 60%) fixed, var(--bg); }
+/* 위쪽 은은한 빛: 화면에 고정된 별도 층으로 그립니다.
+   배경에 background-attachment:fixed 를 쓰면 휴대폰이 스크롤할 때마다 화면 전체(도감 카드 100장 포함)를
+   다시 그려서 도감이 버벅였습니다. 고정 층은 한 번만 그리고 스크롤 때는 위치만 옮깁니다.
+   (측정: 도감 스크롤 4초 동안 그리기 약 400 → 150ms, 래스터 약 500 → 80ms) */
+body.in-game::before{
+  content:''; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:radial-gradient(120% 60% at 50% -10%, rgba(255,122,69,0.22), transparent 60%);
+}
+body.in-game.mode-collection::before{ background:radial-gradient(120% 60% at 50% -10%, rgba(79,209,197,0.2), transparent 60%); }
 body.in-game #gameScreen{ border-color:rgba(255,122,69,0.35); }
 body.in-game.mode-collection #gameScreen{ border-color:rgba(79,209,197,0.35); }
 body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum); background:rgba(79,209,197,0.1); }
