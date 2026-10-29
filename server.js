@@ -7,7 +7,7 @@ require('dotenv').config(); // .env 파일의 값을 process.env로 읽어올 �
 const express = require('express');
 const cors = require('cors');
 const db = require('./db'); // 방금 만든 db.js를 불러옴
-const { createLimiter } = require('./lib/rateLimit');
+const { createLimiter, userOrIpKey } = require('./lib/rateLimit');
 
 // 2. express 앱 생성
 const app = express();
@@ -24,10 +24,11 @@ app.use(express.json({ limit: '10kb' })); // 요청 body를 JSON으로 자동 �
                                            // body를 보내 서버 메모리/CPU를 소모시키는 공격을 막습니다.
 
 // 모든 API에 적용되는 기본 방어선. IP 하나가 짧은 시간에 너무 많은 요청을 보내는 걸 막습니다.
-// (로그인/가입은 이보다 더 엄격한 자체 제한이 routes/auth.js에 따로 있습니다.)
+// 모바일 통신망·같은 와이파이는 여러 사람이 IP 하나를 같이 쓰므로 넉넉하게 둡니다.
+// (계정별 제한은 아래 boxLimiter, 로그인/가입은 routes/auth.js에 더 엄격한 제한이 따로 있습니다.)
 const globalLimiter = createLimiter({
   windowMs: 60 * 1000, // 1분
-  max: 120,            // 같은 IP에서 분당 120회까지
+  max: 600,            // 같은 IP에서 분당 600회까지
 });
 app.use(globalLimiter);
 
@@ -63,7 +64,8 @@ app.use('/api/auth', authRoutes);
 // 초당 수십~수백 번씩 스크립트로 두드리는 건 서버 부하와 DB 커넥션을 불필요하게 소모시키므로 별도로 더 제한합니다.
 const boxLimiter = createLimiter({
   windowMs: 60 * 1000, // 1분
-  max: 60,             // 같은 IP에서 분당 60회까지 (초당 1회꼴 - 정상적인 클릭 플레이로는 충분한 수치)
+  max: 120,            // 계정마다 분당 120회까지 (초당 2회꼴 - 정상적인 클릭 플레이로는 충분한 수치)
+  keyGenerator: userOrIpKey,
 });
 
 const boxRoutes = require('./routes/box');

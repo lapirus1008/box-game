@@ -23,6 +23,15 @@ const pool = new Pool({
     // ssl 옵션 자체를 지우고 다시 시도해보세요.
     rejectUnauthorized: false,
   },
+  // 연결이나 쿼리가 응답 없이 멈추면 그 요청이 끝나지 않고, 잠근 세이브 줄도 풀리지 않아
+  // 그 계정의 게임 전체가 멈춘 것처럼 됩니다. 일정 시간이 지나면 오류로 끝냅니다.
+  connectionTimeoutMillis: 10000, // 빈 연결을 10초 안에 못 얻으면 실패
+  query_timeout: 20000,           // 쿼리 하나가 20초를 넘기면 실패
+});
+
+// 쉬고 있던 연결이 DB 쪽에서 끊겨도(Neon 절전 등) 서버가 죽지 않게 로그만 남깁니다.
+pool.on('error', (err) => {
+  console.error('[DB] 쉬고 있던 연결에서 오류:', err.message);
 });
 
 // 연결이 잘 되는지 서버 시작 시 한 번 확인합니다.

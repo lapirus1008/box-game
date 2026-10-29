@@ -354,6 +354,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
   localStorage.removeItem('boxGameToken');
   clearInterval(statusInterval);
   clearInterval(resyncInterval);
+  setStatusFailed(false);
   goldenBoxAppearAt = null;
   goldenBoxExpireAt = null;
   document.getElementById('goldenBox').classList.add('hidden');
@@ -503,12 +504,37 @@ async function authFetch(path, options = {}){
 }
 
 // 서버에서 정확한 상태를 받아와 기준값을 갱신
-async function refreshStatus(){
-  try {
-    const res = await authFetch('/api/box/status');
-    const data = await res.json();
-    if (!res.ok) return;
+// 상태를 못 받아오면(서버 재시작·요청 제한·네트워크) 화면이 멈춘 것처럼 보이므로
+// 위에 안내를 띄우고, 15초 주기를 기다리지 않고 몇 초 뒤 다시 시도합니다.
+const connBanner = document.getElementById('connBanner');
+let statusRetryTimer = null;
+// reason: 안내 뒤에 붙는 짧은 원인 (응답 코드 · 응답 없음 · 네트워크) — 문제 제보용
+function setStatusFailed(failed, reason, title = '서버 연결이 원활하지 않습니다'){
+  connBanner.textContent = `${title} · 다시 시도 중${reason ? ` (${reason})` : ''}`;
+  connBanner.classList.toggle('show', failed);
+  clearTimeout(statusRetryTimer);
+  statusRetryTimer = failed ? setTimeout(() => { if (authToken) refreshStatus(); }, 4000) : null;
+}
 
+const STATUS_TIMEOUT_MS = 12000;
+async function refreshStatus(){
+  // 응답이 오지 않고 멈춰 있으면 기다리지 않고 실패로 처리합니다.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), STATUS_TIMEOUT_MS);
+  let res, data;
+  try {
+    res = await authFetch('/api/box/status', { signal: controller.signal });
+    data = await res.json().catch(() => ({}));
+  } catch (err) {
+    setStatusFailed(true, err.name === 'AbortError' ? '응답 없음' : '네트워크');
+    return;
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) { setStatusFailed(true, res.status); return; }
+  setStatusFailed(false);
+
+  try {
     syncServerTime(data.serverTime);
     if (data.mode && data.mode !== currentMode) applyModeUI(data.mode);
     lastStatus = data;
@@ -551,7 +577,9 @@ async function refreshStatus(){
 
     renderTick();
   } catch (err) {
-    // 네트워크 문제는 조용히 무시하고 다음 동기화 때 재시도
+    // 받은 값을 화면에 그리다 오류가 난 경우: 원인을 짧게 보여줘서 제보받을 수 있게 합니다.
+    console.error(err);
+    setStatusFailed(true, String(err && err.message || err).slice(0, 60), '화면을 그리지 못했습니다');
   }
 }
 

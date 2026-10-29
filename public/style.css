@@ -1145,6 +1145,28 @@ body.mode-collection .collection-mode-notice{ display:block; }
 .toast.show{ opacity:1; transform:translate(-50%, 0); }
 .toast.error{ border-color:var(--danger); }
 
+/* 서버 연결이 끊겼을 때 위에 계속 떠 있는 안내 */
+.conn-banner{
+  position:fixed;
+  left:50%;
+  top:calc(env(safe-area-inset-top, 0px) + 8px);
+  z-index:940;
+  max-width:calc(100% - 32px);
+  padding:8px 14px;
+  border-radius:14px;
+  background:var(--surface);
+  border:1px solid var(--danger);
+  color:var(--ink);
+  font-size:12px;
+  font-weight:600;
+  text-align:center;
+  width:max-content;
+  box-shadow:0 4px 14px rgba(0,0,0,0.35);
+  transform:translateX(-50%);
+  display:none;
+}
+.conn-banner.show{ display:block; }
+
 /* 메인: 황금 상자 안내 줄 */
 .golden-hint{
   display:flex;
