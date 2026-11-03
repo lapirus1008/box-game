@@ -455,6 +455,7 @@ const TAB_OPENERS = {
 };
 let currentTab = 'home';
 function goTab(tab){
+  if (tab !== 'guestbook') lobbyDisconnect(); // 광장을 떠나면 실시간 연결을 닫아 배터리·데이터를 아낍니다
   currentTab = tab;
   document.querySelectorAll('#tabBar .tab-item').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
   [gameScreen, collectionScreen, upgradeScreen, achievementScreen, rankingScreen, document.getElementById('guestbookScreen')].forEach(el => el.classList.add('hidden'));
@@ -465,7 +466,7 @@ function goTab(tab){
     return;
   }
   // 각 화면을 여는 기존 버튼 동작(데이터 불러오기 포함)을 그대로 씁니다.
-  if (tab === 'guestbook') { document.getElementById('guestbookScreen').classList.remove('hidden'); loadGuestbook(); return; }
+  if (tab === 'guestbook') { document.getElementById('guestbookScreen').classList.remove('hidden'); showSocialTab(socialTab); return; }
   document.getElementById(TAB_OPENERS[tab]).click();
   if (tab === 'bag' || tab === 'dex') {
     showCollectionTab(tab === 'dex' ? 'dex' : 'run');
@@ -476,8 +477,12 @@ document.querySelectorAll('#tabBar .tab-item').forEach(btn => {
   btn.addEventListener('click', () => goTab(btn.dataset.tab));
 });
 
+function renderMyNickname(){
+  document.getElementById('userNickname').innerHTML =
+    escapeHtml(currentUser.nickname || currentUser.email) + transcendBadgeHtml(currentUser.transcend_count);
+}
 function enterGame(){
-  document.getElementById('userNickname').textContent = currentUser.nickname || currentUser.email;
+  renderMyNickname();
   authScreen.classList.add('hidden');
   document.body.classList.add('in-game');
   armBackGuard();
@@ -1366,6 +1371,7 @@ document.getElementById('backFromUpgradeBtn').addEventListener('click', () => {
 
 function renderUpgradeScreen(){
   if (!lastStatus || !lastStatus.upgrades) return;
+  renderEnhancePanel();
 
   const upgradeList = document.getElementById('upgradeList');
   upgradeList.innerHTML = '';
@@ -2265,7 +2271,7 @@ function renderGuestbookEntry(e){
     : `<button class="link-btn" data-gb-report="${e.id}">신고</button>`;
   return `
     <div class="guestbook-entry${e.isMine ? ' mine' : ''}">
-      <div class="guestbook-meta"><strong>${title}${escapeHtml(e.nickname)}</strong><small>${formatTimeAgo(e.createdAt)}</small>${action}</div>
+      <div class="guestbook-meta"><strong>${title}${escapeHtml(e.nickname)}${transcendBadgeHtml(e.title && e.title.transcend)}</strong><small>${formatTimeAgo(e.createdAt)}</small>${action}</div>
       <p class="guestbook-text">${escapeHtml(e.message)}</p>
     </div>`;
 }
@@ -2701,7 +2707,7 @@ function renderRankRow(rank, nickname, value, isMe, title){
   return `
     <div class="rank-row ${isMe ? 'me' : ''}">
       <span class="rank-num">#${rank}</span>
-      <span class="rank-name">${titleHtml}${escapeHtml(nickname)}${isMe ? ' (나)' : ''}</span>
+      <span class="rank-name">${titleHtml}${escapeHtml(nickname)}${transcendBadgeHtml(title && title.transcend)}${isMe ? ' (나)' : ''}</span>
       <span class="rank-time">${value}</span>
     </div>
   `;
@@ -2796,3 +2802,280 @@ async function loadRanking(){
     listEl.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
   }
 }
+
+// -------------------------------
+// 초월 배지: 이름 옆 ✦N (초월 횟수가 많을수록 화려하게 · game/transcend.js 의 TRANSCEND_TIERS 와 같은 기준)
+// -------------------------------
+const TRANSCEND_TIERS = [1, 3, 5, 10, 20];
+function transcendTier(count){
+  let tier = 0;
+  TRANSCEND_TIERS.forEach((min, i) => { if (count >= min) tier = i + 1; });
+  return tier;
+}
+function transcendBadgeHtml(count){
+  const n = Number(count) || 0;
+  if (n <= 0) return '';
+  return `<span class="tr-badge tr-${transcendTier(n)}" title="초월 ${n}회">✦${n}</span>`;
+}
+
+// -------------------------------
+// 광장 / 방명록 안쪽 탭
+// -------------------------------
+let socialTab = 'lobby';
+function showSocialTab(which){
+  socialTab = which;
+  document.getElementById('socialTabLobby').classList.toggle('active', which === 'lobby');
+  document.getElementById('socialTabGuestbook').classList.toggle('active', which === 'guestbook');
+  document.getElementById('lobbyView').classList.toggle('hidden', which !== 'lobby');
+  document.getElementById('guestbookView').classList.toggle('hidden', which !== 'guestbook');
+  if (which === 'lobby') lobbyConnect();
+  else { lobbyDisconnect(); loadGuestbook(); }
+}
+document.getElementById('socialTabLobby').addEventListener('click', () => showSocialTab('lobby'));
+document.getElementById('socialTabGuestbook').addEventListener('click', () => showSocialTab('guestbook'));
+
+// -------------------------------
+// 광장: 상자 캐릭터로 돌아다니며 채팅 (서버 lib/lobby.js 와 WebSocket으로 주고받음)
+// 위치는 0~1 비율. 이동은 CSS transform 전환으로 부드럽게(화면 배치 재계산 없음).
+// -------------------------------
+const lobbyStage = document.getElementById('lobbyStage');
+const lobbyLogEl = document.getElementById('lobbyLog');
+const lobbyStatusEl = document.getElementById('lobbyStatus');
+const LOBBY_WALK_PX_PER_SEC = 140;
+const LOBBY_BUBBLE_MS = 5000;
+let lobbyWs = null;
+let lobbyWanted = false;
+let lobbyMe = null;
+let lobbyRetry = 0;
+let lobbyRetryTimer = null;
+const lobbyPlayers = new Map(); // id → { p, el }
+
+function lobbyConnect(){
+  lobbyWanted = true;
+  if (lobbyWs || !authToken) return;
+  clearTimeout(lobbyRetryTimer);
+  lobbyStatusEl.textContent = lobbyRetry ? '다시 연결 중...' : '연결 중...';
+  const ws = new WebSocket(`${API_BASE.replace(/^http/, 'ws')}/lobby?token=${encodeURIComponent(authToken)}`);
+  lobbyWs = ws;
+  ws.onmessage = (event) => {
+    let msg;
+    try { msg = JSON.parse(event.data); } catch (e) { return; }
+    handleLobbyMessage(msg);
+  };
+  ws.onclose = (event) => {
+    if (lobbyWs !== ws) return;
+    lobbyWs = null;
+    clearLobbyStage();
+    if (!lobbyWanted) return;
+    if (event.code === 4004) { lobbyStatusEl.textContent = '다른 창에서 광장에 들어갔어요'; lobbyWanted = false; return; }
+    if (event.code === 4003) { lobbyStatusEl.textContent = '광장이 가득 찼어요 · 잠시 후 다시 시도해요'; }
+    else if (event.code === 4001) { lobbyStatusEl.textContent = '로그인이 필요합니다'; lobbyWanted = false; return; }
+    else lobbyStatusEl.textContent = '연결이 끊겼어요 · 다시 연결 중...';
+    lobbyRetry++;
+    lobbyRetryTimer = setTimeout(lobbyConnect, Math.min(15000, 1500 * 2 ** Math.min(lobbyRetry, 4)));
+  };
+}
+function lobbyDisconnect(){
+  lobbyWanted = false;
+  clearTimeout(lobbyRetryTimer);
+  if (lobbyWs) { const ws = lobbyWs; lobbyWs = null; ws.close(1000); }
+  clearLobbyStage();
+}
+function lobbySend(data){
+  if (lobbyWs && lobbyWs.readyState === WebSocket.OPEN) lobbyWs.send(JSON.stringify(data));
+}
+// 앱을 내려두면 연결을 닫고, 다시 보면 이어 붙입니다.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (lobbyWs) { const keep = lobbyWanted; lobbyDisconnect(); lobbyWanted = keep; } }
+  else if (lobbyWanted && currentTab === 'guestbook' && socialTab === 'lobby') lobbyConnect();
+});
+
+function clearLobbyStage(){
+  lobbyPlayers.forEach(entry => clearTimeout(entry.bubbleTimer));
+  lobbyPlayers.clear();
+  lobbyStage.innerHTML = '';
+}
+function updateLobbyCount(){
+  lobbyStatusEl.textContent = `🟢 접속 ${lobbyPlayers.size}명`;
+}
+
+function handleLobbyMessage(msg){
+  if (msg.t === 'init') {
+    lobbyRetry = 0;
+    lobbyMe = msg.me;
+    clearLobbyStage();
+    msg.players.forEach(addLobbyPlayer);
+    lobbyLogEl.innerHTML = '';
+    msg.chats.forEach(c => appendLobbyChat(c, false));
+    updateLobbyCount();
+  } else if (msg.t === 'join') {
+    addLobbyPlayer(msg.p);
+    updateLobbyCount();
+  } else if (msg.t === 'leave') {
+    const entry = lobbyPlayers.get(msg.id);
+    if (entry) { clearTimeout(entry.bubbleTimer); entry.el.remove(); lobbyPlayers.delete(msg.id); }
+    updateLobbyCount();
+  } else if (msg.t === 'update') {
+    const entry = lobbyPlayers.get(msg.p.id);
+    if (entry) { entry.el.remove(); lobbyPlayers.delete(msg.p.id); }
+    addLobbyPlayer(msg.p);
+    if (msg.p.id === lobbyMe && currentUser) { currentUser.transcend_count = msg.p.transcend; renderMyNickname(); }
+  } else if (msg.t === 'move') {
+    if (msg.id !== lobbyMe) moveLobbyPlayer(msg.id, msg.x, msg.y);
+  } else if (msg.t === 'chat') {
+    appendLobbyChat(msg.c, true);
+  } else if (msg.t === 'notice') {
+    showToast(msg.text, true);
+  }
+}
+
+function lobbyNameHtml(p){
+  const title = p.title ? `<span class="rank-title" title="${escapeHtml(p.title.name)}">${p.title.emoji}</span>` : '';
+  return `${title}<span class="lp-nick">${escapeHtml(p.nickname)}</span>${transcendBadgeHtml(p.transcend)}`;
+}
+function addLobbyPlayer(p){
+  const tier = transcendTier(p.transcend || 0);
+  const el = document.createElement('div');
+  el.className = `lobby-player tr-${tier}${p.id === lobbyMe ? ' me' : ''}`;
+  el.innerHTML = `
+    <div class="lp-bubble"></div>
+    <div class="lp-body">
+      <span class="lp-aura"></span>
+      <img class="lp-chest" src="icons/app/chest-only.svg" alt="" draggable="false">
+      ${tier >= 5 ? '<span class="lp-crown">👑</span>' : ''}
+    </div>
+    <div class="lp-name">${lobbyNameHtml(p)}</div>`;
+  lobbyStage.appendChild(el);
+  const entry = { p: { ...p }, el, bubbleTimer: null };
+  lobbyPlayers.set(p.id, entry);
+  placeLobbyPlayer(entry, 0);
+}
+function lobbyPixel(x, y){
+  return { px: x * lobbyStage.clientWidth, py: y * lobbyStage.clientHeight };
+}
+function placeLobbyPlayer(entry, durationMs){
+  const { px, py } = lobbyPixel(entry.p.x, entry.p.y);
+  entry.el.style.transitionDuration = `${durationMs}ms`;
+  entry.el.style.transform = `translate(${px}px, ${py}px)`;
+  entry.el.style.zIndex = String(10 + Math.round(entry.p.y * 100)); // 아래쪽에 있을수록 앞으로
+}
+function moveLobbyPlayer(id, x, y){
+  const entry = lobbyPlayers.get(id);
+  if (!entry) return;
+  const from = lobbyPixel(entry.p.x, entry.p.y);
+  const to = lobbyPixel(x, y);
+  const dist = Math.hypot(to.px - from.px, to.py - from.py);
+  if (Math.abs(to.px - from.px) > 2) entry.el.classList.toggle('face-left', to.px < from.px);
+  entry.p.x = x;
+  entry.p.y = y;
+  const durationMs = Math.round(dist / LOBBY_WALK_PX_PER_SEC * 1000);
+  placeLobbyPlayer(entry, durationMs);
+  // 걷는 동안만 통통 튀는 모션
+  entry.el.classList.add('walking');
+  clearTimeout(entry.walkTimer);
+  entry.walkTimer = setTimeout(() => entry.el.classList.remove('walking'), durationMs);
+}
+// 바닥을 누르면 그 자리로 걸어갑니다. (가장자리는 이름이 잘리지 않게 조금 띄움)
+lobbyStage.addEventListener('click', (e) => {
+  if (!lobbyMe || !lobbyPlayers.has(lobbyMe)) return;
+  const rect = lobbyStage.getBoundingClientRect();
+  const x = Math.min(0.94, Math.max(0.06, (e.clientX - rect.left) / rect.width));
+  const y = Math.min(0.95, Math.max(0.2, (e.clientY - rect.top) / rect.height));
+  moveLobbyPlayer(lobbyMe, x, y);
+  lobbySend({ t: 'move', x, y });
+});
+window.addEventListener('resize', () => lobbyPlayers.forEach(entry => placeLobbyPlayer(entry, 0)));
+
+function appendLobbyChat(c, showBubble){
+  const line = document.createElement('div');
+  line.className = `lobby-line${c.id === lobbyMe ? ' mine' : ''}`;
+  line.innerHTML = `<strong>${escapeHtml(c.nickname)}${transcendBadgeHtml(c.transcend)}</strong> <span class="lobby-text"></span>`;
+  line.querySelector('.lobby-text').textContent = c.text;
+  lobbyLogEl.appendChild(line);
+  while (lobbyLogEl.children.length > 30) lobbyLogEl.firstChild.remove();
+  lobbyLogEl.scrollTop = lobbyLogEl.scrollHeight;
+  if (!showBubble) return;
+  const entry = lobbyPlayers.get(c.id);
+  if (!entry) return;
+  const bubble = entry.el.querySelector('.lp-bubble');
+  bubble.textContent = c.text;
+  entry.el.classList.add('talking');
+  clearTimeout(entry.bubbleTimer);
+  entry.bubbleTimer = setTimeout(() => entry.el.classList.remove('talking'), LOBBY_BUBBLE_MS);
+}
+document.getElementById('lobbyForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const input = document.getElementById('lobbyInput');
+  const text = input.value.trim();
+  if (!text) return;
+  if (!lobbyWs || lobbyWs.readyState !== WebSocket.OPEN) { showToast('광장에 연결되지 않았어요', true); return; }
+  lobbySend({ t: 'chat', text });
+  input.value = '';
+});
+
+// -------------------------------
+// 상자 강화 · 초월 (수집모드 강화 탭)
+// -------------------------------
+function renderEnhancePanel(){
+  const panel = document.getElementById('enhancePanel');
+  const c = lastStatus && lastStatus.collection;
+  if (!c || !c.enhance) { panel.innerHTML = ''; return; }
+  const e = c.enhance;
+  const tr = e.transcend;
+  const isMax = e.level >= e.max;
+  const action = isMax
+    ? `<button class="transcend-btn" id="transcendBtn">🌌 초월하기 <small>(${tr.count + 1}번째)</small></button>`
+    : `<div class="enhance-odds">성공 <strong>${e.chance}%</strong> · ${e.dropOnFail ? '⚠️ 실패하면 한 단계 하락' : '실패해도 단계 유지'}</div>
+       <button class="enhance-btn" id="enhanceBtn" ${c.shards >= e.cost ? '' : 'disabled'}>💎 ${e.cost} 써서 강화 <small>(보유 ${formatGold(c.shards)})</small></button>`;
+  panel.innerHTML = `
+    <div class="enhance-card tr-${tr.tier}${isMax ? ' maxed' : ''}">
+      <div class="enhance-top">
+        <div class="enhance-box"><img src="icons/app/chest-only.svg" alt=""><span class="enhance-level">+${e.level}</span></div>
+        <div class="enhance-info">
+          <strong>📦 상자 강화 +${e.level} / ${e.max}</strong>
+          <small>전체 수입 +${e.incomePercent}% · 희귀 이상 등장률 +${e.luckPercent}%</small>
+          <small>✦ 초월 ${tr.count}회 · 영구 전체 수입 +${tr.bonusPercent}%</small>
+        </div>
+      </div>
+      <div class="enhance-bar"><div style="width:${e.level / e.max * 100}%"></div></div>
+      ${action}
+      <p class="enhance-hint">강화마다 수입 +${e.perLevel.income}% · 등장률 +${e.perLevel.luck}% · +${e.dropFrom}부터 실패 시 하락<br>
+      +${e.max} 달성 시 초월: 골드·아이템·강화·연구·조각을 처음부터, 신화 도감·각성은 유지 · 초월 1회마다 영구 수입 +${tr.perTranscend}%와 이름 옆 ✦ 표시</p>
+    </div>`;
+}
+
+document.getElementById('enhancePanel').addEventListener('click', async (event) => {
+  const enhanceBtn = event.target.closest('#enhanceBtn');
+  const transcendBtn = event.target.closest('#transcendBtn');
+  if (enhanceBtn) {
+    enhanceBtn.disabled = true;
+    const { ok, data } = await collectionPost('/api/box/enhance');
+    if (!ok) { showToast(data.message, true); renderEnhancePanel(); return; }
+    lastStatus.collection.enhance = data.enhance;
+    lastStatus.collection.shards = data.shards;
+    renderEnhancePanel();
+    const card = document.querySelector('#enhancePanel .enhance-card');
+    card.classList.add(data.success ? 'flash-success' : 'flash-fail');
+    showToast(data.message, !data.success);
+    return;
+  }
+  if (transcendBtn) {
+    const e = lastStatus.collection.enhance;
+    const confirmed = await askConfirm({
+      title: `🌌 ${e.transcend.count + 1}번째 초월`,
+      text: `골드·아이템·업그레이드·연구·자동화·상자 강화·신화 조각이 사라지고 처음부터 다시 시작합니다.\n신화 도감·각성·업적은 그대로 남습니다.\n\n초월하면 영구 전체 수입 +${e.transcend.perTranscend}%가 더해지고, 이름 옆에 ✦${e.transcend.count + 1}이 표시됩니다.`,
+      ok: '초월하기', danger: true,
+    });
+    if (!confirmed) return;
+    transcendBtn.disabled = true;
+    const { ok, data } = await collectionPost('/api/box/transcend');
+    if (!ok) { showToast(data.message, true); renderEnhancePanel(); return; }
+    currentUser.transcend_count = data.count;
+    renderMyNickname();
+    const flash = document.getElementById('legendaryFlash');
+    if (flash) { flash.classList.remove('play'); void flash.offsetWidth; flash.classList.add('play'); }
+    showToast(data.message);
+    await refreshStatus();
+    renderUpgradeScreen();
+  }
+});

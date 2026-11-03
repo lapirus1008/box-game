@@ -186,7 +186,7 @@ router.post('/login', loginLimiter, handle('서버 오류로 로그인에 실패
 // 유효한지 확인하고 사용자 정보를 다시 받아오는 용도로 씁니다.
 router.get('/me', verifyToken, handle('서버 오류가 발생했습니다.', async (req) => {
   const result = await db.query(
-    'SELECT id, email, nickname, active_mode FROM users WHERE id = $1',
+    'SELECT id, email, nickname, active_mode, transcend_count FROM users WHERE id = $1',
     [req.user.userId]
   );
   if (result.rows.length === 0) throw new HttpError(404, '사용자를 찾을 수 없습니다.');

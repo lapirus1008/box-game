@@ -12,12 +12,14 @@ box-game/                    ← GitHub 저장소 루트
 │   ├── mythics.js             신화 100종 (25가지 모양 × 4테마, 시즌마다 10종씩 등장)
 │   ├── season.js              주간 시즌 계산 (매주 목요일 오전 9시 KST)
 │   ├── logic.js               DB와 무관한 순수 로직 (뽑기, 천장, 숙련도, 등급 계산)
-│   └── store.js               게임 데이터 DB 읽기/쓰기 함수
+│   ├── store.js               게임 데이터 DB 읽기/쓰기 함수
+│   └── transcend.js           상자 강화(+0~+20) 확률·비용표와 초월 규칙
 ├── lib/
 │   ├── http.js                트랜잭션 헬퍼(withTransaction) + 공통 에러 응답(handle, HttpError)
 │   ├── migrate.js             서버 시작 시 migrations/의 SQL을 자동 적용
 │   ├── rateLimit.js           요청 횟수 제한(limiter) 생성
-│   └── token.js               JWT 발급/검증
+│   ├── token.js               JWT 발급/검증
+│   └── lobby.js               광장(대기실) 실시간 연결 (WebSocket /lobby, 서버 메모리에만 보관)
 ├── migrations/
 │   ├── 001_idle_progression.sql  업그레이드·자동화·환생 포인트 컬럼 추가
 │   ├── 002_auto_open_time_and_prestige_shop.sql  자동 개봉 시간·환생 상점 컬럼 추가
@@ -27,6 +29,7 @@ box-game/                    ← GitHub 저장소 루트
 │   ├── 006_weekly_season_and_mythic_codex.sql  세이브별 시즌 컬럼
 │   └── 007_codex_from_collection_and_run_splits.sql  신화 도감을 수집모드 발견 기록으로 계산 + 기록모드 구간 기록
 │   └── … 014_collector_research.sql  수집가의 연구(수집모드 장기 강화) 컬럼 추가
+│   └── … 015_box_enhance_and_transcend.sql  상자 강화 단계 · 초월 횟수 컬럼 추가
 ├── scripts/
 │   ├── generate-icons.js      아이템 아이콘 SVG 생성 → public/icons/items/  (node scripts/generate-icons.js)
 │   └── render-store-assets.js 앱 아이콘 PNG · 스토어 그래픽 생성 (Playwright 필요)
@@ -66,3 +69,4 @@ Render 서버 로그 읽는 법 (Render 대시보드 → 서비스 → Logs)
 [RATE-LIMIT]           요청 제한(429)에 걸림. 같은 계정/IP는 1분에 한 줄만 기록
 [CLIENT]               사용자 화면(브라우저)에서 난 오류
 [PROCESS]              잡히지 않은 오류 (서버가 재시작됐다면 원인)
+[LOBBY]                광장 실시간 연결 준비·오류

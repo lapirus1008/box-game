@@ -33,6 +33,7 @@ const ONLINE_MISSION_GAP_MS = 2 * 60 * 1000;
 const { getItemStars, getClaimStats, getPerkLevel, rollBoxes, craftCascade, makeRollContext, getDailyRule } = require('./logic');
 const { MYTHICS } = require('./mythics');
 const { getSeason, getDay, getRotation } = require('./season');
+const { enhanceLevel, transcendEffects } = require('./transcend');
 
 // box_claims에서 게임 진행에 필요한 컬럼 전체
 const CLAIM_COLUMNS = [
@@ -46,6 +47,7 @@ const CLAIM_COLUMNS = [
   'mythic_choice_boxes', 'collector_rank_rewarded',
   'mythic_shards', 'mythic_awaken', 'daily_missions',
   'skill_cooldowns', 'skill_buffs',
+  'box_enhance',
 ];
 const MYTHIC_KEYS = MYTHICS.map(m => m.key);
 
@@ -328,6 +330,13 @@ async function settle(client, userId, mode) {
   claim.season_rule = getDailyRule(day);
   // 수집모드: 세트 효과·각성 보너스 (DB 컬럼이 아니라 능력치 계산용으로 붙여 둠)
   claim.collection_bonus = mode === MODES.COLLECTION ? getCollectionBonus(codex, claim.mythic_awaken).effects : null;
+  // 수집모드: 상자 강화 단계 + 초월 횟수 보너스 (game/transcend.js)
+  claim.transcend_count = mode === MODES.COLLECTION ? await getTranscendCount(client, userId) : 0;
+  if (claim.collection_bonus) {
+    for (const [type, value] of Object.entries(transcendEffects(enhanceLevel(claim), claim.transcend_count))) {
+      claim.collection_bonus[type] = (claim.collection_bonus[type] || 0) + value;
+    }
+  }
   // 수집모드: 도감 마일스톤 (최대 충전 +20 등)
   const milestones = mode === MODES.COLLECTION ? getMilestones(codex.size) : null;
   claim.milestone_max_charges = milestones ? milestones.maxChargesBonus : 0;
@@ -563,6 +572,62 @@ async function resetSave(client, userId, mode, now, { rebirthCount = null, prest
   return startGold;
 }
 
+// 계정의 초월 횟수 (영구)
+async function getTranscendCount(runner, userId) {
+  const result = await runner.query('SELECT transcend_count FROM users WHERE id = $1', [userId]);
+  return Number(result.rows[0]?.transcend_count) || 0;
+}
+
+// 초월: 수집모드 세이브를 처음부터 다시 시작하고 초월 횟수를 1 올립니다. 새 초월 횟수를 돌려줍니다.
+// - 지우는 것: 골드·보유 아이템·강화·연구·자동화·상자 강화·신화 조각·버프
+// - 남기는 것: 신화 도감(발견 기록)·각성·업적·칭호 보상 기록·일일 미션·잠금 설정
+// 열지 않은 신화 상자는 도감에만 남기고(발견 기록) 상자는 비웁니다.
+async function transcendReset(client, userId, claim, now) {
+  const mode = MODES.COLLECTION;
+  const sealedKeys = [...new Set(sealedList(claim).map(s => s.key))];
+  if (sealedKeys.length > 0) {
+    await client.query(
+      `INSERT INTO user_discoveries (user_id, mode, item_key, first_discovered_at)
+       SELECT $1, $2, t.item_key, NOW() FROM unnest($3::text[]) AS t(item_key)
+       ON CONFLICT (user_id, mode, item_key) DO NOTHING`,
+      [userId, mode, sealedKeys]
+    );
+  }
+  await client.query('DELETE FROM user_items WHERE user_id = $1 AND mode = $2', [userId, mode]);
+  await client.query(
+    `UPDATE box_claims
+     SET total_treasure = $1,
+         run_gold_earned = 0,
+         box_charges = 1,
+         last_charge_calculated_at = $2::timestamptz,
+         last_income_collected_at = $2::timestamptz,
+         last_active_at = $2::timestamptz,
+         mythic_pity = 0,
+         upgrade_income = 0,
+         upgrade_charge_speed = 0,
+         upgrade_capacity = 0,
+         upgrade_luck = 0,
+         upgrade_research = 0,
+         auto_open_enabled = TRUE,
+         auto_open_remaining_ms = 0,
+         auto_craft_unlocked = FALSE,
+         auto_craft_enabled = FALSE,
+         sealed_mythics = '[]'::jsonb,
+         box_enhance = 0,
+         mythic_shards = 0,
+         golden_box_next_at = NULL,
+         income_boost_until = NULL,
+         skill_buffs = '{}'::jsonb
+     WHERE user_id = $3 AND mode = $4`,
+    [RESET_GOLD, now, userId, mode]
+  );
+  const result = await client.query(
+    'UPDATE users SET transcend_count = transcend_count + 1 WHERE id = $1 RETURNING transcend_count',
+    [userId]
+  );
+  return Number(result.rows[0].transcend_count);
+}
+
 // 환생 포인트는 기록모드에서만 의미가 있습니다.
 function isPrestigeMode(mode) {
   return mode === MODES.RECORD;
@@ -596,4 +661,6 @@ module.exports = {
   settle,
   resetSave,
   isPrestigeMode,
+  getTranscendCount,
+  transcendReset,
 };

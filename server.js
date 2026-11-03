@@ -148,8 +148,10 @@ runMigrations()
   .then(() => logSchemaChecks())
   .catch(err => console.error(`[DB] CHECK 제약 확인 실패 · ${describeError(err)}`))
   .finally(() => {
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`[SERVER] 서버가 포트 ${PORT} 에서 실행 중입니다`);
       startSelfPing();
     });
+    // 광장(대기실) 실시간 연결은 같은 서버·포트의 /lobby 주소로 받습니다. (lib/lobby.js)
+    require('./lib/lobby').attachLobby(server);
   });
