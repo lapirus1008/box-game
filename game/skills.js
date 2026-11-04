@@ -8,6 +8,8 @@ const { MYTHICS } = require('./mythics');
 
 const SKILL_BASE_COOLDOWN_MS = 4 * 60 * 60 * 1000;
 const SKILL_COOLDOWN_PER_STAR = 0.1;
+// 대기시간 단축은 각성 ★5까지만 셉니다. (★6~★10은 수입 보너스만 — 스킬이 너무 자주 돌지 않게)
+const SKILL_COOLDOWN_STAR_CAP = 5;
 const SKILL_BUFF_MS = 10 * 60 * 1000; // 행운·할인 같은 시간제 효과 지속 시간
 
 // t = 가진 신화 중 가장 높은 단계 (1~4)
@@ -31,7 +33,7 @@ function getSkillStates({ have, awaken = {}, cooldowns = {}, cooldownBonus = 0, 
     const mine = MYTHICS.filter(m => m.effect.type === skill.type && have(m.key));
     const tier = mine.reduce((best, m) => Math.max(best, m.tier), 0);
     const stars = mine.reduce((best, m) => Math.max(best, Number(awaken[m.key]) || 0), 0);
-    const factor = Math.max(0.2, (1 - stars * SKILL_COOLDOWN_PER_STAR) * (1 - cooldownBonus));
+    const factor = Math.max(0.2, (1 - Math.min(stars, SKILL_COOLDOWN_STAR_CAP) * SKILL_COOLDOWN_PER_STAR) * (1 - cooldownBonus));
     const cooldownMs = Math.round(SKILL_BASE_COOLDOWN_MS * factor);
     const readyAt = cooldowns[skill.type] ? new Date(cooldowns[skill.type]) : null;
     const remainingMs = readyAt ? Math.max(0, readyAt - now) : 0;

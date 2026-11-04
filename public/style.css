@@ -1422,11 +1422,10 @@ body:not(.mode-collection) .collection-only{ display:none !important; }
   background:rgba(240,98,146,0.1);
   animation:mythicPopIn .35s ease-out both;
 }
-.mythic-popup-item:nth-child(2){ animation-delay:.05s; }
-.mythic-popup-item:nth-child(3){ animation-delay:.1s; }
-.mythic-popup-item:nth-child(n+4){ animation-delay:.15s; }
+
 @keyframes mythicPopIn{ from{ transform:scale(.6); opacity:0; } to{ transform:scale(1); opacity:1; } }
-.mythic-popup-icon{ width:52px; height:52px; filter:drop-shadow(0 0 8px rgba(240,98,146,0.6)); }
+/* 아이콘 뒤 은은한 빛: drop-shadow 필터 대신 배경 그라데이션 (필터는 아이콘마다 따로 그려서 20개면 무거움) */
+.mythic-popup-icon{ width:52px; height:52px; background:radial-gradient(circle, rgba(240,98,146,0.45), transparent 68%); border-radius:50%; }
 .mythic-popup-name{ font-size:10px; line-height:1.25; text-align:center; color:#ffe1ee; }
 .gold-open-title{ margin:0 0 8px; font-size:12px; font-weight:600; color:var(--gold); }
 
@@ -1606,8 +1605,15 @@ body.in-game .tab-bar{
    모드별 분위기 · 모드 카드 · 모드 선택 창
    기록모드 = 붉은 레이스, 수집모드 = 청록 박물관
    ------------------------------- */
-body.in-game{ background:radial-gradient(120% 60% at 50% -10%, rgba(255,122,69,0.22), transparent 60%) fixed, var(--bg); }
-body.in-game.mode-collection{ background:radial-gradient(120% 60% at 50% -10%, rgba(79,209,197,0.2), transparent 60%) fixed, var(--bg); }
+/* 위쪽 은은한 빛: 화면에 고정된 별도 층으로 그립니다.
+   배경에 background-attachment:fixed 를 쓰면 휴대폰이 스크롤할 때마다 화면 전체(도감 카드 100장 포함)를
+   다시 그려서 도감이 버벅였습니다. 고정 층은 한 번만 그리고 스크롤 때는 위치만 옮깁니다.
+   (측정: 도감 스크롤 4초 동안 그리기 약 400 → 150ms, 래스터 약 500 → 80ms) */
+body.in-game::before{
+  content:''; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:radial-gradient(120% 60% at 50% -10%, rgba(255,122,69,0.22), transparent 60%);
+}
+body.in-game.mode-collection::before{ background:radial-gradient(120% 60% at 50% -10%, rgba(79,209,197,0.2), transparent 60%); }
 body.in-game #gameScreen{ border-color:rgba(255,122,69,0.35); }
 body.in-game.mode-collection #gameScreen{ border-color:rgba(79,209,197,0.35); }
 body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum); background:rgba(79,209,197,0.1); }
@@ -1749,10 +1755,16 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 .awaken-badge{ position:absolute; top:3px; right:3px; font-size:9px; font-weight:800; color:#1A1305; background:var(--gold); padding:0 4px; border-radius:6px; }
 .codex-card.awaken-3, .codex-card.awaken-4{ box-shadow:inset 0 0 0 1px var(--gold), 0 0 8px rgba(227,178,60,0.4); }
 .codex-card.awaken-5{ box-shadow:inset 0 0 0 2px var(--gold), 0 0 14px rgba(227,178,60,0.7); }
+/* ★6~★10: 흰 금빛 테두리 + 배지 색 변경 (움직이지 않는 효과라 스크롤 부담 없음) */
+.codex-card.awaken-6, .codex-card.awaken-7, .codex-card.awaken-8, .codex-card.awaken-9{ box-shadow:inset 0 0 0 2px #ffe9a8, 0 0 14px rgba(255,220,130,0.75); }
+.codex-card.awaken-10{ box-shadow:inset 0 0 0 2px #fff6d6, 0 0 16px rgba(255,236,170,0.9); }
+.codex-card.awaken-6 .awaken-badge, .codex-card.awaken-7 .awaken-badge, .codex-card.awaken-8 .awaken-badge,
+.codex-card.awaken-9 .awaken-badge{ background:#ffe9a8; }
+.codex-card.awaken-10 .awaken-badge{ background:linear-gradient(90deg, #ff9ecb, #ffe08a, #9ef0c4, #9fd8ff); }
 .awaken-card{ text-align:center; max-width:300px; }
 .awaken-icon{ width:72px; height:72px; margin:4px auto 6px; display:block; }
 .awaken-name{ margin:0; font-size:16px; font-weight:800; color:var(--ink); }
-.awaken-stars{ margin:4px 0; font-size:20px; color:var(--gold); letter-spacing:2px; }
+.awaken-stars{ margin:4px 0; font-size:18px; color:var(--gold); letter-spacing:1px; }
 .awaken-stars .off{ color:#2C3F6B; }
 .awaken-effect{ margin:0 0 10px; font-size:12px; color:var(--ink-dim); }
 .awaken-cost{ margin:0 0 12px; font-size:13px; color:#9be7ff; font-weight:700; }
@@ -1824,7 +1836,10 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 .mythic-popup-item{
   border:2px solid transparent;
   background:linear-gradient(rgba(40,20,48,0.95), rgba(40,20,48,0.95)) padding-box, var(--holo) border-box;
-  background-size:100% 100%, 300% 300%; animation:holoShift 4s linear infinite;
+  /* 무지개 테두리는 멈춘 그림으로. (흐르는 무한 애니메이션은 카드마다 매 프레임 다시 그려서 신화 20개 팝업이 버벅였고,
+     등장 효과 mythicPopIn 까지 덮어써서 하나씩 튀어나오는 연출도 사라졌었습니다) */
+  background-size:100% 100%, 300% 300%; background-position:0 0, 30% 50%;
+  animation:mythicPopIn .35s ease-out both;
 }
 
 @keyframes holoShift{ 0%{ background-position:0 0, 0% 50%; } 100%{ background-position:0 0, 300% 50%; } }
@@ -1884,3 +1899,134 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
   80% { transform:translate(calc(-50% - min(100px, 50vw - 90px)), 46vh) rotate(-2deg); }
   100%{ transform:translate(calc(-50% + min(70px, 50vw - 90px)), 26vh) rotate(3deg); }
 }
+
+/* -------------------------------
+   초월 배지 (이름 옆 ✦N) — 랭킹·방명록·광장·인사말 공통
+   목록에서도 쓰이므로 움직이지 않는 효과만 씁니다. 단계: 1회 · 3회 · 5회 · 10회 · 20회
+   ------------------------------- */
+.tr-badge{
+  display:inline-block; margin-left:4px; padding:0 5px; border-radius:8px; vertical-align:1px;
+  font-size:10px; font-weight:900; line-height:15px; letter-spacing:0;
+  border:1px solid transparent;
+}
+.tr-badge.tr-1{ background:#cfd8e3; color:#1a2233; }
+.tr-badge.tr-2{ background:linear-gradient(180deg, #ffe9a8, #e3b23c); color:#2a1a00; box-shadow:0 0 6px rgba(227,178,60,0.6); }
+.tr-badge.tr-3{ background:linear-gradient(180deg, #d6b4ff, #7d5cff); color:#fff; box-shadow:0 0 8px rgba(160,110,255,0.7); }
+.tr-badge.tr-4{ background:var(--holo); color:#1a1030; box-shadow:0 0 8px rgba(255,111,177,0.6); }
+.tr-badge.tr-5{
+  background:linear-gradient(#1a1030, #1a1030) padding-box, var(--holo) border-box;
+  color:#ffe9a8; text-shadow:0 0 6px rgba(255,220,130,0.9); box-shadow:0 0 10px rgba(255,220,130,0.7);
+}
+
+/* -------------------------------
+   상자 강화 · 초월 (수집모드 강화 탭)
+   ------------------------------- */
+.enhance-panel{ margin:6px 0 14px; }
+.enhance-card{ padding:12px; border-radius:14px; background:var(--surface-2); border:1px solid #2C3F6B; }
+.enhance-card.maxed{ border-color:#ffd36e; box-shadow:0 0 14px rgba(255,211,110,0.35); }
+.enhance-top{ display:flex; gap:12px; align-items:center; }
+.enhance-box{ position:relative; width:56px; height:56px; flex-shrink:0; }
+.enhance-box img{ width:56px; height:56px; display:block; }
+.enhance-level{ position:absolute; right:-8px; bottom:-4px; padding:1px 6px; border-radius:8px; background:var(--gold); color:#1A1305; font-size:12px; font-weight:900; }
+.enhance-info{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.enhance-info strong{ font-size:14px; color:var(--ink); }
+.enhance-info small{ font-size:11px; color:var(--ink-dim); }
+.enhance-bar{ height:6px; margin:10px 0 8px; border-radius:4px; background:#1d2a47; overflow:hidden; }
+.enhance-bar > div{ height:100%; background:linear-gradient(90deg, #6ec8ff, #b18cff, #ff6fb1); }
+.enhance-odds{ margin-bottom:8px; font-size:12px; color:var(--ink-dim); }
+.enhance-odds strong{ color:var(--ink); }
+.enhance-btn, .transcend-btn{ display:block; width:100%; margin:0; font-weight:800; }
+.enhance-btn{ background:#9be7ff; color:#0b1a2a; }
+.enhance-btn small, .transcend-btn small{ font-weight:600; opacity:0.8; }
+.transcend-btn{ background:var(--holo); color:#1a1030; font-weight:900; }
+.enhance-hint{ margin:8px 0 0; font-size:11px; line-height:1.5; color:var(--ink-dim); }
+.enhance-card.flash-success{ animation:enhanceOk 0.6s ease-out; }
+.enhance-card.flash-fail{ animation:enhanceFail 0.45s ease-in-out; }
+@keyframes enhanceOk{ 0%{ transform:scale(1.04); border-color:#7dffb0; } 100%{ transform:scale(1); } }
+@keyframes enhanceFail{ 0%, 100%{ transform:translateX(0); } 20%, 60%{ transform:translateX(-6px); } 40%, 80%{ transform:translateX(6px); } }
+
+/* -------------------------------
+   광장 (실시간 대기실): 상자 캐릭터 + 말풍선
+   이동은 transform 전환만 씁니다. 효과 애니메이션도 transform·opacity만 (휴대폰 부담 최소화)
+   ------------------------------- */
+#lobbyView{ margin-top:10px; }
+.lobby-head{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:6px; font-size:12px; color:var(--ink); }
+.lobby-head small{ font-size:11px; color:var(--ink-dim); }
+.lobby-stage{
+  position:relative; height:340px; border-radius:14px; overflow:hidden; cursor:pointer;
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.06) 1px, transparent 0) 0 0 / 22px 22px,
+    linear-gradient(180deg, #1b2a4a 0%, #16223d 35%, #13203a 100%);
+  border:1px solid #2C3F6B;
+}
+.lobby-player{
+  position:absolute; left:0; top:0; width:130px; margin-left:-65px; margin-top:-50px;
+  display:flex; flex-direction:column; align-items:center;
+  transition-property:transform; transition-timing-function:linear; will-change:transform; pointer-events:none;
+}
+.lp-body{ position:relative; width:44px; height:44px; }
+.lobby-player.face-left .lp-body{ transform:scaleX(-1); }
+.lp-body::after{ content:''; position:absolute; left:6px; right:6px; bottom:-2px; height:7px; border-radius:50%; background:rgba(0,0,0,0.35); }
+.lp-chest{ position:relative; z-index:1; display:block; width:44px; height:44px; }
+.lobby-player.walking .lp-chest{ animation:lpBob 0.32s ease-in-out infinite alternate; }
+@keyframes lpBob{ to{ transform:translateY(-4px) rotate(-3deg); } }
+.lp-name{
+  display:flex; align-items:center; max-width:130px; margin-top:3px; padding:1px 6px; border-radius:8px; white-space:nowrap;
+  font-size:10px; font-weight:700; color:#fff; background:rgba(0,0,0,0.45);
+}
+.lp-nick{ min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.lp-name .tr-badge{ flex-shrink:0; }
+.lobby-player.me .lp-name{ box-shadow:inset 0 0 0 1px var(--gold); }
+.lp-bubble{
+  display:none; position:absolute; z-index:3; bottom:calc(100% - 4px); left:50%; transform:translateX(-50%);
+  width:max-content; max-width:150px; padding:4px 8px; border-radius:10px;
+  background:#fff; color:#1a2233; font-size:11px; line-height:1.35; overflow-wrap:anywhere; word-break:keep-all; text-align:center;
+}
+.lp-bubble::after{ content:''; position:absolute; left:50%; bottom:-4px; margin-left:-4px; border:4px solid transparent; border-bottom:0; border-top-color:#fff; }
+.lobby-player.talking .lp-bubble{ display:block; }
+.lobby-player.tr-5 .lp-bubble{ bottom:calc(100% + 12px); } /* 왕관 위로 */
+.lobby-player.talking{ z-index:200 !important; }
+
+/* 초월 단계별 캐릭터 효과 */
+.lp-aura{ display:none; position:absolute; inset:-12px; border-radius:50%; pointer-events:none; }
+.lobby-player[class*="tr-"]:not(.tr-0) .lp-aura{ display:block; }
+.tr-1 .lp-aura{ background:radial-gradient(circle, rgba(220,230,245,0.45), transparent 65%); }
+.tr-2 .lp-aura{ background:radial-gradient(circle, rgba(255,211,110,0.6), transparent 66%); animation:lpPulse 2s ease-in-out infinite; }
+.tr-3 .lp-aura{ background:radial-gradient(circle, rgba(177,140,255,0.65), transparent 66%); animation:lpPulse 1.6s ease-in-out infinite; }
+.tr-4 .lp-aura, .tr-5 .lp-aura{
+  inset:-14px; opacity:0.85;
+  background:conic-gradient(#ff6fb1, #ffd36e, #7dffb0, #6ec8ff, #b18cff, #ff6fb1);
+  /* 가운데를 비운 무지개 고리 */
+  -webkit-mask:radial-gradient(circle, transparent 44%, #000 50%, #000 62%, transparent 70%);
+  mask:radial-gradient(circle, transparent 44%, #000 50%, #000 62%, transparent 70%);
+  animation:lpSpin 4s linear infinite;
+}
+.tr-5 .lp-aura{ inset:-18px; opacity:0.7; animation-duration:2.5s; }
+/* 5회 이상: 주위를 도는 별빛 두 개 */
+.tr-3 .lp-aura::before, .tr-4 .lp-aura::before, .tr-5 .lp-aura::before{
+  content:''; position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px; border-radius:50%;
+  background:#fff; box-shadow:-60px 0 0 #ffe9a8;
+  animation:lpOrbit 3s linear infinite;
+}
+.tr-4 .lp-aura::before, .tr-5 .lp-aura::before{ animation-direction:reverse; }
+.lp-crown{ position:absolute; z-index:2; left:50%; top:-16px; margin-left:-9px; font-size:18px; line-height:1; animation:lpCrown 1.6s ease-in-out infinite alternate; }
+@keyframes lpPulse{ 0%, 100%{ transform:scale(0.9); opacity:0.75; } 50%{ transform:scale(1.12); opacity:1; } }
+@keyframes lpSpin{ to{ transform:rotate(360deg); } }
+@keyframes lpOrbit{ from{ transform:rotate(0deg) translateX(30px); } to{ transform:rotate(360deg) translateX(30px); } }
+@keyframes lpCrown{ to{ transform:translateY(-3px) rotate(6deg); } }
+@media (prefers-reduced-motion: reduce){
+  .lp-aura, .lp-aura::before, .lp-crown, .lobby-player.walking .lp-chest{ animation:none !important; }
+}
+
+.lobby-log{
+  height:120px; margin-top:8px; padding:6px 8px; overflow-y:auto; border-radius:10px;
+  background:var(--surface-2); font-size:12px; line-height:1.5; color:var(--ink);
+}
+.lobby-line strong{ color:#9be7ff; font-weight:700; }
+.lobby-line.mine strong{ color:var(--gold); }
+.lobby-line span{ overflow-wrap:anywhere; }
+.lobby-form{ display:flex; gap:6px; margin-top:8px; }
+.lobby-form input{ flex:1 1 auto; width:auto; min-width:0; margin:0; }
+.lobby-form button{ flex:0 0 auto; width:auto; margin:0; padding:0 16px; }
+.lobby-hint{ margin:8px 0 0; font-size:11px; line-height:1.5; color:var(--ink-dim); }

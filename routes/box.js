@@ -29,7 +29,7 @@
 const express = require('express');
 const db = require('../db');
 const verifyToken = require('../middleware/auth');
-const { HttpError, withTransaction, handle } = require('../lib/http');
+const { HttpError, withUserTransaction, handle } = require('../lib/http');
 const {
   MODES,
   VALID_MODES,
@@ -97,6 +97,8 @@ const store = require('../game/store');
 const { MYTHICS } = require('../game/mythics');
 const collection = require('../game/collection');
 const skills = require('../game/skills');
+const transcend = require('../game/transcend');
+const lobby = require('../lib/lobby');
 const { getSeason, getSeasonStart, getSeasonEnd, getDay, getDayStart, getDayEnd, getNextDayForRotation } = require('../game/season');
 
 const router = express.Router();
@@ -121,8 +123,9 @@ function parseQuantity(rawQuantity, max, overMaxMessage) {
 
 // 트랜잭션을 열고, 현재 모드의 세이브를 "지금" 기준으로 정산한 뒤 fn을 실행합니다.
 // 거의 모든 API가 이 순서(모드 확인 → 정산 → 작업)를 따릅니다.
+// 같은 계정의 요청은 서버 안에서 차례로 처리합니다. (lib/http.js withUserTransaction 참고)
 function withSave(userId, fn) {
-  return withTransaction(async (client) => {
+  return withUserTransaction(userId, async (client) => {
     const mode = await store.getActiveMode(client, userId);
     const save = await store.settle(client, userId, mode);
     if (!save) throw new HttpError(400, NOT_STARTED_MESSAGE);
@@ -277,7 +280,7 @@ function progressionResponse(mode, save) {
   return {
     storageMs: stats.storageMs,
     upgradeDiscountPercent: stats.upgradeDiscountPercent,
-    upgrades: UPGRADES.map(upgrade => {
+    upgrades: UPGRADES.filter(upgrade => !upgrade.collectionOnly || mode === MODES.COLLECTION).map(upgrade => {
       const level = claim[upgrade.column];
       const isMax = level >= upgrade.maxLevel;
       return {
@@ -491,6 +494,7 @@ function collectionResponse(mode, save) {
     choiceBoxPrice: collection.CHOICE_BOX_SHARD_PRICE,
     missions: missionsResponse(save),
     milestones: save.milestones ? { list: save.milestones.list, next: save.milestones.next } : null,
+    enhance: transcend.enhanceResponse(save.claim, save.claim.transcend_count || 0),
   };
 }
 function requireCollection(mode) {
@@ -603,6 +607,49 @@ router.post('/skill', handle('서버 오류로 스킬을 쓰지 못했습니다.
   });
 }));
 
+// 상자 강화: POST /api/box/enhance — 신화 조각으로 확률 강화 (+10부터 실패하면 한 단계 하락)
+router.post('/enhance', handle('서버 오류로 강화하지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+  return withSave(userId, async (client, mode, save) => {
+    requireCollection(mode);
+    const level = transcend.enhanceLevel(save.claim);
+    if (level >= transcend.ENHANCE_MAX) throw new HttpError(400, `이미 +${transcend.ENHANCE_MAX}입니다. 초월할 수 있어요!`);
+    const cost = transcend.ENHANCE_COSTS[level];
+    const shards = save.claim.mythic_shards || 0;
+    if (shards < cost) throw new HttpError(400, `신화 조각이 부족합니다. (필요 ${cost}, 보유 ${shards})`);
+
+    const result = transcend.rollEnhance(level);
+    await store.updateClaim(client, userId, mode, { box_enhance: result.level, mythic_shards: shards - cost });
+    const message = result.success
+      ? `✨ 강화 성공! 상자 +${result.level}`
+      : result.dropped ? `💥 강화 실패… +${level} → +${result.level}` : `💨 강화 실패 (+${level} 유지)`;
+    save.claim.box_enhance = result.level;
+    return {
+      message, mode, ...result, previous: level, shards: shards - cost,
+      enhance: transcend.enhanceResponse(save.claim, save.claim.transcend_count || 0),
+    };
+  });
+}));
+
+// 초월: POST /api/box/transcend — +20 상자로 수집모드를 처음부터 다시 시작 (도감·각성 유지, 초월 횟수 +1)
+router.post('/transcend', handle('서버 오류로 초월하지 못했습니다.', async (req) => {
+  const userId = req.user.userId;
+  const result = await withSave(userId, async (client, mode, save) => {
+    requireCollection(mode);
+    if (transcend.enhanceLevel(save.claim) < transcend.ENHANCE_MAX) {
+      throw new HttpError(400, `상자를 +${transcend.ENHANCE_MAX}까지 강화해야 초월할 수 있습니다.`);
+    }
+    const count = await store.transcendReset(client, userId, save.claim, save.now);
+    return {
+      message: `🌌 ${count}번째 초월! 전체 수입 +${count * transcend.TRANSCEND_INCOME_PERCENT}% (영구)`,
+      mode, count, tier: transcend.transcendTier(count),
+    };
+  });
+  // 광장에 접속해 있다면 이름 옆 초월 수치와 캐릭터 효과를 바로 바꿉니다.
+  lobby.refreshPlayer(userId).catch(() => {});
+  return result;
+}));
+
 // 중복 신화 분해: POST /api/box/dismantle — 효과가 겹치는 3개를 넘는 신화를 모두 신화 조각으로
 router.post('/dismantle', handle('서버 오류로 분해하지 못했습니다.', async (req) => {
   const userId = req.user.userId;
@@ -627,7 +674,7 @@ router.post('/awaken', handle('서버 오류로 각성하지 못했습니다.', 
     if (!save.codex.has(key)) throw new HttpError(400, '도감에 있는 신화만 각성할 수 있습니다.');
     const awaken = { ...(save.claim.mythic_awaken || {}) };
     const level = collection.awakenLevel(awaken, key);
-    if (level >= collection.AWAKEN_MAX) throw new HttpError(400, '이미 최고 단계(★5)입니다.');
+    if (level >= collection.AWAKEN_MAX) throw new HttpError(400, `이미 최고 단계(★${collection.AWAKEN_MAX})입니다.`);
     const cost = collection.AWAKEN_COSTS[level];
     const shards = save.claim.mythic_shards || 0;
     if (shards < cost) throw new HttpError(400, `신화 조각이 부족합니다. (필요 ${cost}, 보유 ${shards})`);
@@ -951,7 +998,7 @@ router.post('/buy-boxes', handle('서버 오류로 구매에 실패했습니다.
 router.get('/status', handle('서버 오류가 발생했습니다.', async (req) => {
   const userId = req.user.userId;
 
-  return withTransaction(async (client) => {
+  return withUserTransaction(userId, async (client) => {
     const mode = await store.getActiveMode(client, userId);
     const isRecordMode = mode === MODES.RECORD;
 
@@ -984,7 +1031,7 @@ router.get('/status', handle('서버 오류가 발생했습니다.', async (req)
       codex: codexSummary(mode, save),
       pace: paceResponse(mode, save),
       sealed: sealedResponse(save),
-      seasonBest: isRecordMode ? await findMyRank(userId, save.season) : null,
+      seasonBest: isRecordMode ? await findMyRank(client, userId, save.season) : null,
       ...chargeResponse(save.chargeInfo),
       chargeIntervalMs: save.stats.chargeIntervalMs,
       totalTreasure: claim.total_treasure,
@@ -1029,6 +1076,7 @@ router.post('/upgrade', handle('서버 오류로 업그레이드에 실패했습
   if (!upgrade) throw new HttpError(400, '존재하지 않는 업그레이드입니다.');
 
   return withSave(userId, async (client, mode, save) => {
+    if (upgrade.collectionOnly && mode !== MODES.COLLECTION) throw new HttpError(400, '수집모드 전용 강화입니다.');
     const level = save.claim[upgrade.column];
     if (level >= upgrade.maxLevel) throw new HttpError(400, '이미 최대 레벨입니다.');
 
@@ -1462,7 +1510,7 @@ router.get('/collection', handle('서버 오류가 발생했습니다.', async (
 router.post('/reset-run', handle('서버 오류가 발생했습니다.', async (req) => {
   const userId = req.user.userId;
 
-  return withTransaction(async (client) => {
+  return withUserTransaction(userId, async (client) => {
     const mode = await store.getActiveMode(client, userId);
 
     // [보안/밸런스] 수집모드에서는 초심으로 돌아가기를 막습니다.
@@ -1494,7 +1542,7 @@ router.post('/reset-run', handle('서버 오류가 발생했습니다.', async (
 router.post('/rebirth', handle('서버 오류로 환생에 실패했습니다.', async (req) => {
   const userId = req.user.userId;
 
-  return withTransaction(async (client) => {
+  return withUserTransaction(userId, async (client) => {
     const mode = await store.getActiveMode(client, userId);
     if (mode !== MODES.RECORD) {
       throw new HttpError(400, '수집모드에서는 환생할 수 없습니다. 기록모드로 전환해주세요.');
@@ -1581,8 +1629,10 @@ router.get('/rebirth/history', handle('서버 오류가 발생했습니다.', as
 // 랭킹 조회: GET /api/box/leaderboard (페이지네이션, 기록모드 전용)
 // -------------------------------
 // 랭킹 화면에서 페이지에 내가 안 보일 때, 내 최고 기록과 전체 순위를 따로 계산합니다.
-async function findMyRank(userId, season) {
-  const myBestResult = await db.query(
+// runner: 트랜잭션 안(상태 조회)에서는 그 client를 넘겨야 합니다. 트랜잭션이 연결을 쥔 채로
+// 연결을 하나 더 빌리면, 요청이 몰릴 때 연결 풀이 바닥나 서로 기다리다 500이 납니다.
+async function findMyRank(runner, userId, season) {
+  const myBestResult = await runner.query(
     `SELECT MIN(duration_ms) AS best_duration_ms FROM rebirth_history
      WHERE user_id = $1 AND mode = 'record' AND season = $2`,
     [userId, season]
@@ -1590,7 +1640,7 @@ async function findMyRank(userId, season) {
   const myBest = myBestResult.rows[0]?.best_duration_ms;
   if (!myBest) return null;
 
-  const rankResult = await db.query(
+  const rankResult = await runner.query(
     `SELECT COUNT(*) + 1 AS rank FROM (
        SELECT user_id, MIN(duration_ms) AS best FROM rebirth_history
        WHERE mode = 'record' AND season = $2 GROUP BY user_id
@@ -1612,8 +1662,14 @@ function collectorTitle(count) {
   for (const rank of COLLECTOR_RANKS) if (count >= rank.minObtained) title = rank;
   return { emoji: title.emoji, name: title.name };
 }
+// 초월 횟수도 함께 실어 보내서, 화면이 이름 옆에 초월 배지를 그립니다. { emoji, name, transcend }
 async function collectorTitlesFor(userIds) {
   if (userIds.length === 0) return {};
+  const transcendResult = await db.query(
+    'SELECT id, transcend_count FROM users WHERE id = ANY($1::int[])',
+    [userIds]
+  );
+  const transcends = Object.fromEntries(transcendResult.rows.map(r => [r.id, Number(r.transcend_count) || 0]));
   const result = await db.query(
     `SELECT user_id, COUNT(*) AS cnt FROM user_discoveries
      WHERE mode = 'collection' AND item_key = ANY($1::text[]) AND user_id = ANY($2::int[])
@@ -1621,7 +1677,7 @@ async function collectorTitlesFor(userIds) {
     [MYTHIC_KEYS, userIds]
   );
   const counts = Object.fromEntries(result.rows.map(r => [r.user_id, parseInt(r.cnt, 10)]));
-  return Object.fromEntries(userIds.map(id => [id, collectorTitle(counts[id] || 0)]));
+  return Object.fromEntries(userIds.map(id => [id, { ...collectorTitle(counts[id] || 0), transcend: transcends[id] || 0 }]));
 }
 
 // 신화 수집 랭킹: 수집모드 신화 도감 수가 많은 순, 같으면 그 수를 먼저 채운(마지막 발견이 빠른) 순
@@ -1717,7 +1773,7 @@ router.get('/leaderboard', handle('서버 오류가 발생했습니다.', async 
     isMe: row.user_id === userId,
   }));
 
-  const myRank = leaderboard.find(r => r.isMe) || await findMyRank(userId, season);
+  const myRank = leaderboard.find(r => r.isMe) || await findMyRank(db, userId, season);
 
   return {
     type: 'record',

@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261028a">
+<link rel="stylesheet" href="style.css?v=20261104a">
 </head>
 <body>
 
@@ -433,6 +433,9 @@
     <p class="screen-sub">💰 <strong id="upgradeGold">0</strong>G · 골드로 성장 속도 강화</p>
     <div class="craft-result" id="upgradeResult"></div>
 
+    <!-- 상자 강화 · 초월 (수집모드 전용, public/app.js renderEnhancePanel) -->
+    <div class="enhance-panel collection-only" id="enhancePanel"></div>
+
     <h2 class="shop-heading">⬆️ 업그레이드</h2>
     <div class="shop-list" id="upgradeList"></div>
 
@@ -484,11 +487,28 @@
     <div class="hidden" id="myRankFooter" style="margin-top:14px;"></div>
   </div>
 
-  <!-- 방명록 -->
+  <!-- 광장(실시간 대기실) + 방명록 -->
   <div class="card hidden" id="guestbookScreen">
     <div class="top-row">
-      <h1 style="margin:0; font-size:20px;">💬 방명록</h1>
+      <h1 style="margin:0; font-size:20px;">🎪 광장</h1>
     </div>
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="socialTabLobby">🎪 광장</button>
+      <button class="mode-tab" id="socialTabGuestbook">💬 방명록</button>
+    </div>
+
+    <div id="lobbyView">
+      <div class="lobby-head"><span id="lobbyStatus">연결 중...</span><small>바닥을 누르면 그쪽으로 걸어가요</small></div>
+      <div class="lobby-stage" id="lobbyStage"></div>
+      <div class="lobby-log" id="lobbyLog"></div>
+      <form class="lobby-form" id="lobbyForm">
+        <input id="lobbyInput" maxlength="60" autocomplete="off" placeholder="광장에 한마디 (60자)">
+        <button type="submit">보내기</button>
+      </form>
+      <p class="lobby-hint">초월할수록 내 상자 캐릭터와 이름에 화려한 효과가 붙어요 · 수집모드 강화 탭에서 상자 강화 +20 → 초월</p>
+    </div>
+
+    <div id="guestbookView" class="hidden">
     <p class="screen-sub">자유롭게 한마디 · 불쾌한 글은 신고 시 즉시 숨김</p>
     <form class="guestbook-form" id="guestbookForm">
       <textarea id="guestbookInput" maxlength="200" rows="2" placeholder="한마디 남기기 (200자까지)"></textarea>
@@ -499,6 +519,7 @@
     </form>
     <div id="guestbookList"></div>
     <button class="link-btn hidden" id="guestbookMoreBtn">더 보기</button>
+    </div>
   </div>
 
 <!-- 배포할 때마다 ?v= 값을 바꾸면 브라우저·앱이 예전 파일을 쓰지 않습니다 -->
@@ -510,10 +531,10 @@
   <button class="tab-item" data-tab="upgrade"><span class="tab-icon">🛠</span><small>강화</small></button>
   <button class="tab-item collection-only" data-tab="achievement"><span class="tab-icon">📅</span><small>미션</small><span class="nav-badge hidden" id="achievementBadge"></span></button>
   <button class="tab-item" data-tab="ranking"><span class="tab-icon">🏆</span><small>랭킹</small></button>
-  <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
+  <button class="tab-item" data-tab="guestbook"><span class="tab-icon">🎪</span><small>광장</small></button>
 </nav>
 
-<script src="app.js?v=20261028a"></script>
+<script src="app.js?v=20261104a"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {

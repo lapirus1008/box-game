@@ -25,12 +25,14 @@ const BCRYPT_ROUNDS = 10; // "얼마나 강하게 암호화할지"를 정하는 
 // 여러 명이 겹치면 조금 빡빡할 수 있는데, 그럴 땐 max 값을 올리면 됩니다.
 // Render 등 프록시 뒤에서 실제 클라이언트 IP를 인식하려면 server.js에 app.set('trust proxy', 1)이 필요합니다.
 const signupLimiter = createLimiter({
+  name: 'signup',
   windowMs: 60 * 60 * 1000, // 1시간
   max: 5,                   // 같은 IP에서 1시간에 5번까지만 회원가입 시도 가능
   message: '회원가입 시도가 너무 많습니다. 1시간 후 다시 시도해주세요.',
 });
 
 const loginLimiter = createLimiter({
+  name: 'login',
   windowMs: 15 * 60 * 1000, // 15분
   max: 10,                  // 같은 IP에서 15분에 10번까지만 로그인 시도 가능
   message: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.',
@@ -184,7 +186,7 @@ router.post('/login', loginLimiter, handle('서버 오류로 로그인에 실패
 // 유효한지 확인하고 사용자 정보를 다시 받아오는 용도로 씁니다.
 router.get('/me', verifyToken, handle('서버 오류가 발생했습니다.', async (req) => {
   const result = await db.query(
-    'SELECT id, email, nickname, active_mode FROM users WHERE id = $1',
+    'SELECT id, email, nickname, active_mode, transcend_count FROM users WHERE id = $1',
     [req.user.userId]
   );
   if (result.rows.length === 0) throw new HttpError(404, '사용자를 찾을 수 없습니다.');
@@ -201,6 +203,7 @@ router.get('/me', verifyToken, handle('서버 오류가 발생했습니다.', as
 // 로그인 없이도(웹 페이지에서) 쓸 수 있도록 이메일+비밀번호로 본인 확인을 합니다.
 // 랭킹 기록·세이브·신화 도감 등 이 계정의 모든 데이터를 즉시 지우며, 되돌릴 수 없습니다.
 const deleteLimiter = createLimiter({
+  name: 'delete-account',
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: '시도가 너무 많습니다. 잠시 후 다시 시도해주세요.',

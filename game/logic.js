@@ -16,6 +16,7 @@ const {
   UPGRADES,
   UPGRADE_COST_GROWTH,
   INCOME_BONUS_PERCENT_PER_LEVEL,
+  RESEARCH_INCOME_PERCENT_PER_LEVEL,
   CHARGE_SPEED_MS_PER_LEVEL,
   MIN_CHARGE_INTERVAL_MS,
   LUCK_PERCENT_PER_LEVEL,
@@ -236,7 +237,7 @@ function getCollectorRank(obtainedCount) {
 // -------------------------------
 // discountPercent: 신화 효과(강화 비용 -%)
 function getUpgradeCost(upgrade, level, discountPercent = 0) {
-  const base = Math.floor(upgrade.baseCost * Math.pow(UPGRADE_COST_GROWTH, level));
+  const base = Math.floor(upgrade.baseCost * Math.pow(upgrade.costGrowth || UPGRADE_COST_GROWTH, level));
   return Math.max(1, Math.floor(base * (100 - discountPercent) / 100));
 }
 
@@ -275,6 +276,7 @@ function describeUpgradeEffect(key, level) {
     case 'chargeSpeed': return `충전 ${getChargeIntervalMs(level) / 1000}초마다`;
     case 'capacity':    return `보관 시간 ${formatHours(getStorageMs(level))}`;
     case 'luck':        return `희귀 이상 등장률 +${level * LUCK_PERCENT_PER_LEVEL}%`;
+    case 'research':    return `전체 수입 +${level * RESEARCH_INCOME_PERCENT_PER_LEVEL}%`;
     default:            return '';
   }
 }
@@ -356,7 +358,9 @@ function getClaimStats(claim, owned = {}) {
     autoOpenDiscountPercent: effects.autoOpenDiscount,
     effects,
     // 수입 배율은 퍼센트 정수 두 개로 들고 다닙니다 (부동소수점 오차 방지)
-    upgradeIncomePercent: 100 + claim.upgrade_income * INCOME_BONUS_PERCENT_PER_LEVEL,
+    // 수입 증가 강화 + 수집가의 연구(수집모드)
+    upgradeIncomePercent: 100 + claim.upgrade_income * INCOME_BONUS_PERCENT_PER_LEVEL
+      + (Number(claim.upgrade_research) || 0) * RESEARCH_INCOME_PERCENT_PER_LEVEL,
     prestigeIncomePercent: 100 + getPerkLevel(claim, 'income') * PERK_INCOME_PERCENT,
   };
 }
