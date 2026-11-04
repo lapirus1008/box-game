@@ -1422,11 +1422,10 @@ body:not(.mode-collection) .collection-only{ display:none !important; }
   background:rgba(240,98,146,0.1);
   animation:mythicPopIn .35s ease-out both;
 }
-.mythic-popup-item:nth-child(2){ animation-delay:.05s; }
-.mythic-popup-item:nth-child(3){ animation-delay:.1s; }
-.mythic-popup-item:nth-child(n+4){ animation-delay:.15s; }
+
 @keyframes mythicPopIn{ from{ transform:scale(.6); opacity:0; } to{ transform:scale(1); opacity:1; } }
-.mythic-popup-icon{ width:52px; height:52px; filter:drop-shadow(0 0 8px rgba(240,98,146,0.6)); }
+/* 아이콘 뒤 은은한 빛: drop-shadow 필터 대신 배경 그라데이션 (필터는 아이콘마다 따로 그려서 20개면 무거움) */
+.mythic-popup-icon{ width:52px; height:52px; background:radial-gradient(circle, rgba(240,98,146,0.45), transparent 68%); border-radius:50%; }
 .mythic-popup-name{ font-size:10px; line-height:1.25; text-align:center; color:#ffe1ee; }
 .gold-open-title{ margin:0 0 8px; font-size:12px; font-weight:600; color:var(--gold); }
 
@@ -1837,7 +1836,10 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 .mythic-popup-item{
   border:2px solid transparent;
   background:linear-gradient(rgba(40,20,48,0.95), rgba(40,20,48,0.95)) padding-box, var(--holo) border-box;
-  background-size:100% 100%, 300% 300%; animation:holoShift 4s linear infinite;
+  /* 무지개 테두리는 멈춘 그림으로. (흐르는 무한 애니메이션은 카드마다 매 프레임 다시 그려서 신화 20개 팝업이 버벅였고,
+     등장 효과 mythicPopIn 까지 덮어써서 하나씩 튀어나오는 연출도 사라졌었습니다) */
+  background-size:100% 100%, 300% 300%; background-position:0 0, 30% 50%;
+  animation:mythicPopIn .35s ease-out both;
 }
 
 @keyframes holoShift{ 0%{ background-position:0 0, 0% 50%; } 100%{ background-position:0 0, 300% 50%; } }

@@ -981,6 +981,7 @@ let mythicPopupTimer = null;
 let mythicPopupItems = [];
 let mythicPopupPity = false;
 
+let mythicPopupAddTimers = [];
 function showMythicPopup(mythics, pityTriggered, title){
   // 이미 떠 있으면 합쳐서 다시 그림 (같은 신화는 개수만 더함)
   for (const m of mythics) {
@@ -993,12 +994,22 @@ function showMythicPopup(mythics, pityTriggered, title){
   document.getElementById('mythicPopupTitle').textContent = title
     || `${mythicPopupPity ? '✦ 천장 달성! ' : '✦ '}신화 ${total}개 획득! ✦`;
   // 하나씩 차례로 튀어나오게 (많으면 최대 1.2초 안에 모두 등장)
-  const step = Math.min(0.12, 1.2 / Math.max(1, mythicPopupItems.length));
-  document.getElementById('mythicPopupGrid').innerHTML = mythicPopupItems.map((m, i) => `
-    <div class="mythic-popup-item" style="animation-delay:${(i * step).toFixed(2)}s" title="${escapeHtml(m.effectText || '')}">
-      ${itemIconHtml(m.key, 'mythic-popup-icon')}
-      <span class="mythic-popup-name">${escapeHtml(m.name)}${m.count > 1 ? ` x${m.count}` : ''}</span>
-    </div>`).join('');
+  // 카드를 등장 순서에 맞춰 실제로 하나씩 넣습니다. 한 번에 다 넣으면 아이콘 20개를 첫 프레임에
+  // 몰아서 그리느라 팝업이 뜨는 순간 0.4초가량 멈췄습니다.
+  const grid = document.getElementById('mythicPopupGrid');
+  const stepMs = Math.min(120, 1200 / Math.max(1, mythicPopupItems.length));
+  mythicPopupAddTimers.forEach(clearTimeout);
+  mythicPopupAddTimers = [];
+  grid.innerHTML = '';
+  mythicPopupItems.forEach((m, i) => {
+    const add = () => grid.insertAdjacentHTML('beforeend', `
+      <div class="mythic-popup-item" title="${escapeHtml(m.effectText || '')}">
+        ${itemIconHtml(m.key, 'mythic-popup-icon', false, 'eager')}
+        <span class="mythic-popup-name">${escapeHtml(m.name)}${m.count > 1 ? ` x${m.count}` : ''}</span>
+      </div>`);
+    if (i === 0) add();
+    else mythicPopupAddTimers.push(setTimeout(add, Math.round(i * stepMs)));
+  });
   const popup = document.getElementById('mythicPopup');
   popup.classList.remove('show');
   void popup.offsetWidth; // 애니메이션 다시 재생
@@ -1010,6 +1021,8 @@ function showMythicPopup(mythics, pityTriggered, title){
 }
 function hideMythicPopup(){
   clearTimeout(mythicPopupTimer);
+  mythicPopupAddTimers.forEach(clearTimeout);
+  mythicPopupAddTimers = [];
   document.getElementById('mythicPopup').classList.remove('show');
   mythicPopupItems = [];
   mythicPopupPity = false;
@@ -1818,8 +1831,9 @@ function renderSeasonTabs(currentSeason, shownSeason){
 const RARITY_ORDER_UI = ['mythic', 'legendary', 'epic', 'rare', 'common'];
 function iconSrc(key){ return `icons/items/${key}.svg`; }
 // unknown: 아직 발견하지 못한 아이템 → 실루엣으로 표시
-function itemIconHtml(key, cls = 'item-icon', unknown = false){
-  return `<img class="${cls}${unknown ? ' unknown' : ''}" src="${iconSrc(key)}" alt="" loading="lazy" draggable="false">`;
+// loading: 목록은 'lazy'(화면에 보일 때 불러옴), 바로 보여줄 팝업은 'eager'
+function itemIconHtml(key, cls = 'item-icon', unknown = false, loading = 'lazy'){
+  return `<img class="${cls}${unknown ? ' unknown' : ''}" src="${iconSrc(key)}" alt="" loading="${loading}" decoding="async" draggable="false">`;
 }
 // 얻은 아이템 묶음을 아이콘 칩으로 (등급 높은 것부터)
 function obtainedChipsHtml(list){
