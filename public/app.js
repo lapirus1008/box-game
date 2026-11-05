@@ -42,7 +42,7 @@ const gameScreen = document.getElementById('gameScreen');
 const collectionScreen = document.getElementById('collectionScreen');
 const rankingScreen = document.getElementById('rankingScreen');
 const upgradeScreen = document.getElementById('upgradeScreen');
-const achievementScreen = document.getElementById('achievementScreen');
+const lobbyScreen = document.getElementById('lobbyScreen');
 const authError = document.getElementById('authError');
 
 // 골드는 소수점 없이 표시합니다. 10만 미만은 쉼표(95,003), 그 이상은 한국식 단위로
@@ -359,7 +359,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
   goldenBoxExpireAt = null;
   document.getElementById('goldenBox').classList.add('hidden');
   resetGameResultUI();
-  [gameScreen, collectionScreen, upgradeScreen, achievementScreen, rankingScreen, document.getElementById('guestbookScreen')].forEach(el => el.classList.add('hidden'));
+  [gameScreen, collectionScreen, upgradeScreen, lobbyScreen, rankingScreen, document.getElementById('guestbookScreen')].forEach(el => el.classList.add('hidden'));
   document.body.classList.remove('in-game');
   authScreen.classList.remove('hidden');
 });
@@ -380,7 +380,6 @@ function applyModeUI(mode){
   if (isRecord) showCollectionTab('run');
   if (isRecord && typeof currentTab !== 'undefined' && currentTab === 'dex') goTab('bag');
   // 업적도 수집모드 전용이에요.
-  if (isRecord && typeof currentTab !== 'undefined' && currentTab === 'achievement') goTab('home');
 
   document.getElementById('modeTabRun').textContent = '🎒 가방';
   document.getElementById('runModeHint').textContent = '같은 아이템 3개 → 한 등급 위로 합성 · 🔓 잠그면 재료에서 제외';
@@ -450,15 +449,14 @@ const TAB_OPENERS = {
   bag: 'openCollectionBtn',
   dex: 'openCollectionBtn',
   upgrade: 'openUpgradeBtn',
-  achievement: 'openAchievementBtn',
   ranking: 'openRankingBtn',
 };
 let currentTab = 'home';
 function goTab(tab){
-  if (tab !== 'guestbook') lobbyDisconnect(); // 광장을 떠나면 실시간 연결을 닫아 배터리·데이터를 아낍니다
+  if (tab !== 'lobby') lobbyDisconnect(); // 광장을 떠나면 실시간 연결을 닫아 배터리·데이터를 아낍니다
   currentTab = tab;
   document.querySelectorAll('#tabBar .tab-item').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
-  [gameScreen, collectionScreen, upgradeScreen, achievementScreen, rankingScreen, document.getElementById('guestbookScreen')].forEach(el => el.classList.add('hidden'));
+  [gameScreen, collectionScreen, upgradeScreen, lobbyScreen, rankingScreen, document.getElementById('guestbookScreen')].forEach(el => el.classList.add('hidden'));
   window.scrollTo(0, 0);
   if (tab === 'home') {
     gameScreen.classList.remove('hidden');
@@ -466,7 +464,8 @@ function goTab(tab){
     return;
   }
   // 각 화면을 여는 기존 버튼 동작(데이터 불러오기 포함)을 그대로 씁니다.
-  if (tab === 'guestbook') { document.getElementById('guestbookScreen').classList.remove('hidden'); showSocialTab(socialTab); return; }
+  if (tab === 'guestbook') { document.getElementById('guestbookScreen').classList.remove('hidden'); loadGuestbook(); return; }
+  if (tab === 'lobby') { lobbyScreen.classList.remove('hidden'); lobbyConnect(); return; }
   document.getElementById(TAB_OPENERS[tab]).click();
   if (tab === 'bag' || tab === 'dex') {
     showCollectionTab(tab === 'dex' ? 'dex' : 'run');
@@ -599,7 +598,7 @@ async function refreshStatus(){
     renderPrestigeHint(data.prestige);
     applyGoldenBox(data.goldenBox);
     renderAchievementBadge((data.claimableAchievements || 0) + (data.collection ? data.collection.missions.claimable : 0));
-    if (!achievementScreen.classList.contains('hidden')) renderAchievements();
+    renderHomeMissions();
     if (data.awaySummary) showAwaySummary(data.awaySummary, data.autoOpened);
     else handleAutoEvents(data);
     if (!upgradeScreen.classList.contains('hidden')) renderUpgradeScreen();
@@ -1207,50 +1206,118 @@ async function loadCollection(showLoadingText = true){
       collectionGrid.appendChild(card);
     });
 
-    // ── 가방 그리드: 모든 아이템을 항상 같은 순서·같은 칸에 보여줍니다 ──
-    // (자동 합성 등으로 0개가 돼도 칸이 사라지지 않아서, 누르려던 버튼 위치가 바뀌지 않음)
-    {
-      runGrid.innerHTML = '';
-      data.collection.forEach(item => {
-        const card = document.createElement('div');
-        const isEmpty = item.count === 0;
-        const known = item.obtained || item.count > 0; // 한 번도 발견 못 한 아이템은 이름을 가립니다
-        card.className = `item-card ${item.rarity} ${isEmpty ? 'is-empty' : ''} ${item.inSeasonDex ? '' : 'past-season'}`;
-        card.title = known ? item.flavor : '아직 발견하지 못한 아이템입니다';
-
-        // 신화는 상자에서만 나오므로 전설도 합성 재료가 될 수 없음 (일반/희귀/영웅만 합성 가능)
-        const isMaxRarity = item.rarity === 'mythic';
-        const isCraftLocked = item.rarity === 'legendary' || isMaxRarity;
-        const canCraft = item.count >= CRAFT_COST && !isCraftLocked && !item.locked;
-        const craftLabel = isMaxRarity ? '최고 등급' : (isCraftLocked ? '합성 불가' : (item.locked ? '🔒 잠김' : `합성(-${CRAFT_COST})`));
-        if (item.locked) card.classList.add('is-locked');
-
-        // 개수와 상관없이 줄 구성을 똑같이 유지해서 카드 높이가 바뀌지 않게 합니다
-        card.innerHTML = `
-          ${known ? `<button class="lock-btn ${item.locked ? 'on' : ''}" data-lock="${item.key}" data-locked="${item.locked}"
-            title="${item.locked ? '잠금 해제' : '잠그면 합성 재료에서 제외'}">${item.locked ? '🔒' : '🔓'}</button>` : ''}
-          ${itemIconHtml(item.key, 'item-icon', !known)}
-          <div class="item-name">${known ? item.name : '???'}</div>
-          <div class="item-count">x${item.count}</div>
-          <div class="item-stars">${renderStars(item.stars, item.maxStars)}</div>
-          <div class="item-income">분당 +${formatGold(item.incomePerMinute || 0)}G</div>
-          ${item.effect ? `<div class="item-effect">${known ? escapeHtml(item.effect.now || item.effect.per) : '???'}</div>` : ''}
-          <button class="craft-btn" data-key="${item.key}" ${canCraft ? '' : 'disabled'}>${craftLabel}</button>
-        `;
-        runGrid.appendChild(card);
-      });
-    }
-
-    runGrid.querySelectorAll('[data-lock]').forEach(btn => {
-      btn.addEventListener('click', () => toggleItemLock(btn.dataset.lock, btn.dataset.locked !== 'true', btn));
-    });
-    runGrid.querySelectorAll('.craft-btn').forEach(btn => {
-      btn.addEventListener('click', () => craftItem(btn.dataset.key, btn));
-    });
+    // ── 가방: 게임 인벤토리처럼 아이콘 칸만 (이름·설명은 칸을 누르면 툴팁으로) ──
+    // 모든 아이템을 항상 같은 순서·같은 칸에 둡니다. (0개가 돼도 칸이 사라지지 않아 위치가 바뀌지 않음)
+    bagItems = new Map(data.collection.map(item => [item.key, item]));
+    runGrid.innerHTML = data.collection.map(item => {
+      const known = item.obtained || item.count > 0; // 한 번도 발견 못 한 아이템은 가립니다
+      const canCraft = item.count >= CRAFT_COST && isCraftable(item) && !item.locked;
+      const cls = [
+        'inv-slot', item.rarity,
+        item.count === 0 ? 'is-empty' : '',
+        item.locked ? 'is-locked' : '',
+        canCraft ? 'can-craft' : '',
+        item.key === openTipKey ? 'selected' : '',
+      ].join(' ');
+      return `<button class="${cls}" data-slot="${item.key}" aria-label="${escapeHtml(known ? item.name : '미발견 아이템')}">
+        ${itemIconHtml(item.key, 'inv-icon', !known)}
+        ${item.count > 0 ? `<span class="inv-count">${formatGold(item.count)}</span>` : ''}
+        ${item.stars > 0 ? `<span class="inv-stars">${'★'.repeat(item.stars)}</span>` : ''}
+        ${item.locked ? '<span class="inv-lock">🔒</span>' : ''}
+        ${canCraft ? '<span class="inv-up" title="합성 가능">▲</span>' : ''}
+      </button>`;
+    }).join('');
+    if (openTipKey && bagItems.has(openTipKey)) showItemTip(openTipKey);
+    else hideItemTip();
   } catch (err) {
     collectionGrid.innerHTML = '<p style="color:var(--danger); font-size:13px;">불러오지 못했습니다.</p>';
   }
 }
+
+// -------------------------------
+// 가방 툴팁: 칸을 누르면 그 칸 바로 위(공간이 없으면 아래)에 설명과 합성·잠금 버튼
+// -------------------------------
+let bagItems = new Map();
+let openTipKey = null;
+// 신화는 상자에서만 나오므로 전설도 합성 재료가 될 수 없음 (일반/희귀/영웅만 합성 가능)
+function isCraftable(item){ return item.rarity !== 'legendary' && item.rarity !== 'mythic'; }
+
+function showItemTip(key){
+  const item = bagItems.get(key);
+  const slot = document.querySelector(`#runInventoryGrid [data-slot="${key}"]`);
+  const tip = document.getElementById('itemTip');
+  if (!item || !slot) { hideItemTip(); return; }
+  openTipKey = key;
+  document.querySelectorAll('#runInventoryGrid .inv-slot.selected').forEach(el => el.classList.remove('selected'));
+  slot.classList.add('selected');
+
+  const known = item.obtained || item.count > 0;
+  if (!known) {
+    tip.innerHTML = `<div class="tip-name">???</div><p class="tip-flavor">아직 발견하지 못한 아이템입니다</p>`;
+  } else {
+    const canCraft = item.count >= CRAFT_COST && isCraftable(item) && !item.locked;
+    const craftLabel = !isCraftable(item) ? (item.rarity === 'mythic' ? '최고 등급' : '합성 불가')
+      : item.locked ? '🔒 잠김' : `⚒ 합성 (${CRAFT_COST}개 → 1개)`;
+    const lines = [
+      `<span>보유</span><strong>${formatGold(item.count)}개</strong>`,
+      `<span>분당 수입</span><strong>+${formatGold(item.incomePerMinute || 0)}G</strong>`,
+    ];
+    if (item.effect) lines.push(`<span>효과</span><strong>${escapeHtml(item.effect.now || item.effect.per)}</strong>`);
+    tip.innerHTML = `
+      <div class="tip-head">
+        <span class="tip-name ${item.rarity}">${escapeHtml(item.name)}</span>
+        <span class="tip-rarity ${item.rarity}">${RARITY_LABEL[item.rarity] || ''}</span>
+      </div>
+      <div class="tip-stars">${renderStars(item.stars, item.maxStars)}${item.nextStarAt ? `<small> 다음 ★ ${formatGold(item.count)}/${formatGold(item.nextStarAt)}</small>` : ''}</div>
+      <div class="tip-lines">${lines.map(l => `<div>${l}</div>`).join('')}</div>
+      ${item.effect ? `<p class="tip-sub">1개당 ${escapeHtml(item.effect.per)} · 최대 ${item.effect.maxCount}개까지 겹침</p>` : ''}
+      <p class="tip-flavor">${escapeHtml(item.flavor || '')}</p>
+      <div class="tip-actions">
+        <button class="tip-lock" data-tip-lock="${item.locked ? 'off' : 'on'}">${item.locked ? '🔓 잠금 해제' : '🔒 잠금'}</button>
+        <button class="tip-craft" data-tip-craft ${canCraft ? '' : 'disabled'}>${craftLabel}</button>
+      </div>`;
+  }
+  // 칸 기준으로 위치 잡기 (가방 화면 기준 좌표)
+  tip.classList.remove('hidden', 'below');
+  const host = tip.offsetParent || document.body;
+  const hostRect = host.getBoundingClientRect();
+  const r = slot.getBoundingClientRect();
+  const tipW = tip.offsetWidth;
+  const tipH = tip.offsetHeight;
+  let left = r.left + r.width / 2 - tipW / 2 - hostRect.left;
+  left = Math.max(4, Math.min(left, hostRect.width - tipW - 4));
+  let top = r.top - hostRect.top - tipH - 8;
+  if (r.top - tipH - 8 < 60) { top = r.bottom - hostRect.top + 8; tip.classList.add('below'); }
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+  tip.style.setProperty('--arrow-x', `${r.left + r.width / 2 - hostRect.left - left}px`);
+}
+function hideItemTip(){
+  openTipKey = null;
+  document.getElementById('itemTip').classList.add('hidden');
+  document.querySelectorAll('#runInventoryGrid .inv-slot.selected').forEach(el => el.classList.remove('selected'));
+}
+document.getElementById('runInventoryGrid').addEventListener('click', (e) => {
+  const slot = e.target.closest('[data-slot]');
+  if (!slot) return;
+  if (openTipKey === slot.dataset.slot) hideItemTip();
+  else showItemTip(slot.dataset.slot);
+});
+document.getElementById('itemTip').addEventListener('click', (e) => {
+  const key = openTipKey;
+  if (!key) return;
+  const lockBtn = e.target.closest('[data-tip-lock]');
+  const craftBtn = e.target.closest('[data-tip-craft]');
+  if (lockBtn) toggleItemLock(key, lockBtn.dataset.tipLock === 'on', lockBtn);
+  if (craftBtn) craftItem(key, craftBtn);
+});
+// 툴팁 바깥을 누르면 닫기
+document.addEventListener('click', (e) => {
+  if (!openTipKey) return;
+  if (e.target.closest('#itemTip') || e.target.closest('#runInventoryGrid [data-slot]')) return;
+  hideItemTip();
+});
+window.addEventListener('resize', () => { if (openTipKey) showItemTip(openTipKey); });
 
 // 아이템 잠금 켜기/끄기
 async function toggleItemLock(itemKey, locked, btn){
@@ -1708,21 +1775,35 @@ document.getElementById('goldenBox').addEventListener('click', async function(){
 // -------------------------------
 // 업적 화면
 // -------------------------------
+// 받을 미션·업적 보상 수: 홈 탭 아이콘에 점으로 표시 (미션은 홈에서 받음)
 function renderAchievementBadge(count){
-  const badge = document.getElementById('achievementBadge');
+  const homeTab = document.querySelector('#tabBar [data-tab="home"]');
+  let badge = homeTab.querySelector('.nav-badge');
+  if (!badge) { badge = document.createElement('span'); badge.className = 'nav-badge hidden'; homeTab.appendChild(badge); }
   badge.textContent = count > 0 ? count : '';
   badge.classList.toggle('hidden', !(count > 0));
 }
 
-document.getElementById('openAchievementBtn').addEventListener('click', async () => {
-  gameScreen.classList.add('hidden');
-  achievementScreen.classList.remove('hidden');
-  document.getElementById('achievementResult').style.display = 'none';
-  renderAchievements();
-  await refreshStatus();
-});
-document.getElementById('backFromAchievementBtn').addEventListener('click', () => {
-  goTab('home');
+// 홈의 "오늘의 미션 · 업적" 접이식 칸: 접혀 있을 때는 받을 보상 수만, 펴면 목록 전체
+let homeMissionsOpen = false;
+function renderHomeMissions(){
+  const c = lastStatus && lastStatus.collection;
+  const claimable = (lastStatus && lastStatus.claimableAchievements || 0) + (c ? c.missions.claimable : 0);
+  const summary = document.getElementById('homeMissionsSummary');
+  if (claimable > 0) summary.innerHTML = `<span class="home-missions-claim">🎁 받을 보상 ${claimable}</span>`;
+  else if (c) {
+    const done = c.missions.list.filter(m => m.claimed).length;
+    summary.textContent = `오늘 ${done}/${c.missions.list.length}`;
+  } else summary.textContent = '';
+  document.getElementById('homeMissions').classList.toggle('has-claim', claimable > 0);
+  if (homeMissionsOpen) renderAchievements();
+}
+document.getElementById('homeMissionsToggle').addEventListener('click', function(){
+  homeMissionsOpen = !homeMissionsOpen;
+  this.setAttribute('aria-expanded', String(homeMissionsOpen));
+  document.getElementById('homeMissions').classList.toggle('open', homeMissionsOpen);
+  document.getElementById('homeMissionsBody').classList.toggle('hidden', !homeMissionsOpen);
+  if (homeMissionsOpen) { document.getElementById('achievementResult').style.display = 'none'; renderAchievements(); }
 });
 
 const STAT_UNIT = { boxes: '개', crafts: '번', legendary: '개', mythic: '개', golden: '번', bestIncome: 'G/분', rebirths: '번' };
@@ -2833,36 +2914,110 @@ function transcendBadgeHtml(count){
 }
 
 // -------------------------------
-// 광장 / 방명록 안쪽 탭
+// (광장과 방명록은 아래 탭에서 따로 엽니다)
 // -------------------------------
-let socialTab = 'lobby';
-function showSocialTab(which){
-  socialTab = which;
-  document.getElementById('socialTabLobby').classList.toggle('active', which === 'lobby');
-  document.getElementById('socialTabGuestbook').classList.toggle('active', which === 'guestbook');
-  document.getElementById('lobbyView').classList.toggle('hidden', which !== 'lobby');
-  document.getElementById('guestbookView').classList.toggle('hidden', which !== 'guestbook');
-  if (which === 'lobby') lobbyConnect();
-  else { lobbyDisconnect(); loadGuestbook(); }
-}
-document.getElementById('socialTabLobby').addEventListener('click', () => showSocialTab('lobby'));
-document.getElementById('socialTabGuestbook').addEventListener('click', () => showSocialTab('guestbook'));
 
 // -------------------------------
-// 광장: 상자 캐릭터로 돌아다니며 채팅 (서버 lib/lobby.js 와 WebSocket으로 주고받음)
-// 위치는 0~1 비율. 이동은 CSS transform 전환으로 부드럽게(화면 배치 재계산 없음).
+// 광장: 넓은 지형 위를 상자 캐릭터로 돌아다니며 채팅 (서버 lib/lobby.js 와 WebSocket으로 주고받음)
+// - 내 상자는 항상 화면 가운데, 지형(lobbyWorld)이 반대로 움직입니다. (카메라)
+// - 위치는 0~1 비율. 지형 크기·걷는 속도는 서버와 같아야 합니다.
+// - 이동은 CSS transform 전환으로만 (배치 재계산 없음). 내 이동과 카메라 이동은 같은 시간·같은 속도라
+//   걷는 동안에도 내 상자가 가운데에 머뭅니다.
 // -------------------------------
 const lobbyStage = document.getElementById('lobbyStage');
 const lobbyLogEl = document.getElementById('lobbyLog');
 const lobbyStatusEl = document.getElementById('lobbyStatus');
-const LOBBY_WALK_PX_PER_SEC = 140;
+let LOBBY_WORLD_W = 1500;
+let LOBBY_WORLD_H = 1100;
+let LOBBY_WALK_PX_PER_SEC = 160;
 const LOBBY_BUBBLE_MS = 5000;
+const LOBBY_TAP_RANGE_PX = 120;   // 이 거리 안이면 "톡톡!" (서버 판정은 조금 더 넉넉함)
+const LOBBY_WALK = { minX: 0.05, maxX: 0.95, minY: 0.07, maxY: 0.95 };
 let lobbyWs = null;
 let lobbyWanted = false;
 let lobbyMe = null;
 let lobbyRetry = 0;
 let lobbyRetryTimer = null;
-const lobbyPlayers = new Map(); // id → { p, el }
+const lobbyPlayers = new Map(); // id → { p: { x, y }, el, motion }
+let lobbyWorld = null;
+let lobbyGolden = null;        // { id, el, motion, hp, maxHp }
+let lobbyNearTimer = null;
+let lobbyMarker = null;
+
+// 움직임 { x0, y0, x1, y1, t0, dur } 에서 지금 위치 (서버 posAt 과 같은 계산)
+function lobbyPosAt(m, now = performance.now()){
+  if (!m || !m.dur) return m ? { x: m.x1, y: m.y1 } : { x: 0.5, y: 0.5 };
+  const k = Math.min(1, Math.max(0, (now - m.t0) / m.dur));
+  return { x: m.x0 + (m.x1 - m.x0) * k, y: m.y0 + (m.y1 - m.y0) * k };
+}
+function lobbyDistPx(a, b){ return Math.hypot((a.x - b.x) * LOBBY_WORLD_W, (a.y - b.y) * LOBBY_WORLD_H); }
+
+// ── 지형: 섬 · 길 · 가운데 분수 광장 · 연못 · 나무 · 꽃 (한 번만 그리는 정지 그림) ──
+function buildLobbyWorld(){
+  lobbyStage.innerHTML = '';
+  const world = document.createElement('div');
+  world.className = 'lobby-world';
+  world.style.width = `${LOBBY_WORLD_W}px`;
+  world.style.height = `${LOBBY_WORLD_H}px`;
+  // 항상 같은 모양이 나오도록 고정 씨앗으로 흩뿌립니다
+  let seed = 7;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const W = LOBBY_WORLD_W, H = LOBBY_WORLD_H;
+  const cx = W / 2, cy = H * 0.55;
+  const pond = { x: W * 0.22, y: H * 0.3, rx: 120, ry: 80 };
+  const nearPath = (x, y) => Math.abs(x - cx) < 70 || Math.abs(y - cy) < 70
+    || Math.hypot(x - cx, y - cy) < 190 || Math.hypot((x - pond.x) / (pond.rx + 40), (y - pond.y) / (pond.ry + 40)) < 1;
+  const parts = [
+    '<div class="lw-island"></div>',
+    `<div class="lw-path lw-path-h" style="top:${cy - 34}px"></div>`,
+    `<div class="lw-path lw-path-v" style="left:${cx - 34}px"></div>`,
+    `<div class="lw-plaza" style="left:${cx - 150}px; top:${cy - 150}px"></div>`,
+    `<div class="lw-deco lw-fountain" style="left:${cx}px; top:${cy}px">⛲</div>`,
+    `<div class="lw-pond" style="left:${pond.x - pond.rx}px; top:${pond.y - pond.ry}px; width:${pond.rx * 2}px; height:${pond.ry * 2}px"></div>`,
+    `<div class="lw-deco" style="left:${pond.x + 30}px; top:${pond.y - 10}px; font-size:26px">🦆</div>`,
+    `<div class="lw-deco" style="left:${pond.x - 50}px; top:${pond.y + 20}px; font-size:22px">🪷</div>`,
+    `<div class="lw-sign" style="left:${cx + 80}px; top:${cy - 190}px">🎪 상자 광장</div>`,
+    `<div class="lw-deco" style="left:${W * 0.8}px; top:${H * 0.25}px; font-size:56px">🎡</div>`,
+    `<div class="lw-deco" style="left:${W * 0.78}px; top:${H * 0.8}px; font-size:44px">⛺</div>`,
+    `<div class="lw-deco" style="left:${W * 0.2}px; top:${H * 0.82}px; font-size:40px">🏕️</div>`,
+  ];
+  const trees = ['🌳', '🌲', '🌴', '🌳', '🌲'];
+  const small = ['🌼', '🌷', '🍄', '🌸', '🪨', '🌿', '🌻'];
+  for (let i = 0; i < 46; i++) {
+    const x = 60 + rnd() * (W - 120), y = 70 + rnd() * (H - 140);
+    if (nearPath(x, y)) continue;
+    parts.push(`<div class="lw-deco lw-tree" style="left:${x.toFixed(0)}px; top:${y.toFixed(0)}px; font-size:${(34 + rnd() * 18).toFixed(0)}px">${trees[i % trees.length]}</div>`);
+  }
+  for (let i = 0; i < 60; i++) {
+    const x = 50 + rnd() * (W - 100), y = 60 + rnd() * (H - 120);
+    if (nearPath(x, y)) continue;
+    parts.push(`<div class="lw-deco" style="left:${x.toFixed(0)}px; top:${y.toFixed(0)}px; font-size:${(14 + rnd() * 8).toFixed(0)}px">${small[i % small.length]}</div>`);
+  }
+  world.innerHTML = parts.join('');
+  lobbyStage.appendChild(world);
+  lobbyWorld = world;
+
+  // 화면 가장자리 화살표: 황금 상자가 화면 밖에 있을 때 방향을 알려줌
+  const arrow = document.createElement('div');
+  arrow.className = 'lobby-golden-arrow hidden';
+  arrow.id = 'lobbyGoldenArrow';
+  arrow.innerHTML = '<span class="lga-icon">🎁</span><span class="lga-arrow">➤</span>';
+  lobbyStage.appendChild(arrow);
+}
+
+// ── 카메라: 내 위치가 화면 가운데에 오도록 지형을 옮깁니다 ──
+function lobbyCameraTo(x, y, durationMs){
+  if (!lobbyWorld) return;
+  const tx = lobbyStage.clientWidth / 2 - x * LOBBY_WORLD_W;
+  const ty = lobbyStage.clientHeight / 2 - y * LOBBY_WORLD_H;
+  lobbyWorld.style.transitionDuration = `${durationMs}ms`;
+  lobbyWorld.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+}
+// 지금 화면에 보이는 카메라 중심 (비율)
+function lobbyCameraCenter(){
+  const me = lobbyPlayers.get(lobbyMe);
+  return me ? lobbyPosAt(me.motion) : { x: 0.5, y: 0.5 };
+}
 
 function lobbyConnect(){
   lobbyWanted = true;
@@ -2901,13 +3056,18 @@ function lobbySend(data){
 // 앱을 내려두면 연결을 닫고, 다시 보면 이어 붙입니다.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { if (lobbyWs) { const keep = lobbyWanted; lobbyDisconnect(); lobbyWanted = keep; } }
-  else if (lobbyWanted && currentTab === 'guestbook' && socialTab === 'lobby') lobbyConnect();
+  else if (lobbyWanted && currentTab === 'lobby') lobbyConnect();
 });
 
 function clearLobbyStage(){
-  lobbyPlayers.forEach(entry => clearTimeout(entry.bubbleTimer));
+  lobbyPlayers.forEach(entry => { clearTimeout(entry.bubbleTimer); clearTimeout(entry.walkTimer); });
   lobbyPlayers.clear();
+  removeLobbyGolden();
+  clearInterval(lobbyNearTimer);
+  lobbyNearTimer = null;
+  lobbyMarker = null;
   lobbyStage.innerHTML = '';
+  lobbyWorld = null;
 }
 function updateLobbyCount(){
   lobbyStatusEl.textContent = `🟢 접속 ${lobbyPlayers.size}명`;
@@ -2917,10 +3077,16 @@ function handleLobbyMessage(msg){
   if (msg.t === 'init') {
     lobbyRetry = 0;
     lobbyMe = msg.me;
+    if (msg.world) { LOBBY_WORLD_W = msg.world.w; LOBBY_WORLD_H = msg.world.h; LOBBY_WALK_PX_PER_SEC = msg.world.speed; }
     clearLobbyStage();
+    buildLobbyWorld();
     msg.players.forEach(addLobbyPlayer);
+    const me = lobbyPlayers.get(lobbyMe);
+    if (me) lobbyCameraTo(me.p.x, me.p.y, 0);
     lobbyLogEl.innerHTML = '';
     msg.chats.forEach(c => appendLobbyChat(c, false));
+    if (msg.golden) addLobbyGolden(msg.golden);
+    lobbyNearTimer = setInterval(updateLobbyGoldenHint, 250);
     updateLobbyCount();
   } else if (msg.t === 'join') {
     addLobbyPlayer(msg.p);
@@ -2935,17 +3101,56 @@ function handleLobbyMessage(msg){
     addLobbyPlayer(msg.p);
     if (msg.p.id === lobbyMe && currentUser) { currentUser.transcend_count = msg.p.transcend; renderMyNickname(); }
   } else if (msg.t === 'move') {
-    if (msg.id !== lobbyMe) moveLobbyPlayer(msg.id, msg.x, msg.y);
+    if (msg.id !== lobbyMe) walkLobbyPlayer(msg.id, msg.x, msg.y);
   } else if (msg.t === 'chat') {
     appendLobbyChat(msg.c, true);
   } else if (msg.t === 'notice') {
     showToast(msg.text, true);
+  } else if (msg.t === 'gspawn') {
+    addLobbyGolden(msg.g);
+    showToast('✨ 광장 어딘가에 황금 상자가 나타났어요! 🎁 를 따라가 톡톡 두드려 보세요');
+  } else if (msg.t === 'gmove') {
+    if (lobbyGolden) {
+      const cur = lobbyPosAt(lobbyGolden.motion);
+      lobbyGolden.motion = { x0: cur.x, y0: cur.y, x1: msg.x, y1: msg.y, t0: performance.now(), dur: msg.dur };
+      placeLobbyEl(lobbyGolden.el, msg.x, msg.y, msg.dur);
+    }
+  } else if (msg.t === 'ghit') {
+    if (lobbyGolden) {
+      lobbyGolden.hp = msg.hp;
+      renderGoldenHp();
+      const body = lobbyGolden.el.querySelector('.lg-body');
+      body.classList.remove('hit'); void body.offsetWidth; body.classList.add('hit');
+    }
+  } else if (msg.t === 'gfar') {
+    showToast('조금 더 가까이 가서 두드려요!', true);
+  } else if (msg.t === 'gopen') {
+    if (lobbyGolden) {
+      const el = lobbyGolden.el;
+      el.classList.add('opened');
+      el.querySelector('.lg-hint').textContent = msg.by.includes(lobbyMe) ? '🎉 열렸다!' : '누군가 열었어요';
+      lobbyGolden = null;
+      setTimeout(() => el.remove(), 1400);
+    }
+    document.getElementById('lobbyGoldenArrow')?.classList.add('hidden');
+  } else if (msg.t === 'ggone') {
+    removeLobbyGolden();
+    showToast('황금 상자가 사라졌어요… 다음에 또 나타나요');
+  } else if (msg.t === 'greward') {
+    showToast(`🎁 황금 상자 보상! +${formatGold(msg.gold)}G${msg.shards ? ` · 💎 +${msg.shards}` : ''}`);
+    if (typeof msg.totalTreasure === 'number') setGold(msg.totalTreasure);
   }
 }
 
 function lobbyNameHtml(p){
   const title = p.title ? `<span class="rank-title" title="${escapeHtml(p.title.name)}">${p.title.emoji}</span>` : '';
   return `${title}<span class="lp-nick">${escapeHtml(p.nickname)}</span>${transcendBadgeHtml(p.transcend)}`;
+}
+// 지형 위 (x, y) 자리로 요소를 옮깁니다. 아래쪽에 있을수록 앞으로 보이게 z-index
+function placeLobbyEl(el, x, y, durationMs){
+  el.style.transitionDuration = `${durationMs}ms`;
+  el.style.transform = `translate3d(${x * LOBBY_WORLD_W}px, ${y * LOBBY_WORLD_H}px, 0)`;
+  el.style.zIndex = String(10 + Math.round(y * 1000));
 }
 function addLobbyPlayer(p){
   const tier = transcendTier(p.transcend || 0);
@@ -2959,46 +3164,154 @@ function addLobbyPlayer(p){
       ${tier >= 5 ? '<span class="lp-crown">👑</span>' : ''}
     </div>
     <div class="lp-name">${lobbyNameHtml(p)}</div>`;
-  lobbyStage.appendChild(el);
-  const entry = { p: { ...p }, el, bubbleTimer: null };
+  lobbyWorld.appendChild(el);
+  const entry = { p: { ...p }, el, bubbleTimer: null, motion: { x0: p.x, y0: p.y, x1: p.x, y1: p.y, t0: performance.now(), dur: 0 } };
   lobbyPlayers.set(p.id, entry);
-  placeLobbyPlayer(entry, 0);
+  placeLobbyEl(el, p.x, p.y, 0);
+  // 걷던 중에 들어왔으면 남은 길을 이어서 걷기
+  if (p.dur > 0 && (p.tx !== p.x || p.ty !== p.y)) requestAnimationFrame(() => walkLobbyPlayer(p.id, p.tx, p.ty));
 }
-function lobbyPixel(x, y){
-  return { px: x * lobbyStage.clientWidth, py: y * lobbyStage.clientHeight };
-}
-function placeLobbyPlayer(entry, durationMs){
-  const { px, py } = lobbyPixel(entry.p.x, entry.p.y);
-  entry.el.style.transitionDuration = `${durationMs}ms`;
-  entry.el.style.transform = `translate(${px}px, ${py}px)`;
-  entry.el.style.zIndex = String(10 + Math.round(entry.p.y * 100)); // 아래쪽에 있을수록 앞으로
-}
-function moveLobbyPlayer(id, x, y){
+// (x, y)로 걸어가기. 반환: 걸리는 시간(ms)
+function walkLobbyPlayer(id, x, y){
   const entry = lobbyPlayers.get(id);
-  if (!entry) return;
-  const from = lobbyPixel(entry.p.x, entry.p.y);
-  const to = lobbyPixel(x, y);
-  const dist = Math.hypot(to.px - from.px, to.py - from.py);
-  if (Math.abs(to.px - from.px) > 2) entry.el.classList.toggle('face-left', to.px < from.px);
+  if (!entry) return 0;
+  const now = performance.now();
+  const cur = lobbyPosAt(entry.motion, now);
+  const durationMs = Math.round(lobbyDistPx(cur, { x, y }) / LOBBY_WALK_PX_PER_SEC * 1000);
+  // 걷는 도중에 방향을 바꾸면 지금 자리에서 바로 이어 걷도록, 먼저 지금 위치로 고정
+  placeLobbyEl(entry.el, cur.x, cur.y, 0);
+  void entry.el.offsetWidth;
+  if (Math.abs(x - cur.x) * LOBBY_WORLD_W > 2) entry.el.classList.toggle('face-left', x < cur.x);
+  entry.motion = { x0: cur.x, y0: cur.y, x1: x, y1: y, t0: now, dur: durationMs };
   entry.p.x = x;
   entry.p.y = y;
-  const durationMs = Math.round(dist / LOBBY_WALK_PX_PER_SEC * 1000);
-  placeLobbyPlayer(entry, durationMs);
+  placeLobbyEl(entry.el, x, y, durationMs);
   // 걷는 동안만 통통 튀는 모션
   entry.el.classList.add('walking');
   clearTimeout(entry.walkTimer);
   entry.walkTimer = setTimeout(() => entry.el.classList.remove('walking'), durationMs);
+  if (id === lobbyMe) {
+    lobbyCameraTo(cur.x, cur.y, 0); // 카메라도 지금 자리에서 이어서
+    void lobbyWorld.offsetWidth;
+    lobbyCameraTo(x, y, durationMs);
+  }
+  return durationMs;
 }
-// 바닥을 누르면 그 자리로 걸어갑니다. (가장자리는 이름이 잘리지 않게 조금 띄움)
+
+// 바닥을 누르면 그 자리로 걸어가고, 누른 곳에 표시가 남습니다.
 lobbyStage.addEventListener('click', (e) => {
-  if (!lobbyMe || !lobbyPlayers.has(lobbyMe)) return;
+  if (!lobbyWorld || !lobbyMe || !lobbyPlayers.has(lobbyMe)) return;
+  if (e.target.closest('.lobby-golden')) return; // 황금 상자 누르기는 따로 처리
   const rect = lobbyStage.getBoundingClientRect();
-  const x = Math.min(0.94, Math.max(0.06, (e.clientX - rect.left) / rect.width));
-  const y = Math.min(0.95, Math.max(0.2, (e.clientY - rect.top) / rect.height));
-  moveLobbyPlayer(lobbyMe, x, y);
-  lobbySend({ t: 'move', x, y });
+  const cam = lobbyCameraCenter();
+  const x = cam.x + (e.clientX - rect.left - rect.width / 2) / LOBBY_WORLD_W;
+  const y = cam.y + (e.clientY - rect.top - rect.height / 2) / LOBBY_WORLD_H;
+  lobbyWalkMeTo(x, y);
 });
-window.addEventListener('resize', () => lobbyPlayers.forEach(entry => placeLobbyPlayer(entry, 0)));
+function lobbyWalkMeTo(rawX, rawY){
+  const x = Math.min(LOBBY_WALK.maxX, Math.max(LOBBY_WALK.minX, rawX));
+  const y = Math.min(LOBBY_WALK.maxY, Math.max(LOBBY_WALK.minY, rawY));
+  const durationMs = walkLobbyPlayer(lobbyMe, x, y);
+  showLobbyMarker(x, y, durationMs);
+  lobbySend({ t: 'move', x, y });
+}
+function showLobbyMarker(x, y, durationMs){
+  if (lobbyMarker) lobbyMarker.remove();
+  const marker = document.createElement('div');
+  marker.className = 'lobby-marker';
+  marker.innerHTML = '<span class="lm-ring"></span><span class="lm-ring r2"></span><span class="lm-dot"></span>';
+  marker.style.transform = `translate3d(${x * LOBBY_WORLD_W}px, ${y * LOBBY_WORLD_H}px, 0)`;
+  lobbyWorld.appendChild(marker);
+  lobbyMarker = marker;
+  setTimeout(() => { if (lobbyMarker === marker) { marker.remove(); lobbyMarker = null; } }, Math.max(700, durationMs));
+}
+window.addEventListener('resize', () => {
+  if (!lobbyWorld) return;
+  const cam = lobbyCameraCenter();
+  const me = lobbyPlayers.get(lobbyMe);
+  lobbyCameraTo(cam.x, cam.y, 0);
+  if (me && me.motion.dur) { void lobbyWorld.offsetWidth; lobbyCameraTo(me.motion.x1, me.motion.y1, Math.max(0, me.motion.t0 + me.motion.dur - performance.now())); }
+});
+
+// ── 황금 상자: 가까이 가면 "톡톡!" 손가락이 뜨고, 누를 때마다 흔들리며 금이 갑니다 ──
+function addLobbyGolden(g){
+  removeLobbyGolden();
+  const el = document.createElement('div');
+  el.className = 'lobby-golden';
+  el.innerHTML = `
+    <div class="lg-hint">👆 가까이 가서 톡톡!</div>
+    <div class="lg-body"><span class="lg-glow"></span><img src="icons/items/gold_chest.svg" alt="황금 상자" draggable="false"></div>
+    <div class="lg-hp"><div class="lg-hp-fill"></div></div>`;
+  lobbyWorld.appendChild(el);
+  lobbyGolden = { id: g.id, el, hp: g.hp, maxHp: g.maxHp,
+    motion: { x0: g.x, y0: g.y, x1: g.x, y1: g.y, t0: performance.now(), dur: 0 } };
+  placeLobbyEl(el, g.x, g.y, 0);
+  renderGoldenHp();
+  if (g.dur > 0) {
+    requestAnimationFrame(() => {
+      if (!lobbyGolden || lobbyGolden.el !== el) return;
+      lobbyGolden.motion = { x0: g.x, y0: g.y, x1: g.tx, y1: g.ty, t0: performance.now(), dur: g.dur };
+      placeLobbyEl(el, g.tx, g.ty, g.dur);
+    });
+  }
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!lobbyGolden || lobbyGolden.el !== el) return;
+    const me = lobbyPlayers.get(lobbyMe);
+    if (!me) return;
+    const box = lobbyPosAt(lobbyGolden.motion);
+    if (lobbyDistPx(lobbyPosAt(me.motion), box) <= LOBBY_TAP_RANGE_PX) {
+      lobbySend({ t: 'gtap' });
+      if (navigator.vibrate) navigator.vibrate(20);
+    } else {
+      // 멀면 상자 쪽으로 걸어감 (바로 옆까지)
+      lobbyWalkMeTo(box.x, box.y + 50 / LOBBY_WORLD_H);
+    }
+  });
+  updateLobbyGoldenHint();
+}
+function removeLobbyGolden(){
+  if (lobbyGolden) lobbyGolden.el.remove();
+  lobbyGolden = null;
+  document.getElementById('lobbyGoldenArrow')?.classList.add('hidden');
+}
+function renderGoldenHp(){
+  if (!lobbyGolden) return;
+  const ratio = Math.max(0, lobbyGolden.hp / lobbyGolden.maxHp);
+  lobbyGolden.el.querySelector('.lg-hp-fill').style.transform = `scaleX(${ratio})`;
+  lobbyGolden.el.classList.toggle('cracked', ratio <= 0.5);
+}
+// 0.25초마다: 가까운지(톡톡 표시) · 화면 밖이면 가장자리 화살표
+function updateLobbyGoldenHint(){
+  const arrow = document.getElementById('lobbyGoldenArrow');
+  if (!lobbyGolden || !arrow) { arrow?.classList.add('hidden'); return; }
+  const me = lobbyPlayers.get(lobbyMe);
+  if (!me) return;
+  const mePos = lobbyPosAt(me.motion);
+  const box = lobbyPosAt(lobbyGolden.motion);
+  const near = lobbyDistPx(mePos, box) <= LOBBY_TAP_RANGE_PX;
+  lobbyGolden.el.classList.toggle('near', near);
+  lobbyGolden.el.querySelector('.lg-hint').textContent = near ? '👆 톡톡! 두드려요' : '🎁 황금 상자';
+  // 화면 밖이면 가장자리에 방향 화살표
+  const dx = (box.x - mePos.x) * LOBBY_WORLD_W;
+  const dy = (box.y - mePos.y) * LOBBY_WORLD_H;
+  const hw = lobbyStage.clientWidth / 2 - 28;
+  const hh = lobbyStage.clientHeight / 2 - 28;
+  const off = Math.abs(dx) > hw || Math.abs(dy) > hh;
+  arrow.classList.toggle('hidden', !off);
+  if (off) {
+    const k = Math.min(hw / Math.abs(dx || 1), hh / Math.abs(dy || 1));
+    arrow.style.transform = `translate(${hw + 28 + dx * k}px, ${hh + 28 + dy * k}px)`;
+    arrow.querySelector('.lga-arrow').style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+  }
+}
+// 화살표를 누르면 그쪽으로 걸어감
+lobbyStage.addEventListener('click', (e) => {
+  if (!e.target.closest('#lobbyGoldenArrow') || !lobbyGolden) return;
+  e.stopPropagation();
+  const box = lobbyPosAt(lobbyGolden.motion);
+  lobbyWalkMeTo(box.x, box.y + 50 / LOBBY_WORLD_H);
+}, true);
 
 function appendLobbyChat(c, showBubble){
   const line = document.createElement('div');
