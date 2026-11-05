@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261105a">
+<link rel="stylesheet" href="style.css?v=20261105b">
 </head>
 <body>
 
@@ -497,8 +497,17 @@
   <!-- 광장 (실시간): 넓은 지형 위를 상자 캐릭터로 돌아다니며 채팅 · 가끔 나타나는 황금 상자 -->
   <div class="card hidden" id="lobbyScreen">
     <div id="lobbyView">
-      <div class="lobby-head"><span id="lobbyStatus">연결 중...</span><small>바닥을 누르면 걸어가요 · 가끔 나타나는 🎁 황금 상자를 톡톡!</small></div>
+      <div class="lobby-head">
+        <span id="lobbyStatus">연결 중...</span>
+        <button class="lobby-rooms-btn hidden" id="lobbyRoomsBtn" aria-expanded="false">🚪 방 목록</button>
+      </div>
+      <!-- 방 목록 (1~9번방): 모든 방이 차면 이 목록에서 대기, 방 안에서는 버튼으로 열어 방 바꾸기 -->
+      <div class="lobby-rooms hidden" id="lobbyRooms">
+        <p class="lobby-rooms-msg" id="lobbyRoomsMsg"></p>
+        <div class="lobby-rooms-grid" id="lobbyRoomsGrid"></div>
+      </div>
       <div class="lobby-stage" id="lobbyStage"></div>
+      <p class="lobby-tip">바닥을 누르면 걸어가요 · 가끔 나타나는 🎁 황금 상자를 톡톡!</p>
       <div class="lobby-log" id="lobbyLog"></div>
       <form class="lobby-form" id="lobbyForm">
         <input id="lobbyInput" maxlength="60" autocomplete="off" placeholder="광장에 한마디 (60자)">
@@ -539,7 +548,7 @@
   <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
 </nav>
 
-<script src="app.js?v=20261105a"></script>
+<script src="app.js?v=20261105b"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {

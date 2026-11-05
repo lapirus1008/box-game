@@ -2193,3 +2193,35 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 .tip-lock{ background:var(--surface-2); color:var(--ink); border:1px solid #2C3F6B; }
 .tip-craft{ background:#7dffb0; color:#0b2a1a; }
 .tip-craft:disabled{ background:#2a3550; color:#7a86a3; }
+
+/* -------------------------------
+   광장 방 목록 (1~9번방)
+   ------------------------------- */
+.lobby-head{ align-items:center; }
+.lobby-rooms-btn{
+  width:auto; margin:0; padding:6px 12px; border-radius:999px; font-size:12px; font-weight:800;
+  background:var(--surface-2); color:var(--ink); border:1px solid #2C3F6B;
+}
+.lobby-rooms-btn.active{ background:var(--gold); color:#1A1305; border-color:var(--gold); }
+.lobby-rooms{ margin-bottom:8px; padding:10px; border-radius:12px; background:var(--surface-2); border:1px solid #2C3F6B; }
+.lobby-rooms-msg{ margin:0 0 8px; font-size:11px; color:var(--ink-dim); text-align:center; }
+.lobby-rooms-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+.lobby-room{
+  display:flex; flex-direction:column; align-items:center; gap:2px; margin:0; padding:8px 4px 7px;
+  border-radius:10px; background:#152040; border:1px solid #2C3F6B; color:var(--ink);
+}
+.lobby-room strong{ font-size:13px; }
+.lr-count{ font-size:12px; font-weight:800; color:#7dffb0; }
+.lobby-room.busy .lr-count{ color:#ffd36e; }
+.lobby-room.full .lr-count{ color:#ff8a8a; }
+.lr-state{ font-size:10px; color:var(--ink-dim); }
+.lr-bar{ width:80%; height:4px; margin-top:3px; border-radius:3px; background:#0c1428; overflow:hidden; }
+.lr-bar > span{ display:block; height:100%; background:#4fd1c5; }
+.lobby-room.busy .lr-bar > span{ background:#ffd36e; }
+.lobby-room.full .lr-bar > span{ background:#ff8a8a; }
+.lobby-room.current{ border-color:var(--gold); box-shadow:inset 0 0 0 1px var(--gold); }
+.lobby-room.current .lr-state{ color:var(--gold); font-weight:800; }
+.lobby-room:disabled{ opacity:0.55; }
+.lobby-tip{ margin:6px 0 0; font-size:11px; color:var(--ink-dim); text-align:center; }
+/* 모든 방이 가득 차서 목록에서 기다리는 중에는 채팅·안내를 숨김 */
+#lobbyView.waiting .lobby-log, #lobbyView.waiting .lobby-form, #lobbyView.waiting .lobby-tip, #lobbyView.waiting .lobby-hint{ display:none; }

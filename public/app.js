@@ -2943,6 +2943,8 @@ let lobbyWorld = null;
 let lobbyGolden = null;        // { id, el, motion, hp, maxHp }
 let lobbyNearTimer = null;
 let lobbyMarker = null;
+let lobbyRoomNo = null;        // 지금 들어가 있는 방 (목록에서 대기 중이면 null)
+let lobbyRoomList = [];
 
 // 움직임 { x0, y0, x1, y1, t0, dur } 에서 지금 위치 (서버 posAt 과 같은 계산)
 function lobbyPosAt(m, now = performance.now()){
@@ -3046,6 +3048,10 @@ function lobbyConnect(){
 }
 function lobbyDisconnect(){
   lobbyWanted = false;
+  lobbyRoomNo = null;
+  lobbyRoomsBtn.classList.add('hidden');
+  setLobbyRoomsOpen(false);
+  lobbyStage.classList.remove('hidden');
   clearTimeout(lobbyRetryTimer);
   if (lobbyWs) { const ws = lobbyWs; lobbyWs = null; ws.close(1000); }
   clearLobbyStage();
@@ -3070,13 +3076,71 @@ function clearLobbyStage(){
   lobbyWorld = null;
 }
 function updateLobbyCount(){
-  lobbyStatusEl.textContent = `🟢 접속 ${lobbyPlayers.size}명`;
+  if (!lobbyRoomNo) return;
+  const info = lobbyRoomList.find(r => r.no === lobbyRoomNo);
+  lobbyStatusEl.textContent = `🟢 ${lobbyRoomNo}번방 · ${lobbyPlayers.size}/${info ? info.max : '?'}명`;
 }
 
+// ── 방 목록 (1~9번방) ──
+const lobbyRoomsEl = document.getElementById('lobbyRooms');
+const lobbyRoomsBtn = document.getElementById('lobbyRoomsBtn');
+function renderLobbyRooms(){
+  const grid = document.getElementById('lobbyRoomsGrid');
+  grid.innerHTML = lobbyRoomList.map(r => {
+    const full = r.count >= r.max;
+    const current = r.no === lobbyRoomNo;
+    const level = full ? 'full' : r.count >= r.max * 0.7 ? 'busy' : r.count > 0 ? 'some' : 'empty';
+    return `<button class="lobby-room ${level}${current ? ' current' : ''}" data-room="${r.no}" ${full && !current ? 'disabled' : ''}>
+      <strong>${r.no}번방</strong>
+      <span class="lr-count">${r.count}/${r.max}</span>
+      <span class="lr-state">${current ? '지금 여기' : full ? '가득 참' : '들어가기'}</span>
+      <span class="lr-bar"><span style="width:${Math.round(r.count / r.max * 100)}%"></span></span>
+    </button>`;
+  }).join('');
+  const msg = document.getElementById('lobbyRoomsMsg');
+  msg.textContent = lobbyRoomNo
+    ? '다른 방으로 옮기면 그 방의 광장 한가운데에서 시작해요'
+    : '모든 방이 가득 찼어요 · 자리가 나면 눌러서 들어갈 수 있어요';
+}
+function setLobbyRoomsOpen(open){
+  lobbyRoomsEl.classList.toggle('hidden', !open);
+  lobbyRoomsBtn.setAttribute('aria-expanded', String(open));
+  lobbyRoomsBtn.classList.toggle('active', open);
+  if (open) renderLobbyRooms();
+}
+lobbyRoomsBtn.addEventListener('click', () => setLobbyRoomsOpen(lobbyRoomsEl.classList.contains('hidden')));
+document.getElementById('lobbyRoomsGrid').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-room]');
+  if (!btn || btn.disabled) return;
+  const no = Number(btn.dataset.room);
+  if (no === lobbyRoomNo) { setLobbyRoomsOpen(false); return; }
+  lobbyStatusEl.textContent = `${no}번방으로 가는 중...`;
+  lobbySend({ t: 'room', no });
+});
+
 function handleLobbyMessage(msg){
-  if (msg.t === 'init') {
+  if (msg.t === 'rooms') {
+    lobbyRoomList = msg.rooms;
+    if (!lobbyRoomsEl.classList.contains('hidden')) renderLobbyRooms();
+    updateLobbyCount();
+  } else if (msg.t === 'allfull') {
+    // 모든 방이 가득: 지형 대신 목록만 보여주고 기다림
+    lobbyRetry = 0;
+    lobbyRoomNo = null;
+    clearLobbyStage();
+    lobbyStage.classList.add('hidden');
+    document.getElementById('lobbyView').classList.add('waiting');
+    lobbyRoomsBtn.classList.add('hidden');
+    lobbyStatusEl.textContent = '⏳ 모든 방이 가득 찼어요';
+    setLobbyRoomsOpen(true);
+  } else if (msg.t === 'init') {
     lobbyRetry = 0;
     lobbyMe = msg.me;
+    lobbyRoomNo = msg.room;
+    lobbyStage.classList.remove('hidden');
+    document.getElementById('lobbyView').classList.remove('waiting');
+    lobbyRoomsBtn.classList.remove('hidden');
+    setLobbyRoomsOpen(false);
     if (msg.world) { LOBBY_WORLD_W = msg.world.w; LOBBY_WORLD_H = msg.world.h; LOBBY_WALK_PX_PER_SEC = msg.world.speed; }
     clearLobbyStage();
     buildLobbyWorld();
