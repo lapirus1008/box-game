@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261104a">
+<link rel="stylesheet" href="style.css?v=20261105a">
 </head>
 <body>
 
@@ -319,6 +319,22 @@
       <div class="skill-row" id="skillRow"></div>
     </div>
 
+    <!-- 오늘의 미션 · 업적 (수집모드): 따로 메뉴 없이 홈에서 접었다 펴서 보고 바로 받기 -->
+    <div class="home-missions collection-only" id="homeMissions">
+      <button class="home-missions-head" id="homeMissionsToggle" aria-expanded="false">
+        <span>📅 오늘의 미션 · 업적</span>
+        <span class="home-missions-summary" id="homeMissionsSummary"></span>
+        <span class="home-missions-arrow">▾</span>
+      </button>
+      <div class="home-missions-body hidden" id="homeMissionsBody">
+        <div class="craft-result" id="achievementResult"></div>
+        <!-- 오늘의 미션 (매일 오전 9시 교체, 자동 개봉·자동 합성으로는 채워지지 않음) -->
+        <div class="mission-box" id="missionBox"></div>
+        <h3 class="dex-heading">🏅 업적</h3>
+        <div class="achievement-list" id="achievementList"></div>
+      </div>
+    </div>
+
     <div class="result-box" id="resultBox">
       <img class="result-icon hidden" id="treasureIcon" alt="">
       <div class="rarity-badge" id="rarityBadge"></div>
@@ -362,7 +378,6 @@
     <div class="nav-grid hidden">
       <button class="nav-tile" id="openCollectionBtn">🎒 가방·도감</button>
       <button class="nav-tile" id="openUpgradeBtn">🛠 강화</button>
-      <button class="nav-tile" id="openAchievementBtn">🏅 업적</button>
       <button class="nav-tile" id="openRankingBtn">🏆 랭킹</button>
     </div>
     <div class="bottom-actions">
@@ -418,9 +433,13 @@
 
     <!-- 가방: 지금 실제로 들고 있는 아이템 (합성 가능) -->
     <div id="runModeView">
-      <p class="lock-hint" id="runModeHint">같은 아이템 3개 → 한 등급 위로 합성 · 🔓 잠그면 재료에서 제외</p>
-      <button class="collection-link" id="craftAllBtn" style="margin-bottom:16px; background:var(--surface-2); border:1px solid var(--gold-dim); border-radius:10px; padding:10px; color:var(--gold); text-decoration:none;">⚡ 전체 합성 (가능한 만큼 한번에)</button>
-      <div class="collection-grid" id="runInventoryGrid"></div>
+      <div class="inv-toolbar">
+        <span class="lock-hint" id="runModeHint">칸을 누르면 설명 · 합성 · 잠금</span>
+        <button class="inv-craft-all" id="craftAllBtn">⚡ 전체 합성</button>
+      </div>
+      <!-- 게임 인벤토리처럼 아이콘 칸만. 누르면 itemTip 툴팁에 설명·합성·잠금 -->
+      <div class="inv-grid" id="runInventoryGrid"></div>
+      <div class="item-tip hidden" id="itemTip" role="dialog"></div>
     </div>
   </div>
 
@@ -452,18 +471,6 @@
   </div>
 
   <!-- 업적 화면 -->
-  <div class="card hidden" id="achievementScreen">
-    <div class="top-row">
-      <h1 style="margin:0; font-size:20px;">미션 · 업적</h1>
-      <button id="backFromAchievementBtn">← 돌아가기</button>
-    </div>
-    <p class="screen-sub">직접 플레이로 미션 달성 · 보상은 신화 조각(💎)</p>
-    <div class="craft-result" id="achievementResult"></div>
-    <!-- 오늘의 미션 (매일 오전 9시 교체, 자동 개봉·자동 합성으로는 채워지지 않음) -->
-    <div class="mission-box" id="missionBox"></div>
-    <h3 class="dex-heading">🏅 업적</h3>
-    <div class="achievement-list" id="achievementList"></div>
-  </div>
 
   <!-- 랭킹 화면 -->
   <div class="card hidden" id="rankingScreen">
@@ -487,18 +494,10 @@
     <div class="hidden" id="myRankFooter" style="margin-top:14px;"></div>
   </div>
 
-  <!-- 광장(실시간 대기실) + 방명록 -->
-  <div class="card hidden" id="guestbookScreen">
-    <div class="top-row">
-      <h1 style="margin:0; font-size:20px;">🎪 광장</h1>
-    </div>
-    <div class="mode-tabs">
-      <button class="mode-tab active" id="socialTabLobby">🎪 광장</button>
-      <button class="mode-tab" id="socialTabGuestbook">💬 방명록</button>
-    </div>
-
+  <!-- 광장 (실시간): 넓은 지형 위를 상자 캐릭터로 돌아다니며 채팅 · 가끔 나타나는 황금 상자 -->
+  <div class="card hidden" id="lobbyScreen">
     <div id="lobbyView">
-      <div class="lobby-head"><span id="lobbyStatus">연결 중...</span><small>바닥을 누르면 그쪽으로 걸어가요</small></div>
+      <div class="lobby-head"><span id="lobbyStatus">연결 중...</span><small>바닥을 누르면 걸어가요 · 가끔 나타나는 🎁 황금 상자를 톡톡!</small></div>
       <div class="lobby-stage" id="lobbyStage"></div>
       <div class="lobby-log" id="lobbyLog"></div>
       <form class="lobby-form" id="lobbyForm">
@@ -507,8 +506,14 @@
       </form>
       <p class="lobby-hint">초월할수록 내 상자 캐릭터와 이름에 화려한 효과가 붙어요 · 수집모드 강화 탭에서 상자 강화 +20 → 초월</p>
     </div>
+  </div>
 
-    <div id="guestbookView" class="hidden">
+  <!-- 방명록 -->
+  <div class="card hidden" id="guestbookScreen">
+    <div class="top-row">
+      <h1 style="margin:0; font-size:20px;">💬 방명록</h1>
+    </div>
+    <div id="guestbookView">
     <p class="screen-sub">자유롭게 한마디 · 불쾌한 글은 신고 시 즉시 숨김</p>
     <form class="guestbook-form" id="guestbookForm">
       <textarea id="guestbookInput" maxlength="200" rows="2" placeholder="한마디 남기기 (200자까지)"></textarea>
@@ -529,12 +534,12 @@
   <button class="tab-item" data-tab="bag"><span class="tab-icon">🎒</span><small>가방</small></button>
   <button class="tab-item collection-only" data-tab="dex"><span class="tab-icon">📖</span><small>도감</small></button>
   <button class="tab-item" data-tab="upgrade"><span class="tab-icon">🛠</span><small>강화</small></button>
-  <button class="tab-item collection-only" data-tab="achievement"><span class="tab-icon">📅</span><small>미션</small><span class="nav-badge hidden" id="achievementBadge"></span></button>
   <button class="tab-item" data-tab="ranking"><span class="tab-icon">🏆</span><small>랭킹</small></button>
-  <button class="tab-item" data-tab="guestbook"><span class="tab-icon">🎪</span><small>광장</small></button>
+  <button class="tab-item" data-tab="lobby"><span class="tab-icon">🎪</span><small>광장</small></button>
+  <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
 </nav>
 
-<script src="app.js?v=20261104a"></script>
+<script src="app.js?v=20261105a"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {
