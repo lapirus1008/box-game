@@ -27,10 +27,13 @@ app.use(express.json({ limit: '10kb' })); // 요청 body를 JSON으로 자동 �
 // 모든 API에 적용되는 기본 방어선. IP 하나가 짧은 시간에 너무 많은 요청을 보내는 걸 막습니다.
 // 모바일 통신망·같은 와이파이는 여러 사람이 IP 하나를 같이 쓰므로 넉넉하게 둡니다.
 // (계정별 제한은 아래 boxLimiter, 로그인/가입은 routes/auth.js에 더 엄격한 제한이 따로 있습니다.)
+// 로그인한 요청은 계정마다, 아니면 IP마다 셉니다. (같은 와이파이·통신사 망은 여러 사람이 IP 하나를 같이 써서,
+// IP로만 세면 남의 요청 때문에 내 게임이 막힐 수 있음) 아래 계정별 한도보다 넉넉하게 둡니다.
 const globalLimiter = createLimiter({
   name: 'global',
   windowMs: 60 * 1000, // 1분
-  max: 600,            // 같은 IP에서 분당 600회까지
+  max: 1500,           // 계정(또는 IP)마다 분당 1500회까지
+  keyGenerator: userOrIpKey,
 });
 app.use(globalLimiter);
 
@@ -67,7 +70,9 @@ app.use('/api/auth', authRoutes);
 const boxLimiter = createLimiter({
   name: 'box',
   windowMs: 60 * 1000, // 1분
-  max: 300,            // 계정마다 분당 300회까지 (초당 5회꼴 - 강화·상자를 빠르게 연타해도 걸리지 않을 수치)
+  // 계정마다 분당 1200회까지 = 초당 20번을 1분 내내.
+  // 사람이 손가락으로 가장 빠르게 연타해도(두 손가락 번갈아 초당 15~20번) 막히지 않고, 스크립트 폭주만 걸리는 수치
+  max: 1200,
   keyGenerator: userOrIpKey,
 });
 
