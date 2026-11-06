@@ -2246,3 +2246,74 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 body[data-tab="lobby"] #goldenBox{ display:none !important; }
 /* 광장은 화면을 넓게 쓰도록 카드 옆 여백을 줄임 */
 #lobbyScreen{ padding:24px 12px 20px; }
+
+/* -------------------------------
+   광장: 초월 사냥 혜택 · 거대 황금 상자 레이드
+   ------------------------------- */
+.lobby-perks{
+  margin:0 0 6px; padding:6px 10px; border-radius:10px; background:var(--surface-2);
+  font-size:11px; line-height:1.5; color:var(--ink-dim);
+}
+.lobby-perks strong{ color:var(--ink); }
+/* 거대 상자 (작은 황금 상자보다 크고, 붉은 금빛 기운) */
+.lobby-raid{
+  position:absolute; left:0; top:0; width:170px; margin-left:-85px; margin-top:-110px;
+  display:flex; flex-direction:column; align-items:center; cursor:pointer;
+  transition-property:transform; transition-timing-function:linear; will-change:transform;
+}
+.lr-hint{
+  padding:4px 10px; margin-bottom:4px; border-radius:10px; white-space:nowrap;
+  background:rgba(60,0,0,0.7); color:#ffd36e; font-size:12px; font-weight:900;
+}
+.lobby-raid.near .lr-hint{ background:#ff6b3d; color:#fff; animation:lgHint 0.5s ease-in-out infinite alternate; }
+.lr-body{ position:relative; width:104px; height:104px; animation:lgFloat 1.2s ease-in-out infinite alternate; }
+.lr-body img{ position:relative; z-index:1; width:104px; height:104px; display:block; }
+.lr-aura{
+  position:absolute; inset:-26px; border-radius:50%;
+  background:radial-gradient(circle, rgba(255,120,60,0.75), rgba(255,210,110,0.35) 45%, transparent 70%);
+  animation:lpPulse 1s ease-in-out infinite;
+}
+.lr-body.hit{ animation:lgHit 0.2s ease-out; }
+.lobby-raid.cracked .lr-body img{ filter:brightness(1.3) saturate(1.4) hue-rotate(-12deg); }
+.lobby-raid.jumping .lr-body{ animation:lrJump 0.9s ease-in-out; }
+@keyframes lrJump{ 0%{ transform:translateY(0) scale(1); } 40%{ transform:translateY(-70px) scale(1.15); } 100%{ transform:translateY(0) scale(1); } }
+.lobby-raid.opened .lr-body{ animation:lgOpen 1.2s ease-out forwards; }
+.lobby-raid.escaped .lr-body{ animation:lrEscape 1.2s ease-in forwards; }
+@keyframes lrEscape{ to{ transform:translateY(-200px) scale(0.4); opacity:0; } }
+/* 피해 숫자 */
+.dmg-float{
+  position:absolute; left:0; top:0; z-index:2000; pointer-events:none; white-space:nowrap;
+  font-size:16px; font-weight:900; color:#fff; text-shadow:0 2px 0 #7a2a00, 0 0 4px #000;
+  animation:dmgUp 0.9s ease-out forwards;
+}
+.dmg-float.mine{ font-size:20px; color:#ffe9a8; }
+.dmg-float.crit{ font-size:22px; color:#ffd36e; text-shadow:0 2px 0 #b3001b, 0 0 8px #ff6b3d; }
+@keyframes dmgUp{ from{ opacity:1; margin-top:0; } to{ opacity:0; margin-top:-46px; } }
+/* 공용 체력바 (광장 화면 위쪽) */
+.lobby-raid-hud{
+  position:absolute; left:6px; right:6px; top:6px; z-index:3100; padding:5px 8px 5px; border-radius:10px;
+  background:rgba(20,8,8,0.78); border:1px solid #ff9e3d; pointer-events:none;
+}
+.lrh-top{ display:flex; align-items:center; gap:8px; font-size:11px; color:#ffe9c2; white-space:nowrap; }
+.lrh-top strong{ font-size:11px; color:#ffd36e; margin-right:auto; }
+.lobby-raid-hud.hurry .lrh-time{ color:#ff6b6b; font-weight:900; }
+.lrh-bar{ position:relative; height:11px; margin-top:3px; border-radius:6px; background:#3a1010; overflow:hidden; }
+.lrh-fill{ height:100%; background:linear-gradient(90deg, #ff6b3d, #ffd36e); transform-origin:left; transition:transform .15s; }
+.lrh-hp{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:900; color:#fff; text-shadow:0 0 2px #000; }
+/* 결과창 */
+.lobby-raid-result{
+  position:absolute; left:50%; top:50%; z-index:3200; width:min(260px, 86%); transform:translate(-50%, -50%);
+  padding:14px 14px 10px; border-radius:14px; background:rgba(15,23,48,0.96); border:1px solid var(--gold);
+  box-shadow:0 10px 30px rgba(0,0,0,0.5); text-align:center; color:var(--ink); cursor:pointer;
+}
+.lrr-title{ margin:0 0 4px; font-size:16px; font-weight:900; color:#ffd36e; }
+.lrr-sub{ margin:0 0 8px; font-size:11px; color:var(--ink-dim); }
+.lrr-row{ display:flex; justify-content:space-between; padding:4px 6px; border-radius:6px; font-size:12px; }
+.lrr-row.me{ background:rgba(255,211,110,0.15); }
+.lrr-row b{ padding:0 4px; border-radius:4px; background:#ffd36e; color:#3a2600; font-size:9px; }
+.lrr-mine{ margin:8px 0 0; font-size:12px; color:#9be7ff; }
+.lrr-close{ margin:6px 0 0; font-size:10px; color:var(--ink-dim); }
+.lobby-golden-arrow.raid{ background:rgba(255,120,60,0.95); box-shadow:0 0 14px rgba(255,120,60,0.9); }
+@media (prefers-reduced-motion: reduce){
+  .lr-body, .lr-aura, .lr-hint, .dmg-float{ animation:none !important; }
+}

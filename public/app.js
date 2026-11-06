@@ -2952,7 +2952,9 @@ let LOBBY_WORLD_W = 1500;
 let LOBBY_WORLD_H = 1100;
 let LOBBY_WALK_PX_PER_SEC = 160;
 const LOBBY_BUBBLE_MS = 5000;
-const LOBBY_TAP_RANGE_PX = 120;   // 이 거리 안이면 "톡톡!" (서버 판정은 조금 더 넉넉함)
+const LOBBY_TAP_RANGE_PX = 120;   // 이 거리 안이면 "톡톡!" (서버 판정은 조금 더 넉넉함) + 초월 사거리 혜택
+let lobbyPerks = { speedPct: 0, rangePx: 0, damage: 1, raidRangeBonusPx: 60 };
+const lobbyTapRange = (isRaid) => LOBBY_TAP_RANGE_PX + lobbyPerks.rangePx + (isRaid ? lobbyPerks.raidRangeBonusPx : 0);
 const LOBBY_WALK = { minX: 0.05, maxX: 0.95, minY: 0.07, maxY: 0.95 };
 let lobbyWs = null;
 let lobbyWanted = false;
@@ -2962,6 +2964,7 @@ let lobbyRetryTimer = null;
 const lobbyPlayers = new Map(); // id → { p: { x, y }, el, motion }
 let lobbyWorld = null;
 let lobbyGolden = null;        // { id, el, motion, hp, maxHp }
+let lobbyRaid = null;          // 거대 황금 상자 레이드 { id, el, motion, hp, maxHp, endsAt, party, myDmg }
 let lobbyNearTimer = null;
 let lobbyMarker = null;
 let lobbyRoomNo = null;        // 지금 들어가 있는 방 (목록에서 대기 중이면 null)
@@ -3026,6 +3029,20 @@ function buildLobbyWorld(){
   arrow.id = 'lobbyGoldenArrow';
   arrow.innerHTML = '<span class="lga-icon">🎁</span><span class="lga-arrow">➤</span>';
   lobbyStage.appendChild(arrow);
+
+  // 레이드 공용 체력바 (화면 위쪽 고정) · 결과창
+  const hud = document.createElement('div');
+  hud.className = 'lobby-raid-hud hidden';
+  hud.id = 'lobbyRaidHud';
+  hud.innerHTML = `
+    <div class="lrh-top"><strong>🐉 거대 황금 상자</strong><span class="lrh-party"></span><span class="lrh-mine"></span><span class="lrh-time"></span></div>
+    <div class="lrh-bar"><div class="lrh-fill"></div><span class="lrh-hp"></span></div>`;
+  lobbyStage.appendChild(hud);
+  const result = document.createElement('div');
+  result.className = 'lobby-raid-result hidden';
+  result.id = 'lobbyRaidResult';
+  lobbyStage.appendChild(result);
+  result.addEventListener('click', (e) => { e.stopPropagation(); result.classList.add('hidden'); });
 }
 
 // ── 카메라: 내 위치가 화면 가운데에 오도록 지형을 옮깁니다 ──
@@ -3090,6 +3107,7 @@ function clearLobbyStage(){
   lobbyPlayers.forEach(entry => { clearTimeout(entry.bubbleTimer); clearTimeout(entry.walkTimer); });
   lobbyPlayers.clear();
   removeLobbyGolden();
+  removeLobbyRaid();
   clearInterval(lobbyNearTimer);
   lobbyNearTimer = null;
   lobbyMarker = null;
@@ -3171,6 +3189,8 @@ function handleLobbyMessage(msg){
     lobbyLogEl.innerHTML = '';
     msg.chats.forEach(c => appendLobbyChat(c, false));
     if (msg.golden) addLobbyGolden(msg.golden);
+    if (msg.perks) { lobbyPerks = msg.perks; renderLobbyPerks(); }
+    if (msg.raid) addLobbyRaid(msg.raid);
     lobbyNearTimer = setInterval(updateLobbyGoldenHint, 250);
     updateLobbyCount();
   } else if (msg.t === 'join') {
@@ -3186,7 +3206,7 @@ function handleLobbyMessage(msg){
     addLobbyPlayer(msg.p);
     if (msg.p.id === lobbyMe && currentUser) { currentUser.transcend_count = msg.p.transcend; renderMyNickname(); }
   } else if (msg.t === 'move') {
-    if (msg.id !== lobbyMe) walkLobbyPlayer(msg.id, msg.x, msg.y);
+    if (msg.id !== lobbyMe) walkLobbyPlayer(msg.id, msg.x, msg.y, msg.dur);
   } else if (msg.t === 'chat') {
     appendLobbyChat(msg.c, true);
   } else if (msg.t === 'notice') {
@@ -3221,6 +3241,27 @@ function handleLobbyMessage(msg){
   } else if (msg.t === 'ggone') {
     removeLobbyGolden();
     showToast('황금 상자가 사라졌어요… 다음에 또 나타나요');
+  } else if (msg.t === 'perks') {
+    lobbyPerks = msg.perks;
+    renderLobbyPerks();
+  } else if (msg.t === 'rspawn') {
+    addLobbyRaid(msg.r);
+    showToast('🐉 거대 황금 상자 출현! 다 같이 두드려서 90초 안에 열어요!');
+    if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+  } else if (msg.t === 'rhit') {
+    onLobbyRaidHit(msg);
+  } else if (msg.t === 'rmove') {
+    if (lobbyRaid) {
+      const cur = lobbyPosAt(lobbyRaid.motion);
+      lobbyRaid.motion = { x0: cur.x, y0: cur.y, x1: msg.x, y1: msg.y, t0: performance.now(), dur: msg.dur };
+      lobbyRaid.el.classList.remove('jumping'); void lobbyRaid.el.offsetWidth; lobbyRaid.el.classList.add('jumping');
+      placeLobbyEl(lobbyRaid.el, msg.x, msg.y, msg.dur);
+      if (msg.jump) showToast('💨 거대 상자가 도망쳤어요! 🎁 를 따라가요');
+    }
+  } else if (msg.t === 'rend') {
+    onLobbyRaidEnd(msg);
+  } else if (msg.t === 'rreward') {
+    onLobbyRaidReward(msg);
   } else if (msg.t === 'greward') {
     showToast(`🎁 황금 상자 보상! +${formatGold(msg.gold)}G${msg.shards ? ` · 💎 +${msg.shards}` : ''}`);
     if (typeof msg.totalTreasure === 'number') setGold(msg.totalTreasure);
@@ -3257,15 +3298,17 @@ function addLobbyPlayer(p){
   lobbyPlayers.set(p.id, entry);
   placeLobbyEl(el, p.x, p.y, 0);
   // 걷던 중에 들어왔으면 남은 길을 이어서 걷기
-  if (p.dur > 0 && (p.tx !== p.x || p.ty !== p.y)) requestAnimationFrame(() => walkLobbyPlayer(p.id, p.tx, p.ty));
+  if (p.dur > 0 && (p.tx !== p.x || p.ty !== p.y)) requestAnimationFrame(() => walkLobbyPlayer(p.id, p.tx, p.ty, p.dur));
 }
 // (x, y)로 걸어가기. 반환: 걸리는 시간(ms)
-function walkLobbyPlayer(id, x, y){
+// durOverride: 서버가 알려준 걸리는 시간(다른 사람). 없으면 그 사람의 걷는 속도로 계산(나)
+function walkLobbyPlayer(id, x, y, durOverride){
   const entry = lobbyPlayers.get(id);
   if (!entry) return 0;
   const now = performance.now();
   const cur = lobbyPosAt(entry.motion, now);
-  const durationMs = Math.round(lobbyDistPx(cur, { x, y }) / LOBBY_WALK_PX_PER_SEC * 1000);
+  const speed = entry.p.speed || LOBBY_WALK_PX_PER_SEC;
+  const durationMs = typeof durOverride === 'number' ? durOverride : Math.round(lobbyDistPx(cur, { x, y }) / speed * 1000);
   // 걷는 도중에 방향을 바꾸면 지금 자리에서 바로 이어 걷도록, 먼저 지금 위치로 고정
   placeLobbyEl(entry.el, cur.x, cur.y, 0);
   void entry.el.offsetWidth;
@@ -3289,7 +3332,7 @@ function walkLobbyPlayer(id, x, y){
 // 바닥을 누르면 그 자리로 걸어가고, 누른 곳에 표시가 남습니다.
 lobbyStage.addEventListener('click', (e) => {
   if (!lobbyWorld || !lobbyMe || !lobbyPlayers.has(lobbyMe)) return;
-  if (e.target.closest('.lobby-golden')) return; // 황금 상자 누르기는 따로 처리
+  if (e.target.closest('.lobby-golden, .lobby-raid, .lobby-raid-result')) return; // 황금 상자·레이드 누르기는 따로 처리
   const other = e.target.closest('.lobby-player:not(.me)');
   if (other) { openUserAction({ id: Number(other.dataset.uid), nickname: other.dataset.name, source: 'lobby' }); return; }
   const rect = lobbyStage.getBoundingClientRect();
@@ -3350,7 +3393,7 @@ function addLobbyGolden(g){
     const me = lobbyPlayers.get(lobbyMe);
     if (!me) return;
     const box = lobbyPosAt(lobbyGolden.motion);
-    if (lobbyDistPx(lobbyPosAt(me.motion), box) <= LOBBY_TAP_RANGE_PX) {
+    if (lobbyDistPx(lobbyPosAt(me.motion), box) <= lobbyTapRange(false)) {
       lobbySend({ t: 'gtap' });
       if (navigator.vibrate) navigator.vibrate(20);
     } else {
@@ -3373,34 +3416,53 @@ function renderGoldenHp(){
 }
 // 0.25초마다: 가까운지(톡톡 표시) · 화면 밖이면 가장자리 화살표
 function updateLobbyGoldenHint(){
+  updateLobbyRaidHud();
   const arrow = document.getElementById('lobbyGoldenArrow');
-  if (!lobbyGolden || !arrow) { arrow?.classList.add('hidden'); return; }
+  // 화살표는 레이드 상자를 먼저 가리킴
+  const target = lobbyRaid || lobbyGolden;
+  if (!target || !arrow) { arrow?.classList.add('hidden'); return; }
   const me = lobbyPlayers.get(lobbyMe);
   if (!me) return;
   const mePos = lobbyPosAt(me.motion);
-  const box = lobbyPosAt(lobbyGolden.motion);
-  const near = lobbyDistPx(mePos, box) <= LOBBY_TAP_RANGE_PX;
-  lobbyGolden.el.classList.toggle('near', near);
-  lobbyGolden.el.querySelector('.lg-hint').textContent = near ? '👆 톡톡! 두드려요' : '🎁 황금 상자';
+  const box = lobbyPosAt(target.motion);
+  arrow.classList.toggle('raid', target === lobbyRaid);
+  arrow.querySelector('.lga-icon').textContent = target === lobbyRaid ? '🐉' : '🎁';
+  if (lobbyGolden) {
+    const near = lobbyDistPx(mePos, lobbyPosAt(lobbyGolden.motion)) <= lobbyTapRange(false);
+    lobbyGolden.el.classList.toggle('near', near);
+    lobbyGolden.el.querySelector('.lg-hint').textContent = near ? '👆 톡톡! 두드려요' : '🎁 황금 상자';
+  }
+  if (lobbyRaid) {
+    const near = lobbyDistPx(mePos, box) <= lobbyTapRange(true);
+    lobbyRaid.el.classList.toggle('near', near);
+    lobbyRaid.el.querySelector('.lr-hint').textContent = near ? '👊 연타! 다 같이 두드려요' : '🐉 거대 황금 상자';
+  }
   // 화면 밖이면 가장자리에 방향 화살표
   const dx = (box.x - mePos.x) * LOBBY_WORLD_W;
   const dy = (box.y - mePos.y) * LOBBY_WORLD_H;
   const hw = lobbyStage.clientWidth / 2 - 28;
   const hh = lobbyStage.clientHeight / 2 - 28;
+  // 레이드 체력바가 위쪽을 가리므로, 그 아래까지 와야 "보인다"고 봅니다
+  const hud = document.getElementById('lobbyRaidHud');
+  const hudBottom = hud && !hud.classList.contains('hidden') ? hud.offsetTop + hud.offsetHeight : 0;
+  const screenY = lobbyStage.clientHeight / 2 + dy;
   // 상자가 조금이라도 보이면 화살표를 띄우지 않음 (가장자리에서 상자를 가리지 않게)
-  const off = Math.abs(dx) > lobbyStage.clientWidth / 2 + 24 || Math.abs(dy) > lobbyStage.clientHeight / 2 + 24;
+  const off = Math.abs(dx) > lobbyStage.clientWidth / 2 + 24 || Math.abs(dy) > lobbyStage.clientHeight / 2 + 24
+    || (hudBottom && screenY < hudBottom + 30);
   arrow.classList.toggle('hidden', !off);
   if (off) {
-    const k = Math.min(hw / Math.abs(dx || 1), hh / Math.abs(dy || 1));
-    arrow.style.transform = `translate(${hw + 28 + dx * k}px, ${hh + 28 + dy * k}px)`;
+    const k = Math.min(hw / Math.abs(dx || 1), hh / Math.abs(dy || 1), 1);
+    const ay = Math.max(hudBottom + 26, hh + 28 + dy * k);
+    arrow.style.transform = `translate(${hw + 28 + dx * k}px, ${ay}px)`;
     arrow.querySelector('.lga-arrow').style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
   }
 }
 // 화살표를 누르면 그쪽으로 걸어감
 lobbyStage.addEventListener('click', (e) => {
-  if (!e.target.closest('#lobbyGoldenArrow') || !lobbyGolden) return;
+  const target = lobbyRaid || lobbyGolden;
+  if (!e.target.closest('#lobbyGoldenArrow') || !target) return;
   e.stopPropagation();
-  const box = lobbyPosAt(lobbyGolden.motion);
+  const box = lobbyPosAt(target.motion);
   lobbyWalkMeTo(box.x, box.y + 50 / LOBBY_WORLD_H);
 }, true);
 
@@ -3619,3 +3681,140 @@ document.getElementById('blockList').addEventListener('click', async (e) => {
     if (!document.querySelector('#blockList .block-row')) renderBlockList();
   } else btn.disabled = false;
 });
+
+// -------------------------------
+// 광장 레이드: 거대 황금 상자 (서버 lib/lobby.js 의 레이드와 짝)
+// - 90초 안에 방 사람들이 함께 두드려 체력을 깎음 · 60%·25% 아래로 내려가면 도망
+// - 피해 숫자·치명타 표시, 위쪽 공용 체력바, 끝나면 순위·MVP·내 보상
+// -------------------------------
+const lobbyPerksEl = document.getElementById('lobbyPerks');
+function renderLobbyPerks(){
+  const t = (currentUser && currentUser.transcend_count) || 0;
+  lobbyPerksEl.classList.remove('hidden');
+  lobbyPerksEl.innerHTML = t > 0
+    ? `${transcendBadgeHtml(t)} <strong>초월 사냥 혜택</strong> 이동 +${lobbyPerks.speedPct}% · 사거리 +${lobbyPerks.rangePx} · 한 번에 피해 ${lobbyPerks.damage}`
+    : '✦ <strong>초월하면 사냥이 쉬워져요</strong> · 이동 속도·사거리·피해가 초월 횟수만큼 올라요';
+}
+
+function addLobbyRaid(r){
+  removeLobbyRaid();
+  const el = document.createElement('div');
+  el.className = 'lobby-raid';
+  el.innerHTML = `
+    <div class="lr-hint">🐉 거대 황금 상자</div>
+    <div class="lr-body"><span class="lr-aura"></span><img src="icons/items/gold_chest.svg" alt="거대 황금 상자" draggable="false"></div>`;
+  lobbyWorld.appendChild(el);
+  lobbyRaid = {
+    id: r.id, el, hp: r.hp, maxHp: r.maxHp, party: r.party || 0, myDmg: 0,
+    endsAt: performance.now() + r.endsInMs,
+    motion: { x0: r.x, y0: r.y, x1: r.x, y1: r.y, t0: performance.now(), dur: 0 },
+  };
+  placeLobbyEl(el, r.x, r.y, 0);
+  if (r.dur > 0) {
+    requestAnimationFrame(() => {
+      if (!lobbyRaid || lobbyRaid.el !== el) return;
+      lobbyRaid.motion = { x0: r.x, y0: r.y, x1: r.tx, y1: r.ty, t0: performance.now(), dur: r.dur };
+      placeLobbyEl(el, r.tx, r.ty, r.dur);
+    });
+  }
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!lobbyRaid || lobbyRaid.el !== el) return;
+    const me = lobbyPlayers.get(lobbyMe);
+    if (!me) return;
+    const box = lobbyPosAt(lobbyRaid.motion);
+    if (lobbyDistPx(lobbyPosAt(me.motion), box) <= lobbyTapRange(true)) {
+      lobbySend({ t: 'rtap' });
+      if (navigator.vibrate) navigator.vibrate(15);
+    } else {
+      lobbyWalkMeTo(box.x, box.y + 70 / LOBBY_WORLD_H);
+    }
+  });
+  document.getElementById('lobbyRaidHud')?.classList.remove('hidden');
+  document.getElementById('lobbyRaidResult')?.classList.add('hidden');
+  updateLobbyRaidHud();
+}
+function removeLobbyRaid(){
+  if (lobbyRaid) lobbyRaid.el.remove();
+  lobbyRaid = null;
+  document.getElementById('lobbyRaidHud')?.classList.add('hidden');
+}
+function updateLobbyRaidHud(){
+  const hud = document.getElementById('lobbyRaidHud');
+  if (!hud || !lobbyRaid) return;
+  const ratio = Math.max(0, lobbyRaid.hp / lobbyRaid.maxHp);
+  const left = Math.max(0, Math.ceil((lobbyRaid.endsAt - performance.now()) / 1000));
+  hud.querySelector('.lrh-fill').style.transform = `scaleX(${ratio})`;
+  hud.querySelector('.lrh-hp').textContent = `${lobbyRaid.hp} / ${lobbyRaid.maxHp}`;
+  hud.querySelector('.lrh-time').textContent = `⏱ ${left}초`;
+  hud.classList.toggle('hurry', left <= 15);
+  hud.querySelector('.lrh-party').textContent = `👥${lobbyRaid.party}`;
+  hud.querySelector('.lrh-mine').textContent = lobbyRaid.myDmg ? `내 피해 ${lobbyRaid.myDmg}` : '가서 연타!';
+}
+// 피해 숫자를 상자 위에 띄움 (내 것은 크게, 치명타는 노랗게)
+function showLobbyDamage(dmg, crit, mine){
+  if (!lobbyRaid || !lobbyWorld) return;
+  const pos = lobbyPosAt(lobbyRaid.motion);
+  const el = document.createElement('div');
+  el.className = `dmg-float${crit ? ' crit' : ''}${mine ? ' mine' : ''}`;
+  el.textContent = crit ? `치명타! -${dmg}` : `-${dmg}`;
+  const jitter = (Math.random() - 0.5) * 60;
+  el.style.transform = `translate3d(${pos.x * LOBBY_WORLD_W + jitter}px, ${pos.y * LOBBY_WORLD_H - 70}px, 0)`;
+  lobbyWorld.appendChild(el);
+  setTimeout(() => el.remove(), 900);
+}
+function onLobbyRaidHit(msg){
+  if (!lobbyRaid) return;
+  lobbyRaid.hp = msg.hp;
+  lobbyRaid.party = msg.party;
+  const mine = msg.by === lobbyMe;
+  if (mine) lobbyRaid.myDmg += msg.dmg;
+  // 다른 사람 피해 숫자는 너무 많아지지 않게 일부만
+  if (mine || msg.crit || Math.random() < 0.5) showLobbyDamage(msg.dmg, msg.crit, mine);
+  const body = lobbyRaid.el.querySelector('.lr-body');
+  body.classList.remove('hit'); void body.offsetWidth; body.classList.add('hit');
+  lobbyRaid.el.classList.toggle('cracked', lobbyRaid.hp <= lobbyRaid.maxHp * 0.5);
+  updateLobbyRaidHud();
+}
+function onLobbyRaidEnd(msg){
+  const myDmg = lobbyRaid ? lobbyRaid.myDmg : 0;
+  if (lobbyRaid) {
+    const el = lobbyRaid.el;
+    el.classList.add(msg.success ? 'opened' : 'escaped');
+    lobbyRaid = null;
+    setTimeout(() => el.remove(), 1400);
+  }
+  document.getElementById('lobbyRaidHud')?.classList.add('hidden');
+  const medals = ['🥇', '🥈', '🥉'];
+  const rows = msg.ranking.slice(0, 3).map((r, i) => `
+    <div class="lrr-row${r.id === lobbyMe ? ' me' : ''}"><span>${medals[i]} ${escapeHtml(r.nickname)}${r.id === msg.mvp ? ' <b>MVP</b>' : ''}</span><span>${r.dmg}</span></div>`).join('');
+  const result = document.getElementById('lobbyRaidResult');
+  if (!result) return;
+  result.innerHTML = msg.success
+    ? `<p class="lrr-title">🎉 레이드 성공!</p>
+       <p class="lrr-sub">참가 ${msg.party}명 · 파티 보너스 +${msg.bonusPct}%</p>
+       ${rows}
+       <p class="lrr-mine" id="lobbyRaidMine">${myDmg ? `내 피해 ${myDmg} · 보상 받는 중...` : '이번엔 참가하지 못했어요'}</p>
+       <p class="lrr-close">눌러서 닫기</p>`
+    : `<p class="lrr-title">💨 거대 상자가 달아났어요…</p>
+       <p class="lrr-sub">90초 안에 체력을 다 깎아야 해요. 다음엔 더 많이 모여요!</p>
+       ${rows}
+       <p class="lrr-close">눌러서 닫기</p>`;
+  if (msg.success && myDmg && myDmg > 0) {
+    // 최소 횟수를 못 채운 경우 안내 (보상 메시지가 오면 덮어씀)
+    setTimeout(() => {
+      const mineEl = document.getElementById('lobbyRaidMine');
+      if (mineEl && mineEl.textContent.includes('받는 중')) mineEl.textContent = `내 피해 ${myDmg} · ${msg.minTaps}번 이상 두드려야 보상을 받아요`;
+    }, 4000);
+  }
+  result.classList.remove('hidden');
+  clearTimeout(result.hideTimer);
+  result.hideTimer = setTimeout(() => result.classList.add('hidden'), 9000);
+}
+function onLobbyRaidReward(msg){
+  const text = `+${formatGold(msg.gold)}G${msg.shards ? ` · 💎 +${msg.shards}` : ''}`;
+  const mineEl = document.getElementById('lobbyRaidMine');
+  if (mineEl) mineEl.innerHTML = `${msg.mvp ? '👑 MVP! ' : ''}기여 ${msg.share}% · <strong>${text}</strong>`;
+  showToast(`🐉 레이드 보상 ${text}${msg.mvp ? ' (MVP 보너스 포함)' : ''}`);
+  if (typeof msg.totalTreasure === 'number') setGold(msg.totalTreasure);
+}
