@@ -2317,3 +2317,8 @@ body[data-tab="lobby"] #goldenBox{ display:none !important; }
 @media (prefers-reduced-motion: reduce){
   .lr-body, .lr-aura, .lr-hint, .dmg-float{ animation:none !important; }
 }
+
+/* 강화: 신화 스킬 '장인의 손' 할인 표시 */
+.discount-note.skill-note{ color:#ffd36e; }
+.shop-btn.skill-sale{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0; line-height:1.15; background:#ffd36e; color:#3a2600; }
+.shop-btn .price-was{ font-size:10px; font-weight:600; opacity:0.65; }

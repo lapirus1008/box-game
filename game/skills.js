@@ -20,7 +20,7 @@ const SKILLS = [
   { type: 'luck',             emoji: '🍀', name: '행운의 손길', desc: t => `10분간 희귀 이상 등장률 +${10 * t}%` },
   { type: 'pity',             emoji: '🌸', name: '운명의 실',   desc: t => `신화 천장 게이지 +${100 * t}` },
   { type: 'boxDiscount',      emoji: '🏷️', name: '떨이',       desc: t => `10분간 상자 구매가 -${10 + 5 * t}%` },
-  { type: 'upgradeDiscount',  emoji: '🔨', name: '장인의 손',   desc: t => (t >= 4 ? '다음 강화 1회 무료' : `다음 강화 1회 비용 -${25 * t}%`) },
+  { type: 'upgradeDiscount',  emoji: '🔨', name: '장인의 손',   desc: t => (t >= 4 ? '다음 강화 1회 무료 (연구 제외)' : `다음 강화 1회 비용 -${25 * t}% (연구 제외)`) },
   { type: 'autoOpenDiscount', emoji: '⏳', name: '시간 비축',   desc: t => `자동 개봉 +${30 * t}분` },
   { type: 'storageMinutes',   emoji: '📦', name: '시간 되감기', desc: t => `수입 ${15 * t}분치 즉시 획득` },
 ];

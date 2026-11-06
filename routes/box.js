@@ -283,13 +283,16 @@ function progressionResponse(mode, save) {
     upgrades: UPGRADES.filter(upgrade => !upgrade.collectionOnly || mode === MODES.COLLECTION).map(upgrade => {
       const level = claim[upgrade.column];
       const isMax = level >= upgrade.maxLevel;
+      const baseCost = isMax ? null : getUpgradeCost(upgrade, level, stats.upgradeDiscountPercent);
       return {
         key: upgrade.key,
         name: upgrade.name,
         emoji: upgrade.emoji,
         level,
         maxLevel: upgrade.maxLevel,
-        cost: isMax ? null : skillDiscountedUpgradeCost(getUpgradeCost(upgrade, level, stats.upgradeDiscountPercent), claim),
+        cost: isMax ? null : upgradeCostWithSkill(upgrade, baseCost, claim),
+        baseCost, // '장인의 손' 적용 전 가격 (화면에서 줄 긋고 보여줌)
+        noSkillDiscount: Boolean(upgrade.noSkillDiscount),
         effect: describeUpgradeEffect(upgrade.key, level),
         nextEffect: isMax ? null : describeUpgradeEffect(upgrade.key, level + 1),
       };
@@ -506,10 +509,13 @@ function mythicKindsThisRun(save) {
   return MYTHIC_KEYS.filter(key => (save.owned[key] || 0) > 0).length;
 }
 
-// '장인의 손' 스킬 할인 적용
+// '장인의 손' 스킬 할인 적용 (수집가의 연구처럼 noSkillDiscount 인 강화는 제외)
 function skillDiscountedUpgradeCost(cost, claim) {
   const discount = Number((claim.skill_buffs || {}).upgradeDiscount) || 0;
   return discount > 0 ? Math.floor(cost * Math.max(0, 100 - discount) / 100) : cost;
+}
+function upgradeCostWithSkill(upgrade, cost, claim) {
+  return upgrade.noSkillDiscount ? cost : skillDiscountedUpgradeCost(cost, claim);
 }
 
 // -------------------------------
@@ -1080,7 +1086,7 @@ router.post('/upgrade', handle('서버 오류로 업그레이드에 실패했습
     const level = save.claim[upgrade.column];
     if (level >= upgrade.maxLevel) throw new HttpError(400, '이미 최대 레벨입니다.');
 
-    const cost = skillDiscountedUpgradeCost(getUpgradeCost(upgrade, level, save.stats.upgradeDiscountPercent), save.claim);
+    const cost = upgradeCostWithSkill(upgrade, getUpgradeCost(upgrade, level, save.stats.upgradeDiscountPercent), save.claim);
     const gold = save.claim.total_treasure;
     if (gold < cost) throw new HttpError(400, `골드가 부족합니다. (필요: ${cost.toLocaleString()}G)`);
 
@@ -1088,8 +1094,8 @@ router.post('/upgrade', handle('서버 오류로 업그레이드에 실패했습
     await store.updateClaim(client, userId, mode, {
       total_treasure: gold - cost,
       [upgrade.column]: level + 1,
-      // '장인의 손' 할인은 한 번 쓰면 사라짐
-      ...(buffs.upgradeDiscount ? { skill_buffs: JSON.stringify({ ...buffs, upgradeDiscount: 0 }) } : {}),
+      // '장인의 손' 할인은 한 번 쓰면 사라짐 (적용되지 않는 수집가의 연구를 살 때는 그대로 남김)
+      ...(buffs.upgradeDiscount && !upgrade.noSkillDiscount ? { skill_buffs: JSON.stringify({ ...buffs, upgradeDiscount: 0 }) } : {}),
     });
 
     return {
