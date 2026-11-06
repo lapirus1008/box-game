@@ -227,7 +227,7 @@ const WAITING_LINES = [
       if (attempt >= AUTO_LOGIN_RETRY_DELAYS_MS.length) {
         // 오래 기다려도 안 되면 로그인 화면을 보여주되, 저장된 로그인은 지우지 않습니다(새로고침하면 다시 시도).
         stop();
-        showAuthError('서버에 연결하지 못했습니다. 잠시 후 다시 실행해 주세요. (로그인 정보는 유지됩니다)');
+        showAuthError('서버에 연결하지 못했습니다. 잠시 후 다시 실행해 주십시오. (로그인 정보는 유지됩니다)');
         return;
       }
       startWaitingFun();
@@ -583,7 +583,12 @@ async function refreshStatus(){
   } finally {
     clearTimeout(timer);
   }
-  if (!res.ok) { setStatusFailed(true, res.status); return; }
+  if (!res.ok) {
+    // 429: 짧은 시간에 요청이 몰려 서버가 잠시 막은 것 (잠시 뒤 자동으로 다시 시도)
+    if (res.status === 429) setStatusFailed(true, '요청이 너무 많음', '요청이 잠시 많습니다');
+    else setStatusFailed(true, res.status);
+    return;
+  }
   setStatusFailed(false);
 
   try {
@@ -1501,7 +1506,7 @@ function renderUpgradeScreen(){
   // 신화 스킬 '장인의 손': 다음 강화 1회 할인·무료 (수집가의 연구 제외)
   const skillSale = lastStatus.skills && lastStatus.skills.active && lastStatus.skills.active.upgradeDiscount;
   if (skillSale > 0) {
-    upgradeList.insertAdjacentHTML('afterbegin', `<p class="discount-note skill-note">✨ 장인의 손: 다음 강화 1회 ${skillSale >= 100 ? '<strong>무료</strong>' : `<strong>-${skillSale}%</strong>`} · 하나 사면 사라져요 (수집가의 연구 제외)</p>`);
+    upgradeList.insertAdjacentHTML('afterbegin', `<p class="discount-note skill-note">✨ 장인의 손: 다음 강화 1회 ${skillSale >= 100 ? '<strong>무료</strong>' : `<strong>-${skillSale}%</strong>`} · 하나 사면 사라집니다 (수집가의 연구 제외)</p>`);
   }
 
   const autoList = document.getElementById('automationList');
@@ -1648,12 +1653,24 @@ async function postShopAction(path, body, btn){
     const data = await res.json();
     showUpgradeResult(data.message, !res.ok);
     if (res.ok && typeof data.totalTreasure === 'number') setGold(data.totalTreasure);
+    // 강화는 바뀐 목록이 응답에 같이 와서 바로 다시 그립니다 (연타해도 요청이 클릭당 1번)
+    if (res.ok && data.upgrades && lastStatus) {
+      lastStatus.upgrades = data.upgrades;
+      if (typeof data.totalTreasure === 'number') lastStatus.totalTreasure = data.totalTreasure;
+      renderUpgradeScreen();
+    }
   } catch (err) {
     showUpgradeResult('서버에 연결할 수 없습니다.', true);
   } finally {
     delete btn.dataset.busy;
-    await refreshStatus();
+    scheduleShopRefresh();
   }
+}
+// 상점 버튼을 연달아 누르면 상태 전체 새로고침은 마지막 클릭 뒤 한 번만 합니다
+let shopRefreshTimer = null;
+function scheduleShopRefresh(){
+  clearTimeout(shopRefreshTimer);
+  shopRefreshTimer = setTimeout(refreshStatus, 700);
 }
 
 function buyUpgrade(key, btn){
@@ -2039,7 +2056,7 @@ function maybeShowSeasonOverlay(season, seasonChange){
     const reset = seasonChange ? seasonChange.reset : currentMode === 'record';
     title = `🎉 시즌 ${season.number} 시작!`;
     text = reset
-      ? '기록모드 초기화! 모두 같은 출발선에서 이번 시즌 랭킹에 도전하세요. (지난 시즌 기록은 랭킹에서 확인 가능)'
+      ? '기록모드 초기화! 모두 같은 출발선에서 이번 시즌 랭킹에 도전하십시오. (지난 시즌 기록은 랭킹에서 확인 가능)'
         + (seasonChange && seasonChange.convertedShards
           ? ` 남은 환생 포인트 ${seasonChange.leftoverPoints}개는 수집모드 신화 조각 💎${seasonChange.convertedShards}개로 바뀌었습니다.`
           : '')
@@ -2413,7 +2430,7 @@ async function loadGuestbook(more = false){
     if (!res.ok) throw new Error(data.message);
     const html = data.entries.map(renderGuestbookEntry).join('');
     if (more) listEl.insertAdjacentHTML('beforeend', html);
-    else listEl.innerHTML = html || '<p class="guestbook-empty">아직 글이 없습니다. 첫 인사를 남겨 보세요!</p>';
+    else listEl.innerHTML = html || '<p class="guestbook-empty">아직 글이 없습니다. 첫 인사를 남겨 보십시오!</p>';
     if (data.entries.length) guestbookOldestId = data.entries[data.entries.length - 1].id;
     moreBtn.classList.toggle('hidden', !data.hasMore);
   } catch (err) {
@@ -2483,7 +2500,7 @@ async function openChoiceBox(){
   const grid = document.getElementById('choiceGrid');
   const confirmBtn = document.getElementById('choiceConfirmBtn');
   confirmBtn.disabled = true;
-  document.getElementById('choicePicked').textContent = '받을 신화를 선택하세요';
+  document.getElementById('choicePicked').textContent = '받을 신화를 선택하십시오';
   document.getElementById('choiceSub').textContent = `아직 없는 신화 중 1종 선택 · 보유 ${choiceBoxCount}개`;
   grid.innerHTML = '<p class="guestbook-empty">불러오는 중...</p>';
   choiceOverlay.classList.add('show');
@@ -2624,7 +2641,7 @@ const GUIDE_STEPS = [
   { target: '#seasonBanner', title: '🗓 오늘의 신화', text: '매일 오전 9시에 신화 10종이 바뀝니다. 오늘 놓친 신화는 10일 뒤 다시 등장합니다.' },
   { target: '#tabBar [data-tab="bag"]', title: '🎒 가방 · 합성', text: '같은 아이템 3개를 모으면 한 등급 위로 합성할 수 있습니다. 등급이 높을수록 골드를 더 많이 법니다.' },
   { target: '#tabBar [data-tab="upgrade"]', title: '🛠 강화', text: '골드로 수입·충전 속도·창고·행운을 올립니다. 자동 개봉을 사 두면 자리를 비운 동안에도 상자가 열립니다.' },
-  { target: '#modeBadge', title: '🎮 모드 전환', text: '기록모드와 수집모드는 따로 저장됩니다. 여기를 눌러 언제든 오갈 수 있습니다. 즐거운 수집 되세요!' },
+  { target: '#modeBadge', title: '🎮 모드 전환', text: '기록모드와 수집모드는 따로 저장됩니다. 여기를 눌러 언제든 오갈 수 있습니다. 즐거운 수집 되십시오!' },
 ];
 const guideLayer = document.getElementById('guideLayer');
 let guideSteps = [];
@@ -2738,13 +2755,13 @@ window.addEventListener('beforeinstallprompt', (e) => {
 window.addEventListener('appinstalled', () => {
   deferredInstallPrompt = null;
   updateInstallButton();
-  showToast('📲 앱 설치 완료! 홈 화면에서 실행하세요');
+  showToast('📲 앱 설치 완료! 홈 화면에서 실행하십시오');
 });
 installAppBtn.addEventListener('click', async () => {
   if (deferredInstallPrompt) {
     deferredInstallPrompt.prompt();
     await deferredInstallPrompt.userChoice.catch(() => null);
-    deferredInstallPrompt = null; // 한 번 쓴 설치 창은 다시 쓸 수 없어요.
+    deferredInstallPrompt = null; // 한 번 쓴 설치 창은 다시 쓸 수 없습니다.
     updateInstallButton();
   } else if (isIosSafari()) {
     askConfirm({ title: '📲 홈 화면에 추가', text: 'Safari 아래쪽 공유 버튼(□↑)\n→ "홈 화면에 추가"', ok: '확인', cancel: null });
@@ -2893,8 +2910,8 @@ async function loadRanking(){
 
     if (data.totalPlayers === 0) {
       listEl.innerHTML = `<p style="color:var(--ink-dim); font-size:13px; text-align:center; padding:20px 0;">${data.type === 'collection'
-        ? '아직 신화를 모은 사람이 없습니다.<br>수집모드에서 첫 신화를 찾아보세요!'
-        : '아직 환생 기록이 없습니다.<br>첫 기록의 주인공이 되어보세요!'}</p>`;
+        ? '아직 신화를 모은 사람이 없습니다.<br>수집모드에서 첫 신화를 찾아보십시오!'
+        : '아직 환생 기록이 없습니다.<br>첫 기록의 주인공이 되어 보십시오!'}</p>`;
       return;
     }
 
@@ -3089,10 +3106,10 @@ function lobbyConnect(){
     lobbyWs = null;
     clearLobbyStage();
     if (!lobbyWanted) return;
-    if (event.code === 4004) { lobbyStatusEl.textContent = '다른 창에서 광장에 들어갔어요'; lobbyWanted = false; return; }
-    if (event.code === 4003) { lobbyStatusEl.textContent = '광장이 가득 찼어요 · 잠시 후 다시 시도해요'; }
+    if (event.code === 4004) { lobbyStatusEl.textContent = '다른 창에서 광장에 들어갔습니다'; lobbyWanted = false; return; }
+    if (event.code === 4003) { lobbyStatusEl.textContent = '광장이 가득 찼습니다 · 잠시 후 다시 시도합니다'; }
     else if (event.code === 4001) { lobbyStatusEl.textContent = '로그인이 필요합니다'; lobbyWanted = false; return; }
-    else lobbyStatusEl.textContent = '연결이 끊겼어요 · 다시 연결 중...';
+    else lobbyStatusEl.textContent = '연결이 끊겼습니다 · 다시 연결 중...';
     lobbyRetry++;
     lobbyRetryTimer = setTimeout(lobbyConnect, Math.min(15000, 1500 * 2 ** Math.min(lobbyRetry, 4)));
   };
@@ -3151,8 +3168,8 @@ function renderLobbyRooms(){
   }).join('');
   const msg = document.getElementById('lobbyRoomsMsg');
   msg.textContent = lobbyRoomNo
-    ? '다른 방으로 옮기면 그 방의 광장 한가운데에서 시작해요'
-    : '모든 방이 가득 찼어요 · 자리가 나면 눌러서 들어갈 수 있어요';
+    ? '다른 방으로 옮기면 그 방의 광장 한가운데에서 시작합니다'
+    : '모든 방이 가득 찼습니다 · 자리가 나면 눌러서 들어갈 수 있습니다';
 }
 function setLobbyRoomsOpen(open){
   lobbyRoomsEl.classList.toggle('hidden', !open);
@@ -3183,7 +3200,7 @@ function handleLobbyMessage(msg){
     lobbyStage.classList.add('hidden');
     document.getElementById('lobbyView').classList.add('waiting');
     lobbyRoomsBtn.classList.add('hidden');
-    lobbyStatusEl.textContent = '⏳ 모든 방이 가득 찼어요';
+    lobbyStatusEl.textContent = '⏳ 모든 방이 가득 찼습니다';
     setLobbyRoomsOpen(true);
   } else if (msg.t === 'init') {
     lobbyRetry = 0;
@@ -3226,7 +3243,7 @@ function handleLobbyMessage(msg){
     showToast(msg.text, !msg.ok);
   } else if (msg.t === 'gspawn') {
     addLobbyGolden(msg.g);
-    showToast('✨ 광장 어딘가에 황금 상자가 나타났어요! 🎁 를 따라가 톡톡 두드려 보세요');
+    showToast('✨ 광장 어딘가에 황금 상자가 나타났습니다! 🎁 를 따라가 톡톡 두드려 보십시오');
   } else if (msg.t === 'gmove') {
     if (lobbyGolden) {
       const cur = lobbyPosAt(lobbyGolden.motion);
@@ -3241,25 +3258,25 @@ function handleLobbyMessage(msg){
       body.classList.remove('hit'); void body.offsetWidth; body.classList.add('hit');
     }
   } else if (msg.t === 'gfar') {
-    showToast('조금 더 가까이 가서 두드려요!', true);
+    showToast('조금 더 가까이 가서 두드리십시오!', true);
   } else if (msg.t === 'gopen') {
     if (lobbyGolden) {
       const el = lobbyGolden.el;
       el.classList.add('opened');
-      el.querySelector('.lg-hint').textContent = msg.by.includes(lobbyMe) ? '🎉 열렸다!' : '누군가 열었어요';
+      el.querySelector('.lg-hint').textContent = msg.by.includes(lobbyMe) ? '🎉 열렸다!' : '다른 사람이 열었습니다';
       lobbyGolden = null;
       setTimeout(() => el.remove(), 1400);
     }
     document.getElementById('lobbyGoldenArrow')?.classList.add('hidden');
   } else if (msg.t === 'ggone') {
     removeLobbyGolden();
-    showToast('황금 상자가 사라졌어요… 다음에 또 나타나요');
+    showToast('황금 상자가 사라졌습니다… 다음에 또 나타납니다');
   } else if (msg.t === 'perks') {
     lobbyPerks = msg.perks;
     renderLobbyPerks();
   } else if (msg.t === 'rspawn') {
     addLobbyRaid(msg.r);
-    showToast('🐉 거대 황금 상자 출현! 다 같이 두드려서 90초 안에 열어요!');
+    showToast('🐉 거대 황금 상자 출현! 다 같이 두드려서 90초 안에 여십시오!');
     if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
   } else if (msg.t === 'rhit') {
     onLobbyRaidHit(msg);
@@ -3269,7 +3286,7 @@ function handleLobbyMessage(msg){
       lobbyRaid.motion = { x0: cur.x, y0: cur.y, x1: msg.x, y1: msg.y, t0: performance.now(), dur: msg.dur };
       lobbyRaid.el.classList.remove('jumping'); void lobbyRaid.el.offsetWidth; lobbyRaid.el.classList.add('jumping');
       placeLobbyEl(lobbyRaid.el, msg.x, msg.y, msg.dur);
-      if (msg.jump) showToast('💨 거대 상자가 도망쳤어요! 🎁 를 따라가요');
+      if (msg.jump) showToast('💨 거대 상자가 도망쳤습니다! 🐉 를 따라가십시오');
     }
   } else if (msg.t === 'rend') {
     onLobbyRaidEnd(msg);
@@ -3443,12 +3460,12 @@ function updateLobbyGoldenHint(){
   if (lobbyGolden) {
     const near = lobbyDistPx(mePos, lobbyPosAt(lobbyGolden.motion)) <= lobbyTapRange(false);
     lobbyGolden.el.classList.toggle('near', near);
-    lobbyGolden.el.querySelector('.lg-hint').textContent = near ? '👆 톡톡! 두드려요' : '🎁 황금 상자';
+    lobbyGolden.el.querySelector('.lg-hint').textContent = near ? '👆 톡톡! 두드리기' : '🎁 황금 상자';
   }
   if (lobbyRaid) {
     const near = lobbyDistPx(mePos, box) <= lobbyTapRange(true);
     lobbyRaid.el.classList.toggle('near', near);
-    lobbyRaid.el.querySelector('.lr-hint').textContent = near ? '👊 연타! 다 같이 두드려요' : '🐉 거대 황금 상자';
+    lobbyRaid.el.querySelector('.lr-hint').textContent = near ? '👊 연타! 다 같이 두드리기' : '🐉 거대 황금 상자';
   }
   // 화면 밖이면 가장자리에 방향 화살표
   const dx = (box.x - mePos.x) * LOBBY_WORLD_W;
@@ -3504,7 +3521,7 @@ document.getElementById('lobbyForm').addEventListener('submit', (e) => {
   const input = document.getElementById('lobbyInput');
   const text = input.value.trim();
   if (!text) return;
-  if (!lobbyWs || lobbyWs.readyState !== WebSocket.OPEN) { showToast('광장에 연결되지 않았어요', true); return; }
+  if (!lobbyWs || lobbyWs.readyState !== WebSocket.OPEN) { showToast('광장에 연결되지 않았습니다', true); return; }
   lobbySend({ t: 'chat', text });
   input.value = '';
 });
@@ -3614,7 +3631,7 @@ document.getElementById('userActionReportBtn').addEventListener('click', () => {
   const t = userActionTarget;
   userActionOverlay.classList.remove('show');
   if (!t) return;
-  if (!lobbyWs || lobbyWs.readyState !== WebSocket.OPEN) { showToast('광장에 연결되지 않았어요', true); return; }
+  if (!lobbyWs || lobbyWs.readyState !== WebSocket.OPEN) { showToast('광장에 연결되지 않았습니다', true); return; }
   lobbySend(t.cid ? { t: 'report', cid: t.cid } : { t: 'report', id: t.id });
 });
 document.getElementById('userActionBlockBtn').addEventListener('click', () => {
@@ -3627,7 +3644,7 @@ async function blockUser(id, nickname){
   if (!id) return;
   const ok = await askConfirm({
     title: `🚫 ${nickname || ''} 차단`,
-    text: '이 사람의 광장 캐릭터·채팅과 방명록 글이 더 이상 보이지 않습니다.\n설정 → 차단 목록에서 언제든 해제할 수 있어요.',
+    text: '이 사람의 광장 캐릭터·채팅과 방명록 글이 더 이상 보이지 않습니다.\n설정 → 차단 목록에서 언제든 해제할 수 있습니다.',
     ok: '차단', danger: true,
   });
   if (!ok) return;
@@ -3674,7 +3691,7 @@ async function renderBlockList(){
   if (!blocks) { listEl.innerHTML = '<p class="block-empty">불러오지 못했습니다.</p>'; return; }
   listEl.innerHTML = blocks.length
     ? blocks.map(b => `<div class="block-row"><span>${escapeHtml(b.nickname)}</span><button class="link-btn" data-unblock="${b.id}">해제</button></div>`).join('')
-    : '<p class="block-empty">차단한 사람이 없어요.<br>광장에서 다른 사람이나 채팅을 누르면 신고·차단할 수 있어요.</p>';
+    : '<p class="block-empty">차단한 사람이 없습니다.<br>광장에서 다른 사람이나 채팅을 누르면 신고·차단할 수 있습니다.</p>';
 }
 document.getElementById('openBlockListBtn').addEventListener('click', () => {
   blockListOverlay.classList.add('show');
@@ -3706,7 +3723,7 @@ function renderLobbyPerks(){
   lobbyPerksEl.classList.remove('hidden');
   lobbyPerksEl.innerHTML = t > 0
     ? `${transcendBadgeHtml(t)} <strong>초월 사냥 혜택</strong> 이동 +${lobbyPerks.speedPct}% · 사거리 +${lobbyPerks.rangePx} · 한 번에 피해 ${lobbyPerks.damage}`
-    : '✦ <strong>초월하면 사냥이 쉬워져요</strong> · 이동 속도·사거리·피해가 초월 횟수만큼 올라요';
+    : '✦ <strong>초월하면 사냥이 쉬워집니다</strong> · 이동 속도·사거리·피해가 초월 횟수만큼 오릅니다';
 }
 
 function addLobbyRaid(r){
@@ -3807,17 +3824,17 @@ function onLobbyRaidEnd(msg){
     ? `<p class="lrr-title">🎉 레이드 성공!</p>
        <p class="lrr-sub">참가 ${msg.party}명 · 파티 보너스 +${msg.bonusPct}%</p>
        ${rows}
-       <p class="lrr-mine" id="lobbyRaidMine">${myDmg ? `내 피해 ${myDmg} · 보상 받는 중...` : '이번엔 참가하지 못했어요'}</p>
+       <p class="lrr-mine" id="lobbyRaidMine">${myDmg ? `내 피해 ${myDmg} · 보상 받는 중...` : '이번에는 참가하지 못했습니다'}</p>
        <p class="lrr-close">눌러서 닫기</p>`
-    : `<p class="lrr-title">💨 거대 상자가 달아났어요…</p>
-       <p class="lrr-sub">90초 안에 체력을 다 깎아야 해요. 다음엔 더 많이 모여요!</p>
+    : `<p class="lrr-title">💨 거대 상자가 달아났습니다…</p>
+       <p class="lrr-sub">90초 안에 체력을 다 깎아야 합니다. 다음에는 더 많이 모여 보십시오!</p>
        ${rows}
        <p class="lrr-close">눌러서 닫기</p>`;
   if (msg.success && myDmg && myDmg > 0) {
     // 최소 횟수를 못 채운 경우 안내 (보상 메시지가 오면 덮어씀)
     setTimeout(() => {
       const mineEl = document.getElementById('lobbyRaidMine');
-      if (mineEl && mineEl.textContent.includes('받는 중')) mineEl.textContent = `내 피해 ${myDmg} · ${msg.minTaps}번 이상 두드려야 보상을 받아요`;
+      if (mineEl && mineEl.textContent.includes('받는 중')) mineEl.textContent = `내 피해 ${myDmg} · ${msg.minTaps}번 이상 두드려야 보상을 받습니다`;
     }, 4000);
   }
   result.classList.remove('hidden');

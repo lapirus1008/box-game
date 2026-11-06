@@ -619,7 +619,7 @@ router.post('/enhance', handle('서버 오류로 강화하지 못했습니다.',
   return withSave(userId, async (client, mode, save) => {
     requireCollection(mode);
     const level = transcend.enhanceLevel(save.claim);
-    if (level >= transcend.ENHANCE_MAX) throw new HttpError(400, `이미 +${transcend.ENHANCE_MAX}입니다. 초월할 수 있어요!`);
+    if (level >= transcend.ENHANCE_MAX) throw new HttpError(400, `이미 +${transcend.ENHANCE_MAX}입니다. 초월할 수 있습니다!`);
     const cost = transcend.ENHANCE_COSTS[level];
     const shards = save.claim.mythic_shards || 0;
     if (shards < cost) throw new HttpError(400, `신화 조각이 부족합니다. (필요 ${cost}, 보유 ${shards})`);
@@ -782,7 +782,7 @@ function assertCanOpen(save, quantity) {
   }
   if (save.chargeInfo.charges < quantity) {
     if (quantity === 1) {
-      throw new HttpError(429, '충전된 상자가 없습니다. 잠시 후 다시 시도해주세요.', {
+      throw new HttpError(429, '충전된 상자가 없습니다. 잠시 후 다시 시도해 주십시오.', {
         charges: save.chargeInfo.charges,
         maxCharges: save.chargeInfo.maxCharges,
         nextChargeInMs: save.chargeInfo.nextChargeInMs,
@@ -898,7 +898,7 @@ router.post('/choose-mythic', handle('서버 오류로 신화를 받지 못했�
     if (mode !== MODES.COLLECTION) throw new HttpError(400, '신화 선택 상자는 수집모드 전용입니다.');
     if ((save.claim.mythic_choice_boxes || 0) < 1) throw new HttpError(400, '신화 선택 상자가 없습니다.');
     if (!MYTHIC_KEYS.includes(key)) throw new HttpError(400, '존재하지 않는 신화입니다.');
-    if (save.codex.has(key)) throw new HttpError(400, '이미 도감에 있는 신화입니다. 다른 신화를 선택하세요.');
+    if (save.codex.has(key)) throw new HttpError(400, '이미 도감에 있는 신화입니다. 다른 신화를 선택하십시오.');
 
     const counts = { [key]: 1 };
     await store.addItems(client, userId, mode, counts);
@@ -1098,12 +1098,18 @@ router.post('/upgrade', handle('서버 오류로 업그레이드에 실패했습
       ...(buffs.upgradeDiscount && !upgrade.noSkillDiscount ? { skill_buffs: JSON.stringify({ ...buffs, upgradeDiscount: 0 }) } : {}),
     });
 
+    // 바뀐 강화 목록을 같이 돌려줘서, 화면이 상태 전체를 다시 불러오지 않고 바로 다음 단계를 보여주게 합니다.
+    // (연속으로 누를 때 요청이 클릭마다 2번씩 나가 요청 제한(429)에 걸리던 문제)
+    save.claim[upgrade.column] = level + 1;
+    save.claim.total_treasure = gold - cost;
+    if (buffs.upgradeDiscount && !upgrade.noSkillDiscount) save.claim.skill_buffs = { ...buffs, upgradeDiscount: 0 };
     return {
       message: `${upgrade.emoji} ${upgrade.name} Lv.${level + 1} 달성! (${describeUpgradeEffect(upgrade.key, level + 1)})`,
       mode,
       key: upgrade.key,
       level: level + 1,
       totalTreasure: gold - cost,
+      upgrades: progressionResponse(mode, save).upgrades,
     };
   });
 }));
@@ -1138,7 +1144,7 @@ router.post('/auto-open', handle('서버 오류로 자동 개봉 설정에 실�
       addMs = n * HOUR_MS;
     }
     if (addMs <= 0 || addMs > spaceMs) {
-      throw new HttpError(400, `자동 개봉 시간은 보관 시간(${formatHours(maxMs)})까지만 채울 수 있습니다. 창고를 확장하세요!`);
+      throw new HttpError(400, `자동 개봉 시간은 보관 시간(${formatHours(maxMs)})까지만 채울 수 있습니다. 창고를 확장하십시오!`);
     }
 
     const costPerHour = getAutoOpenCostPerHour(save.income.perMinuteIncome, save.stats.autoOpenDiscountPercent);
@@ -1234,7 +1240,7 @@ router.post('/golden-box', handle('서버 오류로 황금 상자를 열지 못�
     if (!box.available) {
       throw new HttpError(400, box.appearsInMs > 0
         ? '아직 황금 상자가 등장하지 않았습니다.'
-        : '황금 상자가 사라졌습니다. 다음 기회를 노려보세요!');
+        : '황금 상자가 사라졌습니다. 다음 기회를 노려 보십시오!');
     }
 
     const { claim, now } = save;
@@ -1395,7 +1401,7 @@ router.post('/craft', handle('서버 오류로 합성에 실패했습니다.', a
 
   return withSave(userId, async (client, mode, save) => {
     if (store.lockedSet(save.claim).has(itemKey)) {
-      throw new HttpError(400, `🔒 ${sourceItem.name}은(는) 잠겨 있어 합성할 수 없습니다. 잠금을 해제하세요.`);
+      throw new HttpError(400, `🔒 ${sourceItem.name}은(는) 잠겨 있어 합성할 수 없습니다. 잠금을 해제하십시오.`);
     }
     const ownedCount = save.owned[itemKey] || 0;
     if (ownedCount < CRAFT_COST) {
@@ -1533,7 +1539,7 @@ router.post('/reset-run', handle('서버 오류가 발생했습니다.', async (
     const startGold = await store.resetSave(client, userId, mode, now, { claim });
 
     return {
-      message: '초심으로 돌아갔습니다. 도감도 함께 초기화되었습니다. 다시 도전하세요!',
+      message: '초심으로 돌아갔습니다. 도감도 함께 초기화되었습니다. 다시 도전하십시오!',
       mode,
       totalTreasure: startGold,
       runStartedAt: now,
@@ -1551,7 +1557,7 @@ router.post('/rebirth', handle('서버 오류로 환생에 실패했습니다.',
   return withUserTransaction(userId, async (client) => {
     const mode = await store.getActiveMode(client, userId);
     if (mode !== MODES.RECORD) {
-      throw new HttpError(400, '수집모드에서는 환생할 수 없습니다. 기록모드로 전환해주세요.');
+      throw new HttpError(400, '수집모드에서는 환생할 수 없습니다. 기록모드로 전환해 주십시오.');
     }
 
     const save = await store.settle(client, userId, mode);
