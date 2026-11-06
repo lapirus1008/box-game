@@ -483,7 +483,7 @@ function goTab(tab){
   }
   // 각 화면을 여는 기존 버튼 동작(데이터 불러오기 포함)을 그대로 씁니다.
   if (tab === 'guestbook') { document.getElementById('guestbookScreen').classList.remove('hidden'); loadGuestbook(); return; }
-  if (tab === 'lobby') { lobbyScreen.classList.remove('hidden'); lobbyConnect(); return; }
+  if (tab === 'lobby') { lobbyScreen.classList.remove('hidden'); requestAnimationFrame(relayoutLobby); lobbyConnect(); return; }
   document.getElementById(TAB_OPENERS[tab]).click();
   if (tab === 'bag' || tab === 'dex') {
     showCollectionTab(tab === 'dex' ? 'dex' : 'run');
@@ -3076,10 +3076,20 @@ function buildLobbyWorld(){
 }
 
 // ── 카메라: 내 위치가 화면 가운데에 오도록 지형을 옮깁니다 ──
+// 전체 화면 광장에서 위쪽 정보 층과 아래 채팅 층을 뺀 "보이는 가운데" 높이 (내 상자를 여기에 둠)
+function lobbyFocusY(){
+  const top = document.querySelector('#lobbyView .lobby-top');
+  const chat = document.getElementById('lobbyChat');
+  const h = lobbyStage.clientHeight;
+  const visTop = top ? top.offsetTop + top.offsetHeight : 0;
+  const visBottom = chat && chat.offsetParent ? chat.offsetTop : h;
+  if (visBottom - visTop < 120) return h / 2;
+  return (visTop + visBottom) / 2;
+}
 function lobbyCameraTo(x, y, durationMs){
   if (!lobbyWorld) return;
   const tx = lobbyStage.clientWidth / 2 - x * LOBBY_WORLD_W;
-  const ty = lobbyStage.clientHeight / 2 - y * LOBBY_WORLD_H;
+  const ty = lobbyFocusY() - y * LOBBY_WORLD_H;
   lobbyWorld.style.transitionDuration = `${durationMs}ms`;
   lobbyWorld.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
 }
@@ -3216,6 +3226,7 @@ function handleLobbyMessage(msg){
     msg.players.forEach(addLobbyPlayer);
     const me = lobbyPlayers.get(lobbyMe);
     if (me) lobbyCameraTo(me.p.x, me.p.y, 0);
+    requestAnimationFrame(relayoutLobby);
     lobbyLogEl.innerHTML = '';
     msg.chats.forEach(c => appendLobbyChat(c, false));
     if (msg.golden) addLobbyGolden(msg.golden);
@@ -3368,7 +3379,7 @@ lobbyStage.addEventListener('click', (e) => {
   const rect = lobbyStage.getBoundingClientRect();
   const cam = lobbyCameraCenter();
   const x = cam.x + (e.clientX - rect.left - rect.width / 2) / LOBBY_WORLD_W;
-  const y = cam.y + (e.clientY - rect.top - rect.height / 2) / LOBBY_WORLD_H;
+  const y = cam.y + (e.clientY - rect.top - lobbyFocusY()) / LOBBY_WORLD_H;
   lobbyWalkMeTo(x, y);
 });
 function lobbyWalkMeTo(rawX, rawY){
@@ -3470,20 +3481,25 @@ function updateLobbyGoldenHint(){
   // 화면 밖이면 가장자리에 방향 화살표
   const dx = (box.x - mePos.x) * LOBBY_WORLD_W;
   const dy = (box.y - mePos.y) * LOBBY_WORLD_H;
-  const hw = lobbyStage.clientWidth / 2 - 28;
-  const hh = lobbyStage.clientHeight / 2 - 28;
-  // 레이드 체력바가 위쪽을 가리므로, 그 아래까지 와야 "보인다"고 봅니다
+  // 보이는 영역: 위쪽 정보 층·레이드 체력바 아래부터 채팅 층 위까지
   const hud = document.getElementById('lobbyRaidHud');
-  const hudBottom = hud && !hud.classList.contains('hidden') ? hud.offsetTop + hud.offsetHeight : 0;
-  const screenY = lobbyStage.clientHeight / 2 + dy;
+  const topEl = document.querySelector('#lobbyView .lobby-top');
+  const chatEl = document.getElementById('lobbyChat');
+  const visTop = Math.max(topEl ? topEl.offsetTop + topEl.offsetHeight : 0,
+    hud && !hud.classList.contains('hidden') ? hud.offsetTop + hud.offsetHeight : 0);
+  const visBottom = chatEl && chatEl.offsetParent ? chatEl.offsetTop : lobbyStage.clientHeight;
+  const cx = lobbyStage.clientWidth / 2;
+  const cy = lobbyFocusY();
+  const screenX = cx + dx;
+  const screenY = cy + dy;
   // 상자가 조금이라도 보이면 화살표를 띄우지 않음 (가장자리에서 상자를 가리지 않게)
-  const off = Math.abs(dx) > lobbyStage.clientWidth / 2 + 24 || Math.abs(dy) > lobbyStage.clientHeight / 2 + 24
-    || (hudBottom && screenY < hudBottom + 30);
+  const off = screenX < -24 || screenX > lobbyStage.clientWidth + 24 || screenY < visTop + 30 || screenY > visBottom + 40;
   arrow.classList.toggle('hidden', !off);
   if (off) {
-    const k = Math.min(hw / Math.abs(dx || 1), hh / Math.abs(dy || 1), 1);
-    const ay = Math.max(hudBottom + 26, hh + 28 + dy * k);
-    arrow.style.transform = `translate(${hw + 28 + dx * k}px, ${ay}px)`;
+    const hw = cx - 28;
+    const k = Math.min(hw / Math.abs(dx || 1), Math.max(1, (dy < 0 ? cy - visTop - 26 : visBottom - cy - 26)) / Math.abs(dy || 1), 1);
+    const ay = Math.min(visBottom - 26, Math.max(visTop + 26, cy + dy * k));
+    arrow.style.transform = `translate(${cx + dx * k}px, ${ay}px)`;
     arrow.querySelector('.lga-arrow').style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
   }
 }
@@ -3498,6 +3514,10 @@ lobbyStage.addEventListener('click', (e) => {
 
 function appendLobbyChat(c, showBubble){
   if (blockedIds.has(c.id)) return;
+  if (showBubble && c.id !== lobbyMe && lobbyChatCollapsed) {
+    lobbyUnread += 1;
+    renderLobbyUnread();
+  }
   const line = document.createElement('div');
   line.className = `lobby-line${c.id === lobbyMe ? ' mine' : ''}`;
   line.dataset.uid = c.id;
@@ -3848,3 +3868,58 @@ function onLobbyRaidReward(msg){
   showToast(`🐉 레이드 보상 ${text}${msg.mvp ? ' (MVP 보너스 포함)' : ''}`);
   if (typeof msg.totalTreasure === 'number') setGold(msg.totalTreasure);
 }
+
+// -------------------------------
+// 광장 전체 화면: 채팅 층 접기·펼치기, 도움말, 화면 크기 맞추기
+// -------------------------------
+const lobbyChatEl = document.getElementById('lobbyChat');
+let lobbyChatCollapsed = false;
+let lobbyUnread = 0;
+try { lobbyChatCollapsed = localStorage.getItem('lobbyChatCollapsed') === '1'; } catch (e) { /* 저장소를 못 쓰면 펼친 상태 */ }
+function renderLobbyUnread(){
+  const badge = document.getElementById('lobbyChatUnread');
+  badge.textContent = lobbyUnread > 99 ? '99+' : String(lobbyUnread);
+  badge.classList.toggle('hidden', !(lobbyChatCollapsed && lobbyUnread > 0));
+}
+function setLobbyChatCollapsed(collapsed){
+  lobbyChatCollapsed = collapsed;
+  lobbyChatEl.classList.toggle('collapsed', collapsed);
+  document.getElementById('lobbyChatToggle').setAttribute('aria-expanded', String(!collapsed));
+  if (!collapsed) { lobbyUnread = 0; lobbyLogEl.scrollTop = lobbyLogEl.scrollHeight; }
+  renderLobbyUnread();
+  try { localStorage.setItem('lobbyChatCollapsed', collapsed ? '1' : '0'); } catch (e) { /* 무시 */ }
+  relayoutLobby();
+}
+document.getElementById('lobbyChatToggle').addEventListener('click', () => setLobbyChatCollapsed(!lobbyChatCollapsed));
+setLobbyChatCollapsed(lobbyChatCollapsed);
+
+// 보이는 영역이 바뀌면(채팅 접기·화면 회전·키보드) 내 상자가 다시 가운데 오도록 카메라를 맞춤
+function relayoutLobby(){
+  const tabBar = document.getElementById('tabBar');
+  if (tabBar && tabBar.offsetHeight) document.documentElement.style.setProperty('--tabbar-h', `${tabBar.offsetHeight}px`);
+  const top = document.querySelector('#lobbyView .lobby-top');
+  if (top) document.documentElement.style.setProperty('--lobby-top-h', `${top.offsetTop + top.offsetHeight}px`);
+  if (!lobbyWorld || !lobbyPlayers.has(lobbyMe)) return;
+  const me = lobbyPlayers.get(lobbyMe);
+  const cur = lobbyPosAt(me.motion);
+  lobbyCameraTo(cur.x, cur.y, 0);
+  if (me.motion.dur && performance.now() < me.motion.t0 + me.motion.dur) {
+    void lobbyWorld.offsetWidth;
+    lobbyCameraTo(me.motion.x1, me.motion.y1, Math.max(0, me.motion.t0 + me.motion.dur - performance.now()));
+  }
+}
+window.addEventListener('resize', relayoutLobby);
+if (window.ResizeObserver) new ResizeObserver(relayoutLobby).observe(document.querySelector('#lobbyView .lobby-top'));
+
+document.getElementById('lobbyHelpBtn').addEventListener('click', () => {
+  askConfirm({
+    title: '🎪 광장 도움말',
+    text: '· 바닥을 누르면 그 자리로 걸어갑니다.\n'
+      + '· 🎁 황금 상자: 가끔 나타나 돌아다닙니다. 가까이 가서 톡톡 두드리면 보상을 받습니다.\n'
+      + '· 🐉 거대 황금 상자: 레이드입니다. 방 사람들과 90초 안에 함께 두드려 여십시오.\n'
+      + '· 다른 사람이나 채팅을 누르면 🚩 신고 · 🚫 차단할 수 있습니다.\n'
+      + '· 초월할수록 이동 속도·사거리·피해가 오르고 캐릭터 효과가 화려해집니다.\n'
+      + '· 💬 채팅은 ▾ 로 접고 ▴ 로 펼칩니다.',
+    ok: '확인', cancel: null,
+  });
+});
