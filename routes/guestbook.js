@@ -38,6 +38,7 @@ router.get('/', handle('방명록을 불러오지 못했습니다.', async (req)
      JOIN users u ON u.id = g.user_id
      WHERE ($1::int IS NULL OR g.id < $1)
        AND NOT EXISTS (SELECT 1 FROM guestbook_reports r WHERE r.entry_id = g.id AND r.user_id = $2)
+       AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE b.user_id = $2 AND b.blocked_id = g.user_id)
        AND (SELECT COUNT(*) FROM guestbook_reports r WHERE r.entry_id = g.id) < $3
      ORDER BY g.id DESC
      LIMIT $4`,
@@ -48,6 +49,7 @@ router.get('/', handle('방명록을 불러오지 못했습니다.', async (req)
   return {
     entries: rows.map(r => ({
       id: r.id,
+      authorId: r.user_id,
       nickname: r.nickname,
       title: titles[r.user_id],
       message: r.message,

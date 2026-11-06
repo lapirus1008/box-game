@@ -2225,3 +2225,24 @@ body.mode-collection .mode-chip{ color:var(--museum); border-color:var(--museum)
 .lobby-tip{ margin:6px 0 0; font-size:11px; color:var(--ink-dim); text-align:center; }
 /* 모든 방이 가득 차서 목록에서 기다리는 중에는 채팅·안내를 숨김 */
 #lobbyView.waiting .lobby-log, #lobbyView.waiting .lobby-form, #lobbyView.waiting .lobby-tip, #lobbyView.waiting .lobby-hint{ display:none; }
+
+/* -------------------------------
+   신고 · 차단
+   ------------------------------- */
+.user-action-card{ max-width:320px; }
+.user-action-quote{
+  margin:0 0 10px; padding:8px 10px; border-radius:10px; background:var(--surface-2);
+  font-size:12px; color:var(--ink); overflow-wrap:anywhere;
+}
+.block-list{ max-height:50vh; overflow-y:auto; margin:4px 0 12px; }
+.block-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 4px; border-bottom:1px solid #22335C; font-size:14px; color:var(--ink); }
+.block-row .link-btn{ flex-shrink:0; }
+.block-empty{ margin:8px 0; font-size:12px; line-height:1.6; color:var(--ink-dim); text-align:center; }
+/* 광장: 다른 사람 캐릭터와 채팅 줄은 눌러서 신고·차단 */
+.lobby-player:not(.me) .lp-body, .lobby-player:not(.me) .lp-name{ pointer-events:auto; cursor:pointer; }
+.lobby-line:not(.mine){ cursor:pointer; }
+.lobby-line:not(.mine):active{ background:rgba(255,255,255,0.06); }
+/* 광장에서는 홈의 떠다니는 황금 상자를 숨김 (광장의 황금 상자와 헷갈리지 않게, 지형 조작도 가리지 않게) */
+body[data-tab="lobby"] #goldenBox{ display:none !important; }
+/* 광장은 화면을 넓게 쓰도록 카드 옆 여백을 줄임 */
+#lobbyScreen{ padding:24px 12px 20px; }

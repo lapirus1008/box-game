@@ -78,6 +78,10 @@ app.use('/api/box', boxLimiter, boxRoutes);
 const guestbookRoutes = require('./routes/guestbook');
 app.use('/api/guestbook', boxLimiter, guestbookRoutes);
 
+// 차단 목록 (신고는 광장 실시간 연결에서 받음)
+const socialRoutes = require('./routes/social');
+app.use('/api/social', boxLimiter, socialRoutes);
+
 // 화면(브라우저)에서 난 오류를 Render 로그로 받아 둡니다.
 // 사용자가 캡처해 주지 않아도 "화면을 그리지 못했습니다" 같은 오류를 서버에서 확인할 수 있습니다.
 // 로그만 남기고 DB는 쓰지 않습니다. 너무 자주 보내지 않도록 별도로 제한합니다.

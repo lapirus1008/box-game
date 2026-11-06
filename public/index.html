@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261105b">
+<link rel="stylesheet" href="style.css?v=20261106b">
 </head>
 <body>
 
@@ -68,10 +68,33 @@
       <button class="settings-item" id="openGuideBtn">📘 게임 가이드<small>처음 하는 분을 위한 화면 안내 다시 보기</small></button>
       <button class="settings-item record-only" id="resetRunBtn">🔄 초심으로 돌아가기<small>이번 판을 처음부터 다시 시작</small></button>
       <button class="settings-item" id="logoutBtn">🚪 로그아웃</button>
+      <button class="settings-item" id="openBlockListBtn">🚫 차단 목록<small>차단한 사람 보기 · 차단 해제</small></button>
       <a class="settings-item" href="privacy.html" target="_blank" rel="noopener">📄 개인정보처리방침</a>
       <button class="settings-item danger" id="openDeleteAccountBtn">🗑 계정 삭제</button>
     </div>
     <button id="settingsCloseBtn">닫기</button>
+  </div>
+</div>
+
+<!-- 사용자 신고·차단 (광장 캐릭터·채팅, 방명록 글에서 열림) -->
+<div id="userActionOverlay" class="info-overlay">
+  <div class="away-card user-action-card">
+    <p class="away-eyebrow" id="userActionName"></p>
+    <p class="user-action-quote hidden" id="userActionQuote"></p>
+    <div class="settings-list">
+      <button class="settings-item" id="userActionReportBtn">🚩 신고하기<small>부적절한 말·행동을 운영자에게 알리기</small></button>
+      <button class="settings-item danger" id="userActionBlockBtn">🚫 차단하기<small>이 사람의 캐릭터·채팅·방명록 글을 숨기기</small></button>
+    </div>
+    <button id="userActionCloseBtn">닫기</button>
+  </div>
+</div>
+
+<!-- 차단 목록 (설정) -->
+<div id="blockListOverlay" class="info-overlay">
+  <div class="away-card user-action-card">
+    <p class="away-eyebrow">🚫 차단 목록</p>
+    <div class="block-list" id="blockList"></div>
+    <button id="blockListCloseBtn">닫기</button>
   </div>
 </div>
 
@@ -513,7 +536,7 @@
         <input id="lobbyInput" maxlength="60" autocomplete="off" placeholder="광장에 한마디 (60자)">
         <button type="submit">보내기</button>
       </form>
-      <p class="lobby-hint">초월할수록 내 상자 캐릭터와 이름에 화려한 효과가 붙어요 · 수집모드 강화 탭에서 상자 강화 +20 → 초월</p>
+      <p class="lobby-hint">다른 사람이나 채팅을 누르면 🚩 신고 · 🚫 차단 · 초월할수록 내 캐릭터에 화려한 효과가 붙어요</p>
     </div>
   </div>
 
@@ -548,7 +571,7 @@
   <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
 </nav>
 
-<script src="app.js?v=20261105b"></script>
+<script src="app.js?v=20261106b"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {
