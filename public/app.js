@@ -1468,6 +1468,14 @@ document.getElementById('backFromUpgradeBtn').addEventListener('click', () => {
   goTab('home');
 });
 
+// 강화 가격 버튼: '장인의 손'이 걸려 있으면 원래 가격에 줄을 긋고 할인가(또는 무료)를 보여줍니다
+function upgradePriceHtml(u, isMax){
+  if (isMax) return 'MAX';
+  if (u.baseCost && u.cost < u.baseCost) {
+    return `<s class="price-was">${formatGold(u.baseCost)}G</s><span>${u.cost === 0 ? '무료' : `${formatGold(u.cost)}G`}</span>`;
+  }
+  return `${formatGold(u.cost)}G`;
+}
 function renderUpgradeScreen(){
   if (!lastStatus || !lastStatus.upgrades) return;
   renderEnhancePanel();
@@ -1483,12 +1491,17 @@ function renderUpgradeScreen(){
         <div class="shop-title">${u.emoji} ${u.name} <span class="shop-level">Lv.${u.level}/${u.maxLevel}</span></div>
         <div class="shop-desc">${isMax ? `${u.effect} · 최대 레벨` : `${u.effect} → <strong>${u.nextEffect}</strong>`}</div>
       </div>
-      <button class="shop-btn" data-upgrade="${u.key}" data-cost="${isMax ? '' : u.cost}" ${isMax ? 'disabled' : ''}>${isMax ? 'MAX' : `${formatGold(u.cost)}G`}</button>
+      <button class="shop-btn${!isMax && u.cost < u.baseCost ? ' skill-sale' : ''}" data-upgrade="${u.key}" data-cost="${isMax ? '' : u.cost}" ${isMax ? 'disabled' : ''}>${upgradePriceHtml(u, isMax)}</button>
     `;
     upgradeList.appendChild(row);
   });
   if (lastStatus.upgradeDiscountPercent > 0) {
     upgradeList.insertAdjacentHTML('afterbegin', `<p class="discount-note">🔨 신화 효과로 강화 비용 -${lastStatus.upgradeDiscountPercent}% 적용 중</p>`);
+  }
+  // 신화 스킬 '장인의 손': 다음 강화 1회 할인·무료 (수집가의 연구 제외)
+  const skillSale = lastStatus.skills && lastStatus.skills.active && lastStatus.skills.active.upgradeDiscount;
+  if (skillSale > 0) {
+    upgradeList.insertAdjacentHTML('afterbegin', `<p class="discount-note skill-note">✨ 장인의 손: 다음 강화 1회 ${skillSale >= 100 ? '<strong>무료</strong>' : `<strong>-${skillSale}%</strong>`} · 하나 사면 사라져요 (수집가의 연구 제외)</p>`);
   }
 
   const autoList = document.getElementById('automationList');
