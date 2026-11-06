@@ -361,8 +361,25 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
   resetGameResultUI();
   [gameScreen, collectionScreen, upgradeScreen, lobbyScreen, rankingScreen, document.getElementById('guestbookScreen')].forEach(el => el.classList.add('hidden'));
   document.body.classList.remove('in-game');
+  // 광장에 있었다면 실시간 연결도 끊고, 이 계정의 차단 목록도 비웁니다.
+  lobbyDisconnect();
+  blockedIds = new Set();
+  resetAuthForms();
   authScreen.classList.remove('hidden');
 });
+
+// 로그인 화면을 처음 상태로: 로그인 창을 보여주고, 입력칸(특히 비밀번호)을 모두 비웁니다.
+// (회원가입 직후 로그아웃하면 회원가입 창과 입력값이 그대로 남아 있었습니다)
+function resetAuthForms(){
+  ['loginEmail', 'loginPassword', 'signupNickname', 'signupEmail', 'signupPassword'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('signupForm').classList.add('hidden');
+  document.getElementById('loginForm').classList.remove('hidden');
+  document.getElementById('switchToLoginLine').classList.add('hidden');
+  document.getElementById('switchToSignupLine').classList.remove('hidden');
+  clearAuthError();
+}
 
 // 현재 모드에 맞춰 화면 전체를 갱신 (배지, 색상, 기록모드 전용 요소 표시 여부, 문구)
 function applyModeUI(mode){
