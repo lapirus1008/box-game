@@ -67,7 +67,7 @@ app.use('/api/auth', authRoutes);
 const boxLimiter = createLimiter({
   name: 'box',
   windowMs: 60 * 1000, // 1분
-  max: 180,            // 계정마다 분당 180회까지 (초당 3회꼴 - 강화·상자를 빠르게 연타해도 걸리지 않을 수치)
+  max: 300,            // 계정마다 분당 300회까지 (초당 5회꼴 - 강화·상자를 빠르게 연타해도 걸리지 않을 수치)
   keyGenerator: userOrIpKey,
 });
 

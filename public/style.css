@@ -2322,3 +2322,58 @@ body[data-tab="lobby"] #goldenBox{ display:none !important; }
 .discount-note.skill-note{ color:#ffd36e; }
 .shop-btn.skill-sale{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0; line-height:1.15; background:#ffd36e; color:#3a2600; }
 .shop-btn .price-was{ font-size:10px; font-weight:600; opacity:0.65; }
+
+/* -------------------------------
+   광장 전체 화면 (탭 바 위 전부): 지형이 바닥, 방 정보·채팅은 그 위에 떠 있는 층
+   ------------------------------- */
+#lobbyScreen{
+  position:fixed; top:0; left:50%; transform:translateX(-50%);
+  width:100%; max-width:420px; bottom:var(--tabbar-h, 76px);
+  margin:0; padding:0; border:0; border-radius:0; overflow:hidden; z-index:40;
+  background:#0f3459;
+}
+body[data-tab="lobby"]{ overflow:hidden; }
+#lobbyView{ position:absolute; inset:0; margin:0; }
+#lobbyView .lobby-stage{ position:absolute; inset:0; height:auto; border:0; border-radius:0; }
+
+.lobby-top{
+  position:absolute; top:0; left:0; right:0; z-index:20; padding:8px 8px 0;
+  display:flex; flex-direction:column; gap:6px; pointer-events:none;
+}
+.lobby-top > *{ pointer-events:auto; }
+#lobbyView .lobby-head{
+  display:flex; align-items:center; gap:6px; margin:0; padding:6px 6px 6px 12px; border-radius:12px;
+  background:rgba(10,16,32,0.78); font-size:12px; color:var(--ink);
+}
+#lobbyStatus{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lobby-icon-btn{
+  flex-shrink:0; width:30px; height:30px; margin:0; padding:0; border-radius:50%;
+  background:var(--surface-2); color:var(--ink); border:1px solid #2C3F6B; font-size:13px; font-weight:800;
+}
+#lobbyView .lobby-perks{ margin:0; padding:4px 10px; border-radius:10px; background:rgba(10,16,32,0.62); font-size:10px; }
+#lobbyView .lobby-rooms{ margin:0; max-height:55vh; overflow-y:auto; background:rgba(15,23,48,0.95); }
+
+/* 채팅 층 */
+.lobby-chat{
+  position:absolute; left:8px; right:8px; bottom:8px; z-index:20;
+  display:flex; flex-direction:column; align-items:flex-start; gap:4px;
+}
+.lobby-chat-toggle{
+  display:inline-flex; align-items:center; gap:6px; width:auto; margin:0; padding:5px 12px; border-radius:999px;
+  background:rgba(10,16,32,0.82); color:var(--ink); border:1px solid #2C3F6B; font-size:12px; font-weight:800;
+}
+.lobby-chat-unread{ min-width:18px; padding:0 5px; border-radius:9px; background:var(--danger); color:#fff; font-size:10px; line-height:18px; text-align:center; }
+.lobby-chat-arrow{ font-size:11px; color:var(--ink-dim); transition:transform .15s; }
+.lobby-chat.collapsed .lobby-chat-arrow{ transform:rotate(180deg); }
+.lobby-chat-body{ width:100%; padding:6px; border-radius:12px; background:rgba(10,16,32,0.74); }
+.lobby-chat.collapsed .lobby-chat-body{ display:none; }
+#lobbyView .lobby-log{ height:auto; min-height:40px; max-height:min(22vh, 150px); margin:0 0 6px; padding:2px 4px; background:transparent; }
+#lobbyView .lobby-form{ margin:0; }
+#lobbyView .lobby-form input{ padding:9px 10px; font-size:14px; }
+
+/* 레이드 체력바는 위쪽 정보 층 아래에 */
+#lobbyView .lobby-raid-hud{ top:calc(var(--lobby-top-h, 70px) + 4px); }
+
+/* 모든 방이 가득 차 목록에서 기다리는 중: 지형·채팅 숨김, 목록만 */
+#lobbyView.waiting .lobby-chat{ display:none; }
+#lobbyView.waiting{ background:var(--bg); }
