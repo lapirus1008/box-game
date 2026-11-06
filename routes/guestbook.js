@@ -66,7 +66,7 @@ router.post('/', handle('글을 남기지 못했습니다.', async (req) => {
   const raw = typeof req.body.message === 'string' ? req.body.message : '';
   // 줄바꿈은 3줄 연속까지만, 앞뒤 공백은 지웁니다.
   const message = raw.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-  if (!message) throw new HttpError(400, '내용을 입력해주세요.');
+  if (!message) throw new HttpError(400, '내용을 입력해 주십시오.');
   if ([...message].length > GUESTBOOK_MAX_LENGTH) throw new HttpError(400, `${GUESTBOOK_MAX_LENGTH}자까지 작성할 수 있습니다.`);
 
   const last = await db.query(

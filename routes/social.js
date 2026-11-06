@@ -42,14 +42,14 @@ router.post('/block', handle('차단하지 못했습니다.', async (req) => {
     'INSERT INTO user_blocks (user_id, blocked_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
     [me, target]
   );
-  return { message: `${user.rows[0].nickname}님을 차단했어요. 광장·방명록에서 보이지 않습니다.`, blocked: { id: target, nickname: user.rows[0].nickname } };
+  return { message: `${user.rows[0].nickname}님을 차단했습니다. 광장·방명록에서 보이지 않습니다.`, blocked: { id: target, nickname: user.rows[0].nickname } };
 }));
 
 router.delete('/block/:id', handle('차단을 풀지 못했습니다.', async (req) => {
   const target = parseUserId(req.params.id);
   if (!target) throw new HttpError(400, '잘못된 사용자입니다.');
   await db.query('DELETE FROM user_blocks WHERE user_id = $1 AND blocked_id = $2', [req.user.userId, target]);
-  return { message: '차단을 해제했어요.' };
+  return { message: '차단을 해제했습니다.' };
 }));
 
 module.exports = router;

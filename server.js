@@ -67,7 +67,7 @@ app.use('/api/auth', authRoutes);
 const boxLimiter = createLimiter({
   name: 'box',
   windowMs: 60 * 1000, // 1분
-  max: 120,            // 계정마다 분당 120회까지 (초당 2회꼴 - 정상적인 클릭 플레이로는 충분한 수치)
+  max: 180,            // 계정마다 분당 180회까지 (초당 3회꼴 - 강화·상자를 빠르게 연타해도 걸리지 않을 수치)
   keyGenerator: userOrIpKey,
 });
 
@@ -147,7 +147,7 @@ const { describeError } = require('./lib/http');
 const PORT = process.env.PORT || 3000;
 runMigrations()
   .catch(err => console.error(
-    `[MIGRATE] 마이그레이션 실패! ${err.migrationFile || ''} 부터 Neon 콘솔에서 직접 실행해주세요. · ${describeError(err)}`
+    `[MIGRATE] 마이그레이션 실패! ${err.migrationFile || ''} 부터 Neon 콘솔에서 직접 실행해 주십시오. · ${describeError(err)}`
   ))
   .then(() => logSchemaChecks())
   .catch(err => console.error(`[DB] CHECK 제약 확인 실패 · ${describeError(err)}`))

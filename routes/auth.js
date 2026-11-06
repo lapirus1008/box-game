@@ -28,14 +28,14 @@ const signupLimiter = createLimiter({
   name: 'signup',
   windowMs: 60 * 60 * 1000, // 1시간
   max: 5,                   // 같은 IP에서 1시간에 5번까지만 회원가입 시도 가능
-  message: '회원가입 시도가 너무 많습니다. 1시간 후 다시 시도해주세요.',
+  message: '회원가입 시도가 너무 많습니다. 1시간 후 다시 시도해 주십시오.',
 });
 
 const loginLimiter = createLimiter({
   name: 'login',
   windowMs: 15 * 60 * 1000, // 15분
   max: 10,                  // 같은 IP에서 15분에 10번까지만 로그인 시도 가능
-  message: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.',
+  message: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주십시오.',
   skipSuccessfulRequests: true, // 성공한 로그인은 카운트에서 빼서, 정상 유저가 실수로 막히는 걸 줄임
 });
 
@@ -47,7 +47,7 @@ const NICKNAME_REGEX = /^[가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9 _.\-]+$/;
 // 회원가입/로그인 입력값을 검증하는 함수
 function validateSignupInput({ email, password, nickname }) {
   if (!email || !password || !nickname) {
-    return '이메일, 비밀번호, 닉네임을 모두 입력해주세요.';
+    return '이메일, 비밀번호, 닉네임을 모두 입력해 주십시오.';
   }
   // 길이(.length)를 확인하기 전에 타입부터 검사합니다.
   // (숫자나 배열처럼 문자열이 아닌 값이 오면 .length가 엉뚱하게 동작하거나 에러가 날 수 있어서)
@@ -61,7 +61,7 @@ function validateSignupInput({ email, password, nickname }) {
     return '비밀번호는 4자 이상이어야 합니다.';
   }
   if (nickname.trim().length < 2 || nickname.trim().length > 20) {
-    return '닉네임은 2자 이상 20자 이하로 입력해주세요.';
+    return '닉네임은 2자 이상 20자 이하로 입력해 주십시오.';
   }
   // 닉네임은 랭킹 등 다른 사람 화면에 노출되므로, HTML 특수문자(< > & 따옴표 등)는 아예 막습니다.
   if (!NICKNAME_REGEX.test(nickname.trim())) {
@@ -69,7 +69,7 @@ function validateSignupInput({ email, password, nickname }) {
   }
   // bcrypt는 72바이트까지만 사용하고, 지나치게 긴 입력은 서버 자원만 낭비합니다.
   if (Buffer.byteLength(password, 'utf8') > 72) {
-    return '비밀번호는 72바이트(영문 기준 72자) 이하로 입력해주세요.';
+    return '비밀번호는 72바이트(영문 기준 72자) 이하로 입력해 주십시오.';
   }
   return null; // 문제 없음
 }
@@ -146,7 +146,7 @@ router.post('/login', loginLimiter, handle('서버 오류로 로그인에 실패
   const { email, password } = req.body;
 
   if (!email || !password) {
-    throw new HttpError(400, '이메일과 비밀번호를 입력해주세요.');
+    throw new HttpError(400, '이메일과 비밀번호를 입력해 주십시오.');
   }
   if (typeof email !== 'string' || typeof password !== 'string') {
     throw new HttpError(400, '입력 형식이 올바르지 않습니다.');
@@ -206,13 +206,13 @@ const deleteLimiter = createLimiter({
   name: 'delete-account',
   windowMs: 15 * 60 * 1000,
   max: 10,
-  message: '시도가 너무 많습니다. 잠시 후 다시 시도해주세요.',
+  message: '시도가 너무 많습니다. 잠시 후 다시 시도해 주십시오.',
 });
 
 router.post('/delete-account', deleteLimiter, handle('서버 오류로 계정을 삭제하지 못했습니다.', async (req) => {
   const { email, password } = req.body;
   if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
-    throw new HttpError(400, '이메일과 비밀번호를 입력해주세요.');
+    throw new HttpError(400, '이메일과 비밀번호를 입력해 주십시오.');
   }
 
   const result = await db.query('SELECT id, password_hash FROM users WHERE email = $1', [email]);
