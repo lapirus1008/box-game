@@ -455,6 +455,7 @@ let currentTab = 'home';
 function goTab(tab){
   if (tab !== 'lobby') lobbyDisconnect(); // 광장을 떠나면 실시간 연결을 닫아 배터리·데이터를 아낍니다
   currentTab = tab;
+  document.body.dataset.tab = tab;
   document.querySelectorAll('#tabBar .tab-item').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
   [gameScreen, collectionScreen, upgradeScreen, lobbyScreen, rankingScreen, document.getElementById('guestbookScreen')].forEach(el => el.classList.add('hidden'));
   window.scrollTo(0, 0);
@@ -482,6 +483,7 @@ function renderMyNickname(){
 }
 function enterGame(){
   renderMyNickname();
+  loadBlocks();
   authScreen.classList.add('hidden');
   document.body.classList.add('in-game');
   armBackGuard();
@@ -2363,7 +2365,7 @@ function renderGuestbookEntry(e){
   const title = e.title ? `<span class="rank-title" title="${escapeHtml(e.title.name)}">${e.title.emoji}</span>` : '';
   const action = e.isMine
     ? `<button class="link-btn" data-gb-delete="${e.id}">삭제</button>`
-    : `<button class="link-btn" data-gb-report="${e.id}">신고</button>`;
+    : `<button class="link-btn" data-gb-report="${e.id}">신고</button><button class="link-btn" data-gb-block="${e.authorId}" data-gb-name="${escapeHtml(e.nickname)}">차단</button>`;
   return `
     <div class="guestbook-entry${e.isMine ? ' mine' : ''}">
       <div class="guestbook-meta"><strong>${title}${escapeHtml(e.nickname)}${transcendBadgeHtml(e.title && e.title.transcend)}</strong><small>${formatTimeAgo(e.createdAt)}</small>${action}</div>
@@ -2417,6 +2419,8 @@ document.getElementById('guestbookForm').addEventListener('submit', async (e) =>
 });
 document.getElementById('guestbookMoreBtn').addEventListener('click', () => loadGuestbook(true));
 document.getElementById('guestbookList').addEventListener('click', async (e) => {
+  const block = e.target.closest('[data-gb-block]');
+  if (block) { blockUser(Number(block.dataset.gbBlock), block.dataset.gbName); return; }
   const del = e.target.closest('[data-gb-delete]');
   const rep = e.target.closest('[data-gb-report]');
   if (!del && !rep) return;
@@ -2539,7 +2543,7 @@ const OVERLAY_CLOSE_BUTTONS = {
   awayOverlay: 'awayCloseBtn', goldenInfoOverlay: 'goldenInfoCloseBtn', seasonOverlay: 'seasonOverlayCloseBtn',
   incomeOverlay: 'incomeHelpCloseBtn', settingsOverlay: 'settingsCloseBtn', modePickerOverlay: 'modePickerCloseBtn',
   choiceOverlay: 'choiceCloseBtn', deleteAccountOverlay: 'deleteAccountCancelBtn', boxPriceOverlay: 'boxPriceCloseBtn',
-  awakenOverlay: 'awakenCloseBtn',
+  awakenOverlay: 'awakenCloseBtn', userActionOverlay: 'userActionCloseBtn', blockListOverlay: 'blockListCloseBtn',
 };
 function armBackGuard(){
   if (!history.state || !history.state.boxGameGuard) history.pushState({ boxGameGuard: true }, '');
@@ -2680,7 +2684,7 @@ document.getElementById('settingsBtn').addEventListener('click', () => {
 });
 document.getElementById('settingsCloseBtn').addEventListener('click', () => settingsOverlay.classList.remove('show'));
 // 설정 안의 버튼을 누르면 창을 닫고 진행합니다(확인창·계정 삭제 창이 그 위에 뜨도록).
-['installAppBtn', 'resetRunBtn', 'logoutBtn', 'openDeleteAccountBtn'].forEach(id =>
+['installAppBtn', 'resetRunBtn', 'logoutBtn', 'openDeleteAccountBtn', 'openBlockListBtn'].forEach(id =>
   document.getElementById(id).addEventListener('click', () => settingsOverlay.classList.remove('show'), true));
 
 // -------------------------------
@@ -3169,7 +3173,7 @@ function handleLobbyMessage(msg){
   } else if (msg.t === 'chat') {
     appendLobbyChat(msg.c, true);
   } else if (msg.t === 'notice') {
-    showToast(msg.text, true);
+    showToast(msg.text, !msg.ok);
   } else if (msg.t === 'gspawn') {
     addLobbyGolden(msg.g);
     showToast('✨ 광장 어딘가에 황금 상자가 나타났어요! 🎁 를 따라가 톡톡 두드려 보세요');
@@ -3217,9 +3221,12 @@ function placeLobbyEl(el, x, y, durationMs){
   el.style.zIndex = String(10 + Math.round(y * 1000));
 }
 function addLobbyPlayer(p){
+  if (blockedIds.has(p.id)) return; // 차단한 사람은 보이지 않음
   const tier = transcendTier(p.transcend || 0);
   const el = document.createElement('div');
   el.className = `lobby-player tr-${tier}${p.id === lobbyMe ? ' me' : ''}`;
+  el.dataset.uid = p.id;
+  el.dataset.name = p.nickname;
   el.innerHTML = `
     <div class="lp-bubble"></div>
     <div class="lp-body">
@@ -3266,6 +3273,8 @@ function walkLobbyPlayer(id, x, y){
 lobbyStage.addEventListener('click', (e) => {
   if (!lobbyWorld || !lobbyMe || !lobbyPlayers.has(lobbyMe)) return;
   if (e.target.closest('.lobby-golden')) return; // 황금 상자 누르기는 따로 처리
+  const other = e.target.closest('.lobby-player:not(.me)');
+  if (other) { openUserAction({ id: Number(other.dataset.uid), nickname: other.dataset.name, source: 'lobby' }); return; }
   const rect = lobbyStage.getBoundingClientRect();
   const cam = lobbyCameraCenter();
   const x = cam.x + (e.clientX - rect.left - rect.width / 2) / LOBBY_WORLD_W;
@@ -3361,7 +3370,8 @@ function updateLobbyGoldenHint(){
   const dy = (box.y - mePos.y) * LOBBY_WORLD_H;
   const hw = lobbyStage.clientWidth / 2 - 28;
   const hh = lobbyStage.clientHeight / 2 - 28;
-  const off = Math.abs(dx) > hw || Math.abs(dy) > hh;
+  // 상자가 조금이라도 보이면 화살표를 띄우지 않음 (가장자리에서 상자를 가리지 않게)
+  const off = Math.abs(dx) > lobbyStage.clientWidth / 2 + 24 || Math.abs(dy) > lobbyStage.clientHeight / 2 + 24;
   arrow.classList.toggle('hidden', !off);
   if (off) {
     const k = Math.min(hw / Math.abs(dx || 1), hh / Math.abs(dy || 1));
@@ -3378,8 +3388,11 @@ lobbyStage.addEventListener('click', (e) => {
 }, true);
 
 function appendLobbyChat(c, showBubble){
+  if (blockedIds.has(c.id)) return;
   const line = document.createElement('div');
   line.className = `lobby-line${c.id === lobbyMe ? ' mine' : ''}`;
+  line.dataset.uid = c.id;
+  if (c.cid) line.dataset.cid = c.cid;
   line.innerHTML = `<strong>${escapeHtml(c.nickname)}${transcendBadgeHtml(c.transcend)}</strong> <span class="lobby-text"></span>`;
   line.querySelector('.lobby-text').textContent = c.text;
   lobbyLogEl.appendChild(line);
@@ -3469,4 +3482,123 @@ document.getElementById('enhancePanel').addEventListener('click', async (event) 
     await refreshStatus();
     renderUpgradeScreen();
   }
+});
+
+// -------------------------------
+// 신고 · 차단 (구글 플레이 사용자 제작 콘텐츠 정책)
+// - 광장: 다른 사람 캐릭터나 채팅 줄을 누르면 신고·차단 창
+// - 방명록: 글마다 신고·차단 버튼
+// - 차단한 사람의 광장 캐릭터·채팅·방명록 글은 보이지 않습니다. 설정 → 차단 목록에서 해제
+// -------------------------------
+let blockedIds = new Set();
+async function loadBlocks(){
+  try {
+    const res = await authFetch('/api/social/blocks');
+    if (!res.ok) return;
+    const data = await res.json();
+    blockedIds = new Set(data.blocks.map(b => b.id));
+    return data.blocks;
+  } catch (e) { /* 다음 접속 때 다시 */ }
+}
+
+const userActionOverlay = document.getElementById('userActionOverlay');
+let userActionTarget = null; // { id, nickname, cid, text, source }
+function openUserAction(target){
+  if (!target.id || target.id === (currentUser && currentUser.id)) return;
+  userActionTarget = target;
+  document.getElementById('userActionName').textContent = target.nickname || '';
+  const quote = document.getElementById('userActionQuote');
+  quote.textContent = target.text ? `“${target.text}”` : '';
+  quote.classList.toggle('hidden', !target.text);
+  document.getElementById('userActionReportBtn').innerHTML = target.cid
+    ? '🚩 이 채팅 신고하기<small>부적절한 말을 운영자에게 알리기</small>'
+    : '🚩 사용자 신고하기<small>부적절한 행동을 운영자에게 알리기</small>';
+  // 광장 밖(방명록)에서는 글마다 신고 버튼이 따로 있어서 차단만 보여줍니다
+  document.getElementById('userActionReportBtn').classList.toggle('hidden', target.source !== 'lobby');
+  userActionOverlay.classList.add('show');
+}
+document.getElementById('userActionCloseBtn').addEventListener('click', () => userActionOverlay.classList.remove('show'));
+document.getElementById('userActionReportBtn').addEventListener('click', () => {
+  const t = userActionTarget;
+  userActionOverlay.classList.remove('show');
+  if (!t) return;
+  if (!lobbyWs || lobbyWs.readyState !== WebSocket.OPEN) { showToast('광장에 연결되지 않았어요', true); return; }
+  lobbySend(t.cid ? { t: 'report', cid: t.cid } : { t: 'report', id: t.id });
+});
+document.getElementById('userActionBlockBtn').addEventListener('click', () => {
+  const t = userActionTarget;
+  userActionOverlay.classList.remove('show');
+  if (t) blockUser(t.id, t.nickname);
+});
+
+async function blockUser(id, nickname){
+  if (!id) return;
+  const ok = await askConfirm({
+    title: `🚫 ${nickname || ''} 차단`,
+    text: '이 사람의 광장 캐릭터·채팅과 방명록 글이 더 이상 보이지 않습니다.\n설정 → 차단 목록에서 언제든 해제할 수 있어요.',
+    ok: '차단', danger: true,
+  });
+  if (!ok) return;
+  try {
+    const res = await authFetch('/api/social/block', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: id }),
+    });
+    const data = await res.json();
+    showToast(data.message, !res.ok);
+    if (!res.ok) return;
+    blockedIds.add(id);
+    hideBlockedEverywhere(id);
+  } catch (e) {
+    showToast('서버에 연결할 수 없습니다.', true);
+  }
+}
+// 방금 차단한 사람을 지금 보이는 화면에서 바로 지웁니다
+function hideBlockedEverywhere(id){
+  const entry = lobbyPlayers.get(id);
+  if (entry) { clearTimeout(entry.bubbleTimer); entry.el.remove(); lobbyPlayers.delete(id); updateLobbyCount(); }
+  lobbyLogEl.querySelectorAll(`.lobby-line[data-uid="${id}"]`).forEach(el => el.remove());
+  document.querySelectorAll(`#guestbookList [data-gb-block="${id}"]`).forEach(btn => btn.closest('.guestbook-entry')?.remove());
+}
+
+// 광장 채팅 줄을 누르면 그 채팅 신고·차단
+lobbyLogEl.addEventListener('click', (e) => {
+  const line = e.target.closest('.lobby-line');
+  if (!line || line.classList.contains('mine')) return;
+  openUserAction({
+    id: Number(line.dataset.uid),
+    nickname: line.querySelector('strong')?.textContent || '',
+    cid: line.dataset.cid ? Number(line.dataset.cid) : null,
+    text: line.querySelector('.lobby-text')?.textContent || '',
+    source: 'lobby',
+  });
+});
+
+// 설정 → 차단 목록
+const blockListOverlay = document.getElementById('blockListOverlay');
+async function renderBlockList(){
+  const listEl = document.getElementById('blockList');
+  listEl.innerHTML = '<p class="block-empty">불러오는 중...</p>';
+  const blocks = await loadBlocks();
+  if (!blocks) { listEl.innerHTML = '<p class="block-empty">불러오지 못했습니다.</p>'; return; }
+  listEl.innerHTML = blocks.length
+    ? blocks.map(b => `<div class="block-row"><span>${escapeHtml(b.nickname)}</span><button class="link-btn" data-unblock="${b.id}">해제</button></div>`).join('')
+    : '<p class="block-empty">차단한 사람이 없어요.<br>광장에서 다른 사람이나 채팅을 누르면 신고·차단할 수 있어요.</p>';
+}
+document.getElementById('openBlockListBtn').addEventListener('click', () => {
+  blockListOverlay.classList.add('show');
+  renderBlockList();
+});
+document.getElementById('blockListCloseBtn').addEventListener('click', () => blockListOverlay.classList.remove('show'));
+document.getElementById('blockList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-unblock]');
+  if (!btn) return;
+  btn.disabled = true;
+  const res = await authFetch(`/api/social/block/${btn.dataset.unblock}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  showToast(data.message || '차단을 해제하지 못했습니다.', !res.ok);
+  if (res.ok) {
+    blockedIds.delete(Number(btn.dataset.unblock));
+    btn.closest('.block-row').remove();
+    if (!document.querySelector('#blockList .block-row')) renderBlockList();
+  } else btn.disabled = false;
 });
