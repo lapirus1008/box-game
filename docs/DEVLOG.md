@@ -18,6 +18,9 @@
 - **비밀번호 찾기 메일 보내는 주소 = 개인 Gmail** (2026-11-10 결정)
   - 바꿀 신호: "코드 메일이 안 온다/스팸함" 문의 반복, Render Logs `[MAIL]` 실패 잦음, 개인 메일함에 유저 답장 혼재, 하루 발송이 무료 한도(300통) 근접
   - 방법: 도메인 구입 → Brevo Domains 인증 → Render `MAIL_FROM`=`noreply@도메인` (코드 수정 없음). 자세히: `docs/PLAY_STORE.md`
+- **Brevo IP 차단** (2026-11-10): 처음 보는 IP(Render 서버, 미국 오하이오)에서 온 API 요청을 Brevo가 막아 첫 메일 실패.
+  IP 검토를 끄는 것으로 결정(Render IP가 고정이 아님, 키 권한은 거래 메일 발송만). 메일이 다시 안 오고 Brevo에서
+  "unusual IP address" 메일이 오면 같은 원인 → Settings → Security → Authorized IPs 확인
 - **Brevo API 키 만료** (2026-11-10 생성 예정, 권한: Transactional email = All만)
   - 키는 설정한 기간(최대 1년, 2027-11 무렵)이 지나거나 **90일 동안 안 쓰이면 만료**됨 → 비밀번호 찾기 메일이 안 나감
   - 신호: Render Logs `[MAIL] … 메일 서비스 응답 401`, "코드 메일이 안 온다" 문의
