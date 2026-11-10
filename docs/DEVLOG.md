@@ -18,6 +18,10 @@
 - **비밀번호 찾기 메일 보내는 주소 = 개인 Gmail** (2026-11-10 결정)
   - 바꿀 신호: "코드 메일이 안 온다/스팸함" 문의 반복, Render Logs `[MAIL]` 실패 잦음, 개인 메일함에 유저 답장 혼재, 하루 발송이 무료 한도(300통) 근접
   - 방법: 도메인 구입 → Brevo Domains 인증 → Render `MAIL_FROM`=`noreply@도메인` (코드 수정 없음). 자세히: `docs/PLAY_STORE.md`
+- **Brevo API 키 만료** (2026-11-10 생성 예정, 권한: Transactional email = All만)
+  - 키는 설정한 기간(최대 1년, 2027-11 무렵)이 지나거나 **90일 동안 안 쓰이면 만료**됨 → 비밀번호 찾기 메일이 안 나감
+  - 신호: Render Logs `[MAIL] … 메일 서비스 응답 401`, "코드 메일이 안 온다" 문의
+  - 조치: Brevo Settings → SMTP & API → API Keys에서 새 키 생성 → Render `BREVO_API_KEY` 교체. 만료 1달 전(2027-10)에 사용자에게 짚어 줄 것
 - **Render 무료 서버**: 재시작 시 첫 접속 30~60초. 스토어 출시 시점에 Starter(월 7달러) 전환 여부를 사용자에게 다시 물을 것
 - **플레이스토어 출시 진행 상황** (`docs/PLAY_STORE.md`)
   - 내부 테스트에 1(1.0.0.0) 업로드됨. 그 버전의 업로드 키와 저장소 `assetlinks.json` 지문 일치 여부는 아직 확인 안 됨
