@@ -11,7 +11,7 @@ const { HttpError, withTransaction, handle } = require('../lib/http');
 const { INITIAL_GOLD } = require('../game/config');
 const { getSeason } = require('../game/season');
 const crypto = require('crypto');
-const { sendMail, isMailConfigured } = require('../lib/mail');
+const { sendMail, isMailConfigured, maskEmail } = require('../lib/mail');
 
 const router = express.Router();
 
@@ -239,7 +239,11 @@ router.post('/forgot', forgotLimiter, handle('서버 오류로 인증 코드를 
 
   const result = await db.query('SELECT id, nickname FROM users WHERE email = $1', [email]);
   const user = result.rows[0];
-  if (!user) return { message: FORGOT_SENT_MESSAGE };
+  // 메일이 안 왔다는 문의를 확인할 수 있도록, 보낸 경우·건너뛴 경우 모두 로그로 남깁니다 (주소는 가림)
+  if (!user) {
+    console.log(`[MAIL] 비밀번호 찾기: 가입되지 않은 이메일 ${maskEmail(email)} → 발송 안 함`);
+    return { message: FORGOT_SENT_MESSAGE };
+  }
 
   const recent = await db.query(
     `SELECT COUNT(*) AS n, MAX(created_at) AS last FROM password_resets
@@ -249,6 +253,7 @@ router.post('/forgot', forgotLimiter, handle('서버 오류로 인증 코드를 
   const last = recent.rows[0].last ? new Date(recent.rows[0].last).getTime() : 0;
   if (Date.now() - last < RESET_RESEND_GAP_MS || Number(recent.rows[0].n) >= RESET_MAX_PER_HOUR) {
     // 너무 자주 요청하면 새 코드를 보내지 않음 (안내는 같게 해서 가입 여부를 숨김)
+    console.log(`[MAIL] 비밀번호 찾기: 1분 안 재요청 또는 1시간 ${RESET_MAX_PER_HOUR}번 초과 → 발송 생략 user=${user.id}`);
     return { message: FORGOT_SENT_MESSAGE };
   }
 
@@ -259,7 +264,7 @@ router.post('/forgot', forgotLimiter, handle('서버 오류로 인증 코드를 
     [user.id, hashResetCode(user.id, code), String(RESET_CODE_TTL_MIN)]
   );
   try {
-    await sendMail({
+    const messageId = await sendMail({
       to: email,
       subject: `[시간의 상자] 비밀번호 재설정 인증 코드 ${code}`,
       text: `${user.nickname}님, 비밀번호 재설정 인증 코드는 ${code} 입니다.\n${RESET_CODE_TTL_MIN}분 안에 게임의 비밀번호 찾기 화면에 입력해 주십시오.\n직접 요청하지 않으셨다면 이 메일은 무시하셔도 됩니다.`,
@@ -269,6 +274,7 @@ router.post('/forgot', forgotLimiter, handle('서버 오류로 인증 코드를 
         <p>${RESET_CODE_TTL_MIN}분 안에 게임의 비밀번호 찾기 화면에 입력해 주십시오.<br>직접 요청하지 않으셨다면 이 메일은 무시하셔도 됩니다.</p>
       </div>`,
     });
+    console.log(`[MAIL] 인증 코드 메일을 메일 서비스에 넘김 user=${user.id} → ${maskEmail(email)} (id ${messageId})`);
   } catch (err) {
     console.error(`[MAIL] 인증 코드 메일 발송 실패 user=${user.id} · ${err.message}`);
   }
