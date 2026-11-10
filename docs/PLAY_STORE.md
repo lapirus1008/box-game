@@ -99,7 +99,10 @@ TWA는 크롬 엔진으로 우리 웹 게임을 주소창 없이 전체 화면�
    - `BREVO_API_KEY` = 3번 키
    - `MAIL_FROM` = 2번에서 인증한 이메일
    - `MAIL_FROM_NAME` = `시간의 상자` (선택)
-5. 게임 로그인 화면 → 비밀번호를 잊으셨습니까? → 내 이메일로 코드가 오는지 확인
+5. **IP 차단 끄기**: Brevo는 처음 보는 IP의 API 요청을 막고 "unusual IP address" 메일을 보냄.
+   Render 서버 IP는 고정이 아니라서 IP 하나만 허용하면 나중에 다시 막힘 →
+   메일의 **Stop the review of IP addresses** 또는 Brevo **Settings → Security → Authorized IPs**에서 차단 끄기
+6. 게임 로그인 화면 → 비밀번호를 잊으셨습니까? → 내 이메일로 코드가 오는지 확인
    - 안 오면 Render Logs에서 `[MAIL]`로 검색 (실패 이유가 남음), 스팸함도 확인
 
 ## 신고 확인 방법 (운영)
