@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261110a">
+<link rel="stylesheet" href="style.css?v=20261110b">
 </head>
 <body>
 
@@ -62,8 +62,10 @@
 <div id="settingsOverlay" class="info-overlay">
   <div class="away-card settings-card">
     <p class="away-eyebrow">⚙️ 설정</p>
-    <div class="settings-account"><strong id="settingsNickname"></strong><small id="settingsEmail"></small></div>
+    <div class="settings-account"><strong id="settingsNickname"></strong><small id="settingsEmail"></small><span class="email-state" id="settingsEmailState"></span></div>
     <div class="settings-list">
+      <button class="settings-item" id="openEmailVerifyBtn">📧 이메일 인증<small>비밀번호를 잊었을 때 찾을 수 있게 · 첫 인증 💎20</small></button>
+      <button class="settings-item" id="openEmailChangeBtn">✏️ 이메일 변경<small>새 주소로 받은 코드를 확인하면 바뀝니다</small></button>
       <button class="settings-item install-item hidden" id="installAppBtn">📲 앱으로 설치<small>홈 화면 아이콘 · 전체 화면 실행</small></button>
       <button class="settings-item" id="openGuideBtn">📘 게임 가이드<small>처음 하는 분을 위한 화면 안내 다시 보기</small></button>
       <button class="settings-item record-only" id="resetRunBtn">🔄 초심으로 돌아가기<small>이번 판을 처음부터 다시 시작</small></button>
@@ -73,6 +75,28 @@
       <button class="settings-item danger" id="openDeleteAccountBtn">🗑 계정 삭제</button>
     </div>
     <button id="settingsCloseBtn">닫기</button>
+  </div>
+</div>
+
+<!-- 이메일 인증 / 이메일 변경 (설정 · 홈 안내에서 열림) -->
+<div id="emailOverlay" class="info-overlay">
+  <div class="away-card user-action-card email-card">
+    <p class="away-eyebrow" id="emailTitle">📧 이메일 인증</p>
+    <p class="forgot-desc" id="emailDesc"></p>
+    <div class="error-msg" id="emailError"></div>
+    <div id="emailChangeFields">
+      <label for="emailNewInput">새 이메일</label>
+      <input type="email" id="emailNewInput" autocomplete="email">
+      <label for="emailPasswordInput">현재 비밀번호</label>
+      <input type="password" id="emailPasswordInput" autocomplete="current-password">
+    </div>
+    <div id="emailCodeFields" class="hidden">
+      <label for="emailCodeInput">인증 코드 (숫자 6자리)</label>
+      <input type="text" id="emailCodeInput" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+    </div>
+    <button class="btn-primary" id="emailSubmitBtn">인증 코드 받기</button>
+    <button class="link-btn forgot-link hidden" id="emailResendBtn">코드 다시 받기</button>
+    <button id="emailCloseBtn">닫기</button>
   </div>
 </div>
 
@@ -276,6 +300,7 @@
       <input type="text" id="signupNickname" autocomplete="nickname" enterkeyhint="next" required>
       <label for="signupEmail">이메일</label>
       <input type="email" id="signupEmail" autocomplete="username" enterkeyhint="next" required>
+      <small class="field-hint">비밀번호를 잊었을 때 이 주소로 찾습니다. 정확히 입력해 주십시오.</small>
       <label for="signupPassword">비밀번호 (4자 이상)</label>
       <input type="password" id="signupPassword" autocomplete="new-password" enterkeyhint="go" minlength="4" required>
       <button type="submit" class="btn-primary" id="signupSubmitBtn">회원가입</button>
@@ -358,6 +383,12 @@
     <div class="skill-bar" id="skillBar">
       <div class="skill-bar-head"><span>✨ 신화 스킬</span><small id="skillBuffs"></small></div>
       <div class="skill-row" id="skillRow"></div>
+    </div>
+
+    <!-- 이메일 미인증 안내 (인증하면 사라짐, 닫으면 7일 동안 숨김) -->
+    <div class="email-nudge hidden" id="emailNudge">
+      <button class="email-nudge-main" id="emailNudgeOpen">📧 이메일을 인증하면 비밀번호를 잊어도 찾을 수 있습니다 <strong>· 첫 인증 💎20</strong></button>
+      <button class="email-nudge-close" id="emailNudgeClose" aria-label="닫기">✕</button>
     </div>
 
     <!-- 오늘의 미션 · 업적 (수집모드): 따로 메뉴 없이 홈에서 접었다 펴서 보고 바로 받기 -->
@@ -603,7 +634,7 @@
   <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
 </nav>
 
-<script src="app.js?v=20261110a"></script>
+<script src="app.js?v=20261110b"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {

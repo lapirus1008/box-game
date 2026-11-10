@@ -12,6 +12,7 @@ const { INITIAL_GOLD } = require('../game/config');
 const { getSeason } = require('../game/season');
 const crypto = require('crypto');
 const { sendMail, isMailConfigured, maskEmail } = require('../lib/mail');
+const { addressQuotaReason, userSendsToday, recordMailSend } = require('../lib/mailGuard');
 
 const router = express.Router();
 
@@ -108,7 +109,7 @@ router.post('/signup', signupLimiter, handle('서버 오류로 회원가입에 �
       const result = await client.query(
         `INSERT INTO users (email, password_hash, nickname, created_at)
          VALUES ($1, $2, $3, NOW())
-         RETURNING id, email, nickname`,
+         RETURNING id, email, nickname, (email_verified_at IS NOT NULL) AS email_verified`,
         [email, passwordHash, nickname.trim()]
       );
       const user = result.rows[0];
@@ -158,7 +159,7 @@ router.post('/login', loginLimiter, handle('서버 오류로 로그인에 실패
   }
 
   // 1. 이메일로 사용자 찾기
-  const result = await db.query('SELECT id, email, nickname, password_hash FROM users WHERE email = $1', [email]);
+  const result = await db.query('SELECT id, email, nickname, password_hash, (email_verified_at IS NOT NULL) AS email_verified FROM users WHERE email = $1', [email]);
   const user = result.rows[0];
 
   // 2. 입력한 비밀번호와 저장된 해시를 비교
@@ -176,7 +177,7 @@ router.post('/login', loginLimiter, handle('서버 오류로 로그인에 실패
   // 3. 로그인 성공 → JWT 토큰 발급
   return {
     message: '로그인 성공',
-    user: { id: user.id, email: user.email, nickname: user.nickname },
+    user: { id: user.id, email: user.email, nickname: user.nickname, email_verified: user.email_verified },
     token: signToken(user),
   };
 }));
@@ -188,7 +189,7 @@ router.post('/login', loginLimiter, handle('서버 오류로 로그인에 실패
 // 유효한지 확인하고 사용자 정보를 다시 받아오는 용도로 씁니다.
 router.get('/me', verifyToken, handle('서버 오류가 발생했습니다.', async (req) => {
   const result = await db.query(
-    'SELECT id, email, nickname, active_mode, transcend_count FROM users WHERE id = $1',
+    'SELECT id, email, nickname, active_mode, transcend_count, (email_verified_at IS NOT NULL) AS email_verified FROM users WHERE id = $1',
     [req.user.userId]
   );
   if (result.rows.length === 0) throw new HttpError(404, '사용자를 찾을 수 없습니다.');
@@ -256,6 +257,13 @@ router.post('/forgot', forgotLimiter, handle('서버 오류로 인증 코드를 
     console.log(`[MAIL] 비밀번호 찾기: 1분 안 재요청 또는 1시간 ${RESET_MAX_PER_HOUR}번 초과 → 발송 생략 user=${user.id}`);
     return { message: FORGOT_SENT_MESSAGE };
   }
+  // 받는 주소 기준 한도 (인증·변경 메일과 합산, 하루 최대 10통)
+  const quota = await addressQuotaReason(db, email);
+  if (quota) {
+    console.log(`[MAIL] 비밀번호 찾기: 받는 주소 발송 한도(${quota}) → 발송 생략 user=${user.id}`);
+    return { message: FORGOT_SENT_MESSAGE };
+  }
+  await recordMailSend(db, email, user.id, 'reset');
 
   const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
   await db.query(
@@ -290,7 +298,7 @@ router.post('/reset', resetLimiter, handle('서버 오류로 비밀번호를 바
   if (newPassword.length < 4) throw new HttpError(400, '비밀번호는 4자 이상이어야 합니다.');
   if (Buffer.byteLength(newPassword, 'utf8') > 72) throw new HttpError(400, '비밀번호는 72바이트(영문 기준 72자) 이하로 입력해 주십시오.');
 
-  const userResult = await db.query('SELECT id, email, nickname FROM users WHERE email = $1', [email]);
+  const userResult = await db.query('SELECT id, email, nickname, (email_verified_at IS NOT NULL) AS email_verified FROM users WHERE email = $1', [email]);
   const user = userResult.rows[0];
   if (!user) throw new HttpError(400, RESET_INVALID_MESSAGE);
 
@@ -319,7 +327,7 @@ router.post('/reset', resetLimiter, handle('서버 오류로 비밀번호를 바
     console.log(`[AUTH] 비밀번호 재설정 완료 user=${user.id}`);
     return {
       message: '비밀번호를 바꿨습니다. 새 비밀번호로 로그인되었습니다.',
-      user: { id: user.id, email: user.email, nickname: user.nickname },
+      user: { id: user.id, email: user.email, nickname: user.nickname, email_verified: user.email_verified },
       token: signToken(user),
     };
   }).then((result) => {
@@ -330,6 +338,202 @@ router.post('/reset', resetLimiter, handle('서버 오류로 비밀번호를 바
     }
     return result;
   });
+}));
+
+// -------------------------------
+// 이메일 인증 · 변경 (로그인 필요)
+//   POST /api/auth/email/verify/send               지금 이메일로 인증 코드 보내기
+//   POST /api/auth/email/verify/confirm { code }   인증 완료 (첫 인증이면 수집모드 신화 조각 보상, 계정당 1번)
+//   POST /api/auth/email/change/send { newEmail, password }  새 이메일로 코드 보내기 (현재 비밀번호 확인)
+//   POST /api/auth/email/change/confirm { code }   이메일 변경 (새 주소는 인증된 상태가 됨, 이전 주소가 인증돼 있었으면 알림 메일)
+// 남의 메일함 괴롭히기 방지: 받는 주소마다 1분 1통·1시간 5통·하루 10통(모든 메일 합산),
+// 이메일 변경 요청은 계정당 하루 5번, 변경에는 현재 비밀번호 필요.
+// -------------------------------
+const EMAIL_CODE_TTL_MIN = 15;
+const EMAIL_CODE_MAX_ATTEMPTS = 5;
+const EMAIL_CHANGE_PER_DAY = 5;
+const EMAIL_VERIFY_REWARD_SHARDS = 20;
+const emailLimiter = createLimiter({
+  name: 'email',
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주십시오.',
+});
+
+function hashEmailCode(purpose, userId, code) {
+  return crypto.createHmac('sha256', process.env.JWT_SECRET).update(`${purpose}:${userId}:${code}`).digest('hex');
+}
+const QUOTA_MESSAGE = {
+  gap: '방금 코드를 보냈습니다. 1분 뒤에 다시 시도해 주십시오.',
+  hour: '이 주소로 보낸 메일이 많습니다. 1시간 뒤에 다시 시도해 주십시오.',
+  day: '이 주소로 오늘 보낼 수 있는 메일을 모두 보냈습니다. 내일 다시 시도해 주십시오.',
+};
+function codeMailHtml(nickname, lead, code, tail) {
+  return `<div style="font-family:sans-serif;line-height:1.6">
+    <p>${escapeHtmlText(nickname)}님, ${lead}</p>
+    <p style="font-size:28px;font-weight:bold;letter-spacing:6px">${code}</p>
+    <p>${tail}<br>직접 요청하지 않으셨다면 이 메일은 무시하셔도 됩니다.</p>
+  </div>`;
+}
+
+// 코드 만들어 저장하고 메일 보내기 (보내기 전 받는 주소 한도 확인). 실패하면 HttpError
+async function issueEmailCode(user, purpose, toEmail, { subject, lead, tail }) {
+  if (!isMailConfigured()) {
+    console.error('[MAIL] 이메일 인증 요청이 왔지만 메일 발송 설정이 없습니다');
+    throw new HttpError(503, '지금은 메일을 보낼 수 없습니다. 잠시 후 다시 시도해 주십시오.');
+  }
+  const quota = await addressQuotaReason(db, toEmail);
+  if (quota) {
+    console.log(`[MAIL] 이메일 ${purpose}: 받는 주소 발송 한도(${quota}) → 발송 생략 user=${user.id}`);
+    throw new HttpError(429, QUOTA_MESSAGE[quota]);
+  }
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  await db.query(
+    `INSERT INTO email_codes (user_id, purpose, email, code_hash, expires_at)
+     VALUES ($1, $2, $3, $4, NOW() + ($5 || ' minutes')::interval)`,
+    [user.id, purpose, toEmail, hashEmailCode(purpose, user.id, code), String(EMAIL_CODE_TTL_MIN)]
+  );
+  await recordMailSend(db, toEmail, user.id, purpose);
+  try {
+    const messageId = await sendMail({
+      to: toEmail,
+      subject: `[시간의 상자] ${subject} ${code}`,
+      text: `${user.nickname}님, ${lead}\n인증 코드: ${code}\n${tail}\n직접 요청하지 않으셨다면 이 메일은 무시하셔도 됩니다.`,
+      html: codeMailHtml(user.nickname, lead, code, tail),
+    });
+    console.log(`[MAIL] 이메일 ${purpose} 코드 메일을 메일 서비스에 넘김 user=${user.id} → ${maskEmail(toEmail)} (id ${messageId})`);
+  } catch (err) {
+    console.error(`[MAIL] 이메일 ${purpose} 코드 메일 발송 실패 user=${user.id} · ${err.message}`);
+    throw new HttpError(502, '메일을 보내지 못했습니다. 잠시 후 다시 시도해 주십시오.');
+  }
+}
+
+// 코드 확인 (틀리면 횟수 증가). 반환: 맞은 코드 행 { id, email }. 틀리거나 없으면 HttpError
+async function checkEmailCode(userId, purpose, rawCode) {
+  const code = typeof rawCode === 'string' ? rawCode.trim() : '';
+  if (!/^\d{6}$/.test(code)) throw new HttpError(400, '인증 코드는 숫자 6자리입니다.');
+  const result = await db.query(
+    `SELECT id, email, code_hash, attempts FROM email_codes
+     WHERE user_id = $1 AND purpose = $2 AND expires_at > NOW() AND attempts < $3
+     ORDER BY created_at DESC LIMIT 1`,
+    [userId, purpose, EMAIL_CODE_MAX_ATTEMPTS]
+  );
+  const row = result.rows[0];
+  if (!row) throw new HttpError(400, RESET_INVALID_MESSAGE);
+  const expected = Buffer.from(row.code_hash, 'hex');
+  const given = Buffer.from(hashEmailCode(purpose, userId, code), 'hex');
+  if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
+    await db.query('UPDATE email_codes SET attempts = attempts + 1 WHERE id = $1', [row.id]);
+    const left = EMAIL_CODE_MAX_ATTEMPTS - row.attempts - 1;
+    throw new HttpError(400, left > 0
+      ? `인증 코드가 맞지 않습니다. (남은 시도 ${left}번)`
+      : '인증 코드를 여러 번 틀려 무효가 되었습니다. 코드를 다시 받아 주십시오.');
+  }
+  return row;
+}
+
+async function loadMe(userId) {
+  const result = await db.query(
+    'SELECT id, email, nickname, password_hash, email_verified_at, email_verify_rewarded FROM users WHERE id = $1',
+    [userId]
+  );
+  if (!result.rows[0]) throw new HttpError(404, '사용자를 찾을 수 없습니다.');
+  return result.rows[0];
+}
+
+router.post('/email/verify/send', verifyToken, emailLimiter, handle('서버 오류로 인증 코드를 보내지 못했습니다.', async (req) => {
+  const me = await loadMe(req.user.userId);
+  if (me.email_verified_at) throw new HttpError(400, '이미 인증된 이메일입니다.');
+  await issueEmailCode(me, 'verify', me.email, {
+    subject: '이메일 인증 코드',
+    lead: '「시간의 상자」 이메일 인증 코드입니다.',
+    tail: `${EMAIL_CODE_TTL_MIN}분 안에 게임의 설정 → 이메일 인증 화면에 입력해 주십시오.`,
+  });
+  return { message: '인증 코드를 보냈습니다. 메일함(스팸함 포함)을 확인해 주십시오.' };
+}));
+
+router.post('/email/verify/confirm', verifyToken, emailLimiter, handle('서버 오류로 인증하지 못했습니다.', async (req) => {
+  const me = await loadMe(req.user.userId);
+  if (me.email_verified_at) return { message: '이미 인증된 이메일입니다.', verified: true };
+  const row = await checkEmailCode(me.id, 'verify', req.body.code);
+  if (row.email !== me.email) throw new HttpError(400, RESET_INVALID_MESSAGE); // 그 사이 이메일이 바뀐 경우
+  return withTransaction(async (client) => {
+    await client.query('UPDATE users SET email_verified_at = NOW() WHERE id = $1', [me.id]);
+    await client.query("DELETE FROM email_codes WHERE user_id = $1 AND purpose = 'verify'", [me.id]);
+    let reward = 0;
+    if (!me.email_verify_rewarded) {
+      // 첫 인증 보상: 수집모드 신화 조각 (계정당 1번, 이메일을 바꿔 다시 인증해도 다시 주지 않음)
+      await client.query('UPDATE users SET email_verify_rewarded = TRUE WHERE id = $1', [me.id]);
+      const updated = await client.query(
+        "UPDATE box_claims SET mythic_shards = mythic_shards + $2 WHERE user_id = $1 AND mode = 'collection'",
+        [me.id, EMAIL_VERIFY_REWARD_SHARDS]
+      );
+      if (updated.rowCount > 0) reward = EMAIL_VERIFY_REWARD_SHARDS;
+    }
+    console.log(`[AUTH] 이메일 인증 완료 user=${me.id}${reward ? ` (보상 조각 ${reward})` : ''}`);
+    return {
+      message: reward ? `✅ 이메일 인증 완료! 💎 신화 조각 +${reward}` : '✅ 이메일 인증 완료!',
+      verified: true,
+      reward,
+    };
+  });
+}));
+
+router.post('/email/change/send', verifyToken, emailLimiter, handle('서버 오류로 인증 코드를 보내지 못했습니다.', async (req) => {
+  const { newEmail, password } = req.body;
+  if (typeof newEmail !== 'string' || typeof password !== 'string') throw new HttpError(400, '입력 형식이 올바르지 않습니다.');
+  const email = newEmail.trim();
+  if (!EMAIL_REGEX.test(email) || email.length > 254) throw new HttpError(400, '올바른 이메일 형식이 아닙니다.');
+  const me = await loadMe(req.user.userId);
+  // 남의 기기에서 몰래 바꾸지 못하도록 현재 비밀번호 확인
+  if (!(await bcrypt.compare(password, me.password_hash))) throw new HttpError(401, '현재 비밀번호가 올바르지 않습니다.');
+  if (email.toLowerCase() === me.email.toLowerCase()) throw new HttpError(400, '지금 쓰는 이메일과 같습니다.');
+  const taken = await db.query('SELECT 1 FROM users WHERE LOWER(email) = LOWER($1) AND id <> $2', [email, me.id]);
+  if (taken.rows[0]) throw new HttpError(409, DUPLICATE_EMAIL_MESSAGE);
+  // 한 계정이 이메일 변경으로 여러 주소에 메일을 보내지 못하게
+  if ((await userSendsToday(db, me.id, 'change')) >= EMAIL_CHANGE_PER_DAY) {
+    throw new HttpError(429, `이메일 변경은 하루 ${EMAIL_CHANGE_PER_DAY}번까지 요청할 수 있습니다. 내일 다시 시도해 주십시오.`);
+  }
+  await issueEmailCode(me, 'change', email, {
+    subject: '이메일 변경 인증 코드',
+    lead: '「시간의 상자」 계정 이메일을 이 주소로 바꾸기 위한 인증 코드입니다.',
+    tail: `${EMAIL_CODE_TTL_MIN}분 안에 게임의 설정 → 이메일 변경 화면에 입력해 주십시오.`,
+  });
+  return { message: '새 이메일로 인증 코드를 보냈습니다. 메일함(스팸함 포함)을 확인해 주십시오.' };
+}));
+
+router.post('/email/change/confirm', verifyToken, emailLimiter, handle('서버 오류로 이메일을 바꾸지 못했습니다.', async (req) => {
+  const me = await loadMe(req.user.userId);
+  const row = await checkEmailCode(me.id, 'change', req.body.code);
+  const oldEmail = me.email;
+  const wasVerified = Boolean(me.email_verified_at);
+  try {
+    await withTransaction(async (client) => {
+      const taken = await client.query('SELECT 1 FROM users WHERE LOWER(email) = LOWER($1) AND id <> $2', [row.email, me.id]);
+      if (taken.rows[0]) throw new HttpError(409, DUPLICATE_EMAIL_MESSAGE);
+      // 새 주소는 코드로 확인했으니 인증된 상태로
+      await client.query('UPDATE users SET email = $1, email_verified_at = NOW() WHERE id = $2', [row.email, me.id]);
+      await client.query('DELETE FROM email_codes WHERE user_id = $1', [me.id]);
+    });
+  } catch (err) {
+    if (err.code === UNIQUE_VIOLATION) throw new HttpError(409, DUPLICATE_EMAIL_MESSAGE);
+    throw err;
+  }
+  console.log(`[AUTH] 이메일 변경 완료 user=${me.id} ${maskEmail(oldEmail)} → ${maskEmail(row.email)}`);
+  // 이전 주소가 인증돼 있었다면 알림 (몰래 바뀐 경우 알아챌 수 있게). 실패해도 변경은 유지
+  // 보안 알림이라 발송 한도와 상관없이 보냅니다. (비밀번호 + 새 주소 코드로 변경에 성공했을 때만 나가서 남용할 수 없음)
+  if (wasVerified && isMailConfigured()) {
+    await recordMailSend(db, oldEmail, me.id, 'changed-notice');
+    sendMail({
+      to: oldEmail,
+      subject: '[시간의 상자] 계정 이메일이 변경되었습니다',
+      text: `${me.nickname}님, 「시간의 상자」 계정 이메일이 다른 주소로 변경되었습니다.\n직접 바꾸지 않으셨다면 개인정보처리방침의 문의처로 바로 연락해 주십시오.`,
+      html: `<div style="font-family:sans-serif;line-height:1.6"><p>${escapeHtmlText(me.nickname)}님, 「시간의 상자」 계정 이메일이 다른 주소로 변경되었습니다.</p><p>직접 바꾸지 않으셨다면 개인정보처리방침의 문의처로 바로 연락해 주십시오.</p></div>`,
+    }).catch(err => console.error(`[MAIL] 이메일 변경 알림 발송 실패 user=${me.id} · ${err.message}`));
+  }
+  const user = { id: me.id, email: row.email, nickname: me.nickname };
+  // 토큰에 이메일이 들어 있어 새 토큰으로 바꿔 줍니다
+  return { message: '✅ 이메일을 바꿨습니다.', user, token: signToken(user), verified: true };
 }));
 
 // 메일 본문(HTML)에 닉네임을 넣을 때 이스케이프
