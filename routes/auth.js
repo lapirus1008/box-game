@@ -10,6 +10,8 @@ const { createLimiter } = require('../lib/rateLimit');
 const { HttpError, withTransaction, handle } = require('../lib/http');
 const { INITIAL_GOLD } = require('../game/config');
 const { getSeason } = require('../game/season');
+const crypto = require('crypto');
+const { sendMail, isMailConfigured } = require('../lib/mail');
 
 const router = express.Router();
 
@@ -194,6 +196,140 @@ router.get('/me', verifyToken, handle('서버 오류가 발생했습니다.', as
   // 들어올 때마다 유효기간을 새로 늘린 토큰을 함께 돌려줍니다(자주 하는 사람은 다시 로그인할 일이 없게).
   return { user: result.rows[0], token: signToken(result.rows[0]) };
 }));
+
+// -------------------------------
+// 비밀번호 찾기
+//   POST /api/auth/forgot { email }                      이메일로 6자리 인증 코드 보내기
+//   POST /api/auth/reset  { email, code, newPassword }    코드 확인 후 새 비밀번호로 바꾸고 바로 로그인
+// - 가입 여부를 알 수 없도록, 없는 이메일이어도 같은 안내를 돌려줍니다.
+// - 코드는 비밀 키로 만든 해시만 저장, 15분 뒤 만료, 5번 틀리면 무효.
+// - 같은 계정은 1분에 한 번, 1시간에 5번까지만 코드를 보냅니다.
+// -------------------------------
+const RESET_CODE_TTL_MIN = 15;
+const RESET_MAX_ATTEMPTS = 5;
+const RESET_RESEND_GAP_MS = 60 * 1000;
+const RESET_MAX_PER_HOUR = 5;
+const FORGOT_SENT_MESSAGE = '가입된 이메일이면 인증 코드를 보냈습니다. 메일함(스팸함 포함)을 확인해 주십시오. 코드는 15분 동안 쓸 수 있습니다.';
+const RESET_INVALID_MESSAGE = '인증 코드가 만료되었거나 없습니다. 코드를 다시 받아 주십시오.';
+
+const forgotLimiter = createLimiter({
+  name: 'forgot',
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: '비밀번호 찾기 요청이 너무 많습니다. 잠시 후 다시 시도해 주십시오.',
+});
+const resetLimiter = createLimiter({
+  name: 'reset',
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: '시도가 너무 많습니다. 잠시 후 다시 시도해 주십시오.',
+});
+
+function hashResetCode(userId, code) {
+  return crypto.createHmac('sha256', process.env.JWT_SECRET).update(`${userId}:${code}`).digest('hex');
+}
+
+router.post('/forgot', forgotLimiter, handle('서버 오류로 인증 코드를 보내지 못했습니다.', async (req) => {
+  const { email } = req.body;
+  if (typeof email !== 'string' || !EMAIL_REGEX.test(email)) throw new HttpError(400, '올바른 이메일 형식이 아닙니다.');
+  if (!isMailConfigured()) {
+    console.error('[MAIL] 비밀번호 찾기 요청이 왔지만 메일 발송 설정(BREVO_API_KEY, MAIL_FROM)이 없습니다');
+    throw new HttpError(503, '지금은 비밀번호 찾기를 쓸 수 없습니다. 개인정보처리방침의 문의처로 연락해 주십시오.');
+  }
+
+  const result = await db.query('SELECT id, nickname FROM users WHERE email = $1', [email]);
+  const user = result.rows[0];
+  if (!user) return { message: FORGOT_SENT_MESSAGE };
+
+  const recent = await db.query(
+    `SELECT COUNT(*) AS n, MAX(created_at) AS last FROM password_resets
+     WHERE user_id = $1 AND created_at > NOW() - INTERVAL '1 hour'`,
+    [user.id]
+  );
+  const last = recent.rows[0].last ? new Date(recent.rows[0].last).getTime() : 0;
+  if (Date.now() - last < RESET_RESEND_GAP_MS || Number(recent.rows[0].n) >= RESET_MAX_PER_HOUR) {
+    // 너무 자주 요청하면 새 코드를 보내지 않음 (안내는 같게 해서 가입 여부를 숨김)
+    return { message: FORGOT_SENT_MESSAGE };
+  }
+
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  await db.query(
+    `INSERT INTO password_resets (user_id, code_hash, expires_at)
+     VALUES ($1, $2, NOW() + ($3 || ' minutes')::interval)`,
+    [user.id, hashResetCode(user.id, code), String(RESET_CODE_TTL_MIN)]
+  );
+  try {
+    await sendMail({
+      to: email,
+      subject: `[시간의 상자] 비밀번호 재설정 인증 코드 ${code}`,
+      text: `${user.nickname}님, 비밀번호 재설정 인증 코드는 ${code} 입니다.\n${RESET_CODE_TTL_MIN}분 안에 게임의 비밀번호 찾기 화면에 입력해 주십시오.\n직접 요청하지 않으셨다면 이 메일은 무시하셔도 됩니다.`,
+      html: `<div style="font-family:sans-serif;line-height:1.6">
+        <p>${escapeHtmlText(user.nickname)}님, 「시간의 상자」 비밀번호 재설정 인증 코드입니다.</p>
+        <p style="font-size:28px;font-weight:bold;letter-spacing:6px">${code}</p>
+        <p>${RESET_CODE_TTL_MIN}분 안에 게임의 비밀번호 찾기 화면에 입력해 주십시오.<br>직접 요청하지 않으셨다면 이 메일은 무시하셔도 됩니다.</p>
+      </div>`,
+    });
+  } catch (err) {
+    console.error(`[MAIL] 인증 코드 메일 발송 실패 user=${user.id} · ${err.message}`);
+  }
+  return { message: FORGOT_SENT_MESSAGE };
+}));
+
+router.post('/reset', resetLimiter, handle('서버 오류로 비밀번호를 바꾸지 못했습니다.', async (req) => {
+  const { email, code, newPassword } = req.body;
+  if (typeof email !== 'string' || typeof code !== 'string' || typeof newPassword !== 'string') {
+    throw new HttpError(400, '입력 형식이 올바르지 않습니다.');
+  }
+  if (!/^\d{6}$/.test(code.trim())) throw new HttpError(400, '인증 코드는 숫자 6자리입니다.');
+  if (newPassword.length < 4) throw new HttpError(400, '비밀번호는 4자 이상이어야 합니다.');
+  if (Buffer.byteLength(newPassword, 'utf8') > 72) throw new HttpError(400, '비밀번호는 72바이트(영문 기준 72자) 이하로 입력해 주십시오.');
+
+  const userResult = await db.query('SELECT id, email, nickname FROM users WHERE email = $1', [email]);
+  const user = userResult.rows[0];
+  if (!user) throw new HttpError(400, RESET_INVALID_MESSAGE);
+
+  const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+  return withTransaction(async (client) => {
+    const resetResult = await client.query(
+      `SELECT id, code_hash, attempts FROM password_resets
+       WHERE user_id = $1 AND expires_at > NOW() AND attempts < $2
+       ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+      [user.id, RESET_MAX_ATTEMPTS]
+    );
+    const reset = resetResult.rows[0];
+    if (!reset) throw new HttpError(400, RESET_INVALID_MESSAGE);
+
+    const expected = Buffer.from(reset.code_hash, 'hex');
+    const given = Buffer.from(hashResetCode(user.id, code.trim()), 'hex');
+    if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
+      // 틀린 횟수는 트랜잭션 밖에서도 남아야 해서 바로 올리고 커밋합니다 (오류는 아래에서 응답)
+      await client.query('UPDATE password_resets SET attempts = attempts + 1 WHERE id = $1', [reset.id]);
+      const left = RESET_MAX_ATTEMPTS - reset.attempts - 1;
+      return { wrongCode: true, left };
+    }
+
+    await client.query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, user.id]);
+    await client.query('DELETE FROM password_resets WHERE user_id = $1', [user.id]);
+    console.log(`[AUTH] 비밀번호 재설정 완료 user=${user.id}`);
+    return {
+      message: '비밀번호를 바꿨습니다. 새 비밀번호로 로그인되었습니다.',
+      user: { id: user.id, email: user.email, nickname: user.nickname },
+      token: signToken(user),
+    };
+  }).then((result) => {
+    if (result.wrongCode) {
+      throw new HttpError(400, result.left > 0
+        ? `인증 코드가 맞지 않습니다. (남은 시도 ${result.left}번)`
+        : '인증 코드를 여러 번 틀려 무효가 되었습니다. 코드를 다시 받아 주십시오.');
+    }
+    return result;
+  });
+}));
+
+// 메일 본문(HTML)에 닉네임을 넣을 때 이스케이프
+function escapeHtmlText(str) {
+  return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
 // -------------------------------
 // 계정 삭제: POST /api/auth/delete-account

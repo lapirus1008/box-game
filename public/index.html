@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/app/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261108b">
+<link rel="stylesheet" href="style.css?v=20261110a">
 </head>
 <body>
 
@@ -251,6 +251,24 @@
       <label for="loginPassword">비밀번호</label>
       <input type="password" id="loginPassword" autocomplete="current-password" enterkeyhint="go" required>
       <button type="submit" class="btn-primary" id="loginSubmitBtn">로그인</button>
+      <button type="button" class="link-btn forgot-link" id="openForgotBtn">비밀번호를 잊으셨습니까?</button>
+    </form>
+
+    <!-- 비밀번호 찾기: ① 이메일로 인증 코드 받기 → ② 코드 + 새 비밀번호 -->
+    <form id="forgotForm" class="hidden" novalidate>
+      <p class="forgot-title">🔑 비밀번호 찾기</p>
+      <p class="forgot-desc" id="forgotDesc">가입한 이메일로 6자리 인증 코드를 보내 드립니다.</p>
+      <label for="forgotEmail">이메일</label>
+      <input type="email" id="forgotEmail" autocomplete="username" enterkeyhint="send">
+      <div id="forgotStep2" class="hidden">
+        <label for="forgotCode">인증 코드 (숫자 6자리)</label>
+        <input type="text" id="forgotCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" enterkeyhint="next">
+        <label for="forgotNewPassword">새 비밀번호 (4자 이상)</label>
+        <input type="password" id="forgotNewPassword" autocomplete="new-password" minlength="4" enterkeyhint="go">
+      </div>
+      <button type="submit" class="btn-primary" id="forgotSubmitBtn">인증 코드 받기</button>
+      <button type="button" class="link-btn forgot-link hidden" id="forgotResendBtn">코드 다시 받기</button>
+      <button type="button" class="link-btn forgot-link" id="closeForgotBtn">← 로그인으로 돌아가기</button>
     </form>
 
     <form id="signupForm" class="hidden">
@@ -585,7 +603,7 @@
   <button class="tab-item" data-tab="guestbook"><span class="tab-icon">💬</span><small>방명록</small></button>
 </nav>
 
-<script src="app.js?v=20261108b"></script>
+<script src="app.js?v=20261110a"></script>
 <script>
   // 앱처럼 설치(홈 화면 추가 · 플레이스토어 TWA)할 수 있도록 서비스 워커를 등록합니다.
   if ('serviceWorker' in navigator) {

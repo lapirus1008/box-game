@@ -90,6 +90,18 @@ TWA는 크롬 엔진으로 우리 웹 게임을 주소창 없이 전체 화면�
 
 ---
 
+## 비밀번호 찾기 메일 설정 (Brevo, 무료 하루 300통)
+설정 전에는 비밀번호 찾기를 누르면 "지금은 비밀번호 찾기를 쓸 수 없습니다"가 나옵니다.
+1. https://www.brevo.com 가입 (무료)
+2. **Senders, Domains & Dedicated IPs → Senders → Add a sender**: 보내는 사람 이메일(예: 게임용 Gmail) 추가 → 그 메일함에서 인증 링크 클릭
+3. **SMTP & API → API Keys → Generate a new API key** → 키 복사
+4. Render → 서비스 → **Environment**에 추가하고 저장(자동 재배포)
+   - `BREVO_API_KEY` = 3번 키
+   - `MAIL_FROM` = 2번에서 인증한 이메일
+   - `MAIL_FROM_NAME` = `시간의 상자` (선택)
+5. 게임 로그인 화면 → 비밀번호를 잊으셨습니까? → 내 이메일로 코드가 오는지 확인
+   - 안 오면 Render Logs에서 `[MAIL]`로 검색 (실패 이유가 남음), 스팸함도 확인
+
 ## 신고 확인 방법 (운영)
 - Render → Logs 에서 `[REPORT]` 로 검색하면 신고가 실시간으로 보입니다.
 - 쌓인 신고는 Neon SQL Editor 에서:

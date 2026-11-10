@@ -285,6 +285,18 @@ function setAuthBusy(button, busy, busyText){
   });
 });
 
+// 비밀번호 찾기는 단계마다 보이는 칸이 달라서, 지금 보이는 칸만 기준으로 다음 칸·제출
+document.getElementById('forgotForm').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.isComposing || e.target.tagName !== 'INPUT') return;
+  e.preventDefault();
+  const inputs = [...e.currentTarget.querySelectorAll('input')].filter(el => el.offsetParent !== null);
+  const i = inputs.indexOf(e.target);
+  const next = inputs[i + 1];
+  if (next && !e.target.value) return;
+  if (next && !next.value) next.focus();
+  else e.currentTarget.requestSubmit();
+});
+
 document.getElementById('signupForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const button = document.getElementById('signupSubmitBtn');
@@ -340,6 +352,83 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   }
 });
 
+// -------------------------------
+// 비밀번호 찾기: ① 이메일로 인증 코드 받기 → ② 코드 + 새 비밀번호 → 바로 로그인
+// -------------------------------
+const forgotForm = document.getElementById('forgotForm');
+let forgotStep = 1;
+function setForgotStep(step){
+  forgotStep = step;
+  document.getElementById('forgotStep2').classList.toggle('hidden', step !== 2);
+  document.getElementById('forgotResendBtn').classList.toggle('hidden', step !== 2);
+  document.getElementById('forgotSubmitBtn').textContent = step === 2 ? '비밀번호 바꾸기' : '인증 코드 받기';
+  document.getElementById('forgotDesc').textContent = step === 2
+    ? '메일로 받은 6자리 코드와 새 비밀번호를 입력해 주십시오. (메일이 안 보이면 스팸함도 확인해 주십시오)'
+    : '가입한 이메일로 6자리 인증 코드를 보내 드립니다.';
+}
+function showForgot(open){
+  clearAuthError();
+  forgotForm.classList.toggle('hidden', !open);
+  document.getElementById('loginForm').classList.toggle('hidden', open);
+  document.querySelector('#authScreen .switch-line').classList.toggle('hidden', open);
+  if (open) {
+    setForgotStep(1);
+    document.getElementById('forgotEmail').value = document.getElementById('loginEmail').value;
+  }
+}
+document.getElementById('openForgotBtn').addEventListener('click', () => showForgot(true));
+document.getElementById('closeForgotBtn').addEventListener('click', () => showForgot(false));
+async function requestResetCode(){
+  const email = document.getElementById('forgotEmail').value.trim();
+  if (!email) return showAuthError('이메일을 입력해 주십시오.');
+  const res = await fetch(`${API_BASE}/api/auth/forgot`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return showAuthError(data.message || '인증 코드를 보내지 못했습니다.');
+  showToast(data.message);
+  setForgotStep(2);
+  document.getElementById('forgotCode').focus();
+}
+document.getElementById('forgotResendBtn').addEventListener('click', async function(){
+  this.disabled = true;
+  clearAuthError();
+  try { await requestResetCode(); } catch (e) { showAuthError('서버에 연결할 수 없습니다.'); }
+  finally { setTimeout(() => { this.disabled = false; }, 30000); } // 다시 받기는 30초 뒤부터
+});
+forgotForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const button = document.getElementById('forgotSubmitBtn');
+  if (button.disabled) return;
+  clearAuthError();
+  setAuthBusy(button, true, forgotStep === 2 ? '바꾸는 중...' : '보내는 중...');
+  try {
+    if (forgotStep === 1) { await requestResetCode(); return; }
+    const res = await fetch(`${API_BASE}/api/auth/reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: document.getElementById('forgotEmail').value.trim(),
+        code: document.getElementById('forgotCode').value.trim(),
+        newPassword: document.getElementById('forgotNewPassword').value,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return showAuthError(data.message || '비밀번호를 바꾸지 못했습니다.');
+    authToken = data.token;
+    localStorage.setItem('boxGameToken', data.token);
+    currentUser = data.user;
+    showToast(data.message);
+    resetAuthForms();
+    enterGame();
+  } catch (err) {
+    showAuthError('서버에 연결할 수 없습니다.');
+  } finally {
+    setAuthBusy(button, false);
+    setForgotStep(forgotStep); // 단계가 바뀌었으면 버튼 문구도 그 단계에 맞게
+  }
+});
+
 // 계정이 바뀔 때 이전 결과/이펙트 흔적이 남지 않도록 초기화
 function resetGameResultUI(){
   document.getElementById('resultBox').style.display = 'none';
@@ -371,9 +460,12 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
 // 로그인 화면을 처음 상태로: 로그인 창을 보여주고, 입력칸(특히 비밀번호)을 모두 비웁니다.
 // (회원가입 직후 로그아웃하면 회원가입 창과 입력값이 그대로 남아 있었습니다)
 function resetAuthForms(){
-  ['loginEmail', 'loginPassword', 'signupNickname', 'signupEmail', 'signupPassword'].forEach(id => {
+  ['loginEmail', 'loginPassword', 'signupNickname', 'signupEmail', 'signupPassword',
+    'forgotEmail', 'forgotCode', 'forgotNewPassword'].forEach(id => {
     document.getElementById(id).value = '';
   });
+  setForgotStep(1);
+  document.getElementById('forgotForm').classList.add('hidden');
   document.getElementById('signupForm').classList.add('hidden');
   document.getElementById('loginForm').classList.remove('hidden');
   document.getElementById('switchToLoginLine').classList.add('hidden');

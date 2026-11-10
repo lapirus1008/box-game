@@ -2377,3 +2377,9 @@ body[data-tab="lobby"]{ overflow:hidden; }
 /* 모든 방이 가득 차 목록에서 기다리는 중: 지형·채팅 숨김, 목록만 */
 #lobbyView.waiting .lobby-chat{ display:none; }
 #lobbyView.waiting{ background:var(--bg); }
+
+/* 비밀번호 찾기 */
+.forgot-link{ display:block; margin:10px auto 0; font-size:12px; color:var(--ink-dim); }
+.forgot-title{ margin:0 0 4px; font-size:16px; font-weight:800; color:var(--ink); }
+.forgot-desc{ margin:0 0 10px; font-size:12px; line-height:1.5; color:var(--ink-dim); }
+#forgotCode{ letter-spacing:6px; font-size:18px; text-align:center; }
