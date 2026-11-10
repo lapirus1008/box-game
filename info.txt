@@ -1,5 +1,7 @@
 전체 프로젝트 구조
 box-game/                    ← GitHub 저장소 루트
+├── CLAUDE.md                 Claude Code 작업 안내 (기록 규칙·작업 방식)
+├── docs/DEVLOG.md            결정 사항 · 할 일 · 나중에 점검할 것
 ├── server.js                 백엔드 진입점 (Express 앱 시작)
 ├── db.js                     PostgreSQL 연결 설정
 ├── .env                      로컬 전용 환경변수 (Git에 안 올라감)
