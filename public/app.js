@@ -592,6 +592,7 @@ function renderMyNickname(){
 }
 function enterGame(){
   renderMyNickname();
+  renderEmailState();
   loadBlocks();
   authScreen.classList.add('hidden');
   document.body.classList.add('in-game');
@@ -2683,6 +2684,7 @@ const OVERLAY_CLOSE_BUTTONS = {
   incomeOverlay: 'incomeHelpCloseBtn', settingsOverlay: 'settingsCloseBtn', modePickerOverlay: 'modePickerCloseBtn',
   choiceOverlay: 'choiceCloseBtn', deleteAccountOverlay: 'deleteAccountCancelBtn', boxPriceOverlay: 'boxPriceCloseBtn',
   awakenOverlay: 'awakenCloseBtn', userActionOverlay: 'userActionCloseBtn', blockListOverlay: 'blockListCloseBtn',
+  emailOverlay: 'emailCloseBtn',
 };
 function armBackGuard(){
   if (!history.state || !history.state.boxGameGuard) history.pushState({ boxGameGuard: true }, '');
@@ -2819,11 +2821,12 @@ const settingsOverlay = document.getElementById('settingsOverlay');
 document.getElementById('settingsBtn').addEventListener('click', () => {
   document.getElementById('settingsNickname').textContent = currentUser ? currentUser.nickname : '';
   document.getElementById('settingsEmail').textContent = currentUser ? currentUser.email : '';
+  renderEmailState();
   settingsOverlay.classList.add('show');
 });
 document.getElementById('settingsCloseBtn').addEventListener('click', () => settingsOverlay.classList.remove('show'));
 // 설정 안의 버튼을 누르면 창을 닫고 진행합니다(확인창·계정 삭제 창이 그 위에 뜨도록).
-['installAppBtn', 'resetRunBtn', 'logoutBtn', 'openDeleteAccountBtn', 'openBlockListBtn'].forEach(id =>
+['installAppBtn', 'resetRunBtn', 'logoutBtn', 'openDeleteAccountBtn', 'openBlockListBtn', 'openEmailVerifyBtn', 'openEmailChangeBtn'].forEach(id =>
   document.getElementById(id).addEventListener('click', () => settingsOverlay.classList.remove('show'), true));
 
 // -------------------------------
@@ -4014,4 +4017,108 @@ document.getElementById('lobbyHelpBtn').addEventListener('click', () => {
       + '· 💬 채팅은 ▾ 로 접고 ▴ 로 펼칩니다.',
     ok: '확인', cancel: null,
   });
+});
+
+// -------------------------------
+// 이메일 인증 · 변경 (서버 routes/auth.js /email/*)
+// - 가입은 인증 없이 그대로, 원하는 사람만 설정에서 인증 (첫 인증 💎20)
+// - 변경은 현재 비밀번호 + 새 주소로 받은 코드 확인
+// - 인증 안 한 계정은 홈에 작은 안내 (닫으면 7일 숨김)
+// -------------------------------
+const emailOverlay = document.getElementById('emailOverlay');
+let emailMode = 'verify';  // 'verify' | 'change'
+let emailStep = 1;         // 1: 코드 받기 · 2: 코드 입력
+const EMAIL_NUDGE_KEY = 'boxGameEmailNudgeHiddenUntil';
+
+function renderEmailState(){
+  const verified = Boolean(currentUser && currentUser.email_verified);
+  const state = document.getElementById('settingsEmailState');
+  state.textContent = verified ? '✅ 인증됨' : '⚠️ 인증 안 됨';
+  state.classList.toggle('ok', verified);
+  document.getElementById('openEmailVerifyBtn').classList.toggle('hidden', verified);
+  let hiddenUntil = 0;
+  try { hiddenUntil = Number(localStorage.getItem(EMAIL_NUDGE_KEY)) || 0; } catch (e) { /* 무시 */ }
+  document.getElementById('emailNudge').classList.toggle('hidden', verified || !currentUser || Date.now() < hiddenUntil);
+}
+function showEmailError(message){
+  const el = document.getElementById('emailError');
+  el.textContent = message || '';
+  el.style.display = message ? 'block' : 'none';
+}
+function setEmailStep(step){
+  emailStep = step;
+  const change = emailMode === 'change';
+  document.getElementById('emailTitle').textContent = change ? '✏️ 이메일 변경' : '📧 이메일 인증';
+  document.getElementById('emailChangeFields').classList.toggle('hidden', !change || step !== 1);
+  document.getElementById('emailCodeFields').classList.toggle('hidden', step !== 2);
+  document.getElementById('emailResendBtn').classList.toggle('hidden', step !== 2);
+  document.getElementById('emailSubmitBtn').textContent = step === 2 ? (change ? '이메일 바꾸기' : '인증하기') : '인증 코드 받기';
+  document.getElementById('emailDesc').textContent = step === 2
+    ? `${change ? '새 이메일' : '이메일'}로 받은 6자리 코드를 입력해 주십시오. (메일이 안 보이면 스팸함도 확인해 주십시오)`
+    : change
+      ? '새 이메일로 인증 코드를 보냅니다. 본인 확인을 위해 현재 비밀번호가 필요합니다.'
+      : `${currentUser ? currentUser.email : ''} 로 인증 코드를 보냅니다. 비밀번호를 잊었을 때 이 주소로 찾을 수 있습니다.`;
+}
+function openEmailOverlay(mode){
+  emailMode = mode;
+  ['emailNewInput', 'emailPasswordInput', 'emailCodeInput'].forEach(id => { document.getElementById(id).value = ''; });
+  showEmailError('');
+  setEmailStep(1);
+  emailOverlay.classList.add('show');
+}
+document.getElementById('openEmailVerifyBtn').addEventListener('click', () => openEmailOverlay('verify'));
+document.getElementById('openEmailChangeBtn').addEventListener('click', () => openEmailOverlay('change'));
+document.getElementById('emailNudgeOpen').addEventListener('click', () => openEmailOverlay('verify'));
+document.getElementById('emailNudgeClose').addEventListener('click', () => {
+  try { localStorage.setItem(EMAIL_NUDGE_KEY, String(Date.now() + 7 * 24 * 60 * 60 * 1000)); } catch (e) { /* 무시 */ }
+  document.getElementById('emailNudge').classList.add('hidden');
+});
+document.getElementById('emailCloseBtn').addEventListener('click', () => emailOverlay.classList.remove('show'));
+
+async function emailPost(path, body){
+  const res = await authFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, data };
+}
+async function requestEmailCode(){
+  const body = emailMode === 'change'
+    ? { newEmail: document.getElementById('emailNewInput').value.trim(), password: document.getElementById('emailPasswordInput').value }
+    : {};
+  if (emailMode === 'change' && (!body.newEmail || !body.password)) return showEmailError('새 이메일과 현재 비밀번호를 입력해 주십시오.');
+  const { ok, data } = await emailPost(`/api/auth/email/${emailMode}/send`, body);
+  if (!ok) return showEmailError(data.message || '인증 코드를 보내지 못했습니다.');
+  showEmailError('');
+  showToast(data.message);
+  setEmailStep(2);
+  document.getElementById('emailCodeInput').focus();
+}
+document.getElementById('emailSubmitBtn').addEventListener('click', async function(){
+  if (this.disabled) return;
+  this.disabled = true;
+  showEmailError('');
+  try {
+    if (emailStep === 1) { await requestEmailCode(); return; }
+    const { ok, data } = await emailPost(`/api/auth/email/${emailMode}/confirm`, { code: document.getElementById('emailCodeInput').value.trim() });
+    if (!ok) return showEmailError(data.message || '확인하지 못했습니다.');
+    if (data.token) { authToken = data.token; localStorage.setItem('boxGameToken', data.token); }
+    if (data.user) currentUser = { ...currentUser, ...data.user };
+    currentUser.email_verified = true;
+    emailOverlay.classList.remove('show');
+    showToast(data.message);
+    renderEmailState();
+    if (data.reward) refreshStatus();
+  } catch (err) {
+    showEmailError('서버에 연결할 수 없습니다.');
+  } finally {
+    this.disabled = false;
+  }
+});
+document.getElementById('emailResendBtn').addEventListener('click', async function(){
+  this.disabled = true;
+  try { await requestEmailCode(); } catch (e) { showEmailError('서버에 연결할 수 없습니다.'); }
+  finally { setTimeout(() => { this.disabled = false; }, 30000); }
+});
+// 코드 칸에서 엔터 = 확인
+document.getElementById('emailCodeInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); document.getElementById('emailSubmitBtn').click(); }
 });
