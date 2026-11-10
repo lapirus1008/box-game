@@ -22,6 +22,10 @@
   - 키는 설정한 기간(최대 1년, 2027-11 무렵)이 지나거나 **90일 동안 안 쓰이면 만료**됨 → 비밀번호 찾기 메일이 안 나감
   - 신호: Render Logs `[MAIL] … 메일 서비스 응답 401`, "코드 메일이 안 온다" 문의
   - 조치: Brevo Settings → SMTP & API → API Keys에서 새 키 생성 → Render `BREVO_API_KEY` 교체. 만료 1달 전(2027-10)에 사용자에게 짚어 줄 것
+- **배포 로그의 경고 2가지** (2026-11-10 점검)
+  - `npm audit` 취약점 5개 → `npm audit fix`로 해결(같은 큰 버전 안 패치, 0개). 배포 로그에 다시 뜨면 같은 방법으로 패치 후 로컬 확인
+  - pg `SECURITY WARNING: The SSL modes 'prefer', 'require'…`: 지금 동작엔 영향 없음(pg v8 고정).
+    **pg v9로 올릴 때** Render `DATABASE_URL`의 `sslmode=require`를 `sslmode=verify-full`로 바꾸고, `db.js`의 `ssl.rejectUnauthorized:false` 정리할 것
 - **Render 무료 서버**: 재시작 시 첫 접속 30~60초. 스토어 출시 시점에 Starter(월 7달러) 전환 여부를 사용자에게 다시 물을 것
 - **플레이스토어 출시 진행 상황** (`docs/PLAY_STORE.md`)
   - 내부 테스트에 1(1.0.0.0) 업로드됨. 그 버전의 업로드 키와 저장소 `assetlinks.json` 지문 일치 여부는 아직 확인 안 됨
